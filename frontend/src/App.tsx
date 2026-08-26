@@ -1,0 +1,224 @@
+import { useCallback, useEffect, useState } from 'react'
+
+import { getDatasets } from './api/datasets'
+import { createBacktest, getRunContext, getTrace } from './api/replay'
+import { getStrategyDefinitions } from './api/strategies'
+import ProductNav from './components/ProductNav'
+import type { ProductPage } from './components/ProductNav'
+import AutopsyPage from './features/autopsy/AutopsyPage'
+import DiagnosePage from './features/diagnose/DiagnosePage'
+import DataPage from './features/data/DataPage'
+import ForwardPage from './features/forward/ForwardPage'
+import LivePaperPage from './features/forward/LivePaperPage'
+import ProfilePage from './features/profile/ProfilePage'
+import HistoricalMarketPage from './features/discover/HistoricalMarketPage'
+import FactorLabPage from './features/discover/FactorLabPage'
+import FactorRelationshipPage from './features/discover/FactorRelationshipPage'
+import DiscoveryWorkspacePage from './features/discover/DiscoveryWorkspacePage'
+import PortfolioLabPage from './features/discover/PortfolioLabPage'
+import WalkForwardPage from './features/discover/WalkForwardPage'
+import ReplayPage from './features/replay/ReplayPage'
+import RunsPage from './features/runs/RunsPage'
+import type { LoadedRunConfiguration } from './features/runs/RunsPage'
+import StrategyPage from './features/strategy/StrategyPage'
+import { useI18n } from './i18n/I18nProvider'
+import type { BacktestTrace, RunContext } from './types/trace'
+import type { DatasetDefinition } from './types/dataset'
+import type { StrategyDefinition, StrategyParameters } from './types/strategy'
+
+type ReplayStage = 'idle' | 'running' | 'loading-trace' | 'ready' | 'error'
+
+function initialLocation(): { page: ProductPage; runId: string | null } {
+  const match = window.location.pathname.match(/^\/runs\/(run-[0-9a-f]{24})(?:\/.*)?$/)
+  if (match) return { page: 'runs', runId: match[1] }
+  if (window.location.pathname === '/runs') return { page: 'runs', runId: null }
+  if (window.location.pathname === '/paper') return { page: 'paper', runId: null }
+  if (window.location.pathname === '/me') return { page: 'profile', runId: null }
+  if (window.location.pathname === '/historical-market') return { page: 'historical', runId: null }
+  if (window.location.pathname === '/factor-lab') return { page: 'factors', runId: null }
+  if (window.location.pathname === '/portfolio-lab') return { page: 'portfolio', runId: null }
+  if (window.location.pathname === '/walk-forward') return { page: 'walk-forward', runId: null }
+  if (window.location.pathname === '/factor-relationships') return { page: 'relationships', runId: null }
+  if (window.location.pathname === '/discovery') return { page: 'discovery', runId: null }
+  return { page: 'strategy', runId: null }
+}
+
+function StartupState({ title, detail, error, onRetry }: { title: string; detail?: string; error?: boolean; onRetry?: () => void }) {
+  const { tr } = useI18n()
+  return <main className="workspace-loading"><section role={error ? 'alert' : undefined}><h1>{title}</h1>{detail && <span>{tr(detail)}</span>}{onRetry && <button type="button" onClick={onRetry}>{tr('Retry')}</button>}</section></main>
+}
+
+function RunContextBar({ runId, traceId, trace, context, forwardSessionId }: { runId: string | null; traceId: string | null; trace: BacktestTrace | null; context: RunContext | null; forwardSessionId: string | null }) {
+  const { tr } = useI18n()
+  return <header className="run-context-bar">
+    <div className="context-primary">
+      <span className="context-kicker">{tr('Current context')}</span>
+      <strong>{trace ? tr(trace.strategy.name) : tr('Visual Quant Debugger')}</strong>
+    </div>
+    <div className="context-secondary">
+      {runId && <span className="context-chip"><small>{tr('Run')}</small><code>{runId}</code></span>}
+      {traceId && <span className="context-chip"><small>{tr('Trace')}</small><code>{traceId}</code></span>}
+      {trace && <span className="context-chip"><small>{tr('Dataset')}</small><b>{tr(trace.metadata.dataset_name)}</b></span>}
+      {context && <span className="context-chip context-status"><small>{tr('Status')}</small><strong>{tr(context.status)}</strong></span>}
+      {!trace && traceId && !runId && <span className="context-chip"><small>{tr('Status')}</small><b>{tr('Active run')}</b></span>}
+    </div>
+    {forwardSessionId && <span className="context-forward">{tr('Forward')} <code>{forwardSessionId}</code></span>}
+  </header>
+}
+
+function App() {
+  const { tr } = useI18n()
+  const initial = initialLocation()
+  const [page, setPage] = useState<ProductPage>(initial.page)
+  const [definitions, setDefinitions] = useState<StrategyDefinition[]>([])
+  const [datasets, setDatasets] = useState<DatasetDefinition[]>([])
+  const [selectedStrategyId, setSelectedStrategyId] = useState('pairs-trading')
+  const [selectedDatasetId, setSelectedDatasetId] = useState('pairs-sample-v1')
+  const [researchConfiguration, setResearchConfiguration] = useState<{
+    strategy_id: string
+    dataset_id: string
+    parameters: StrategyParameters
+    research_cutoff: string | null
+  } | null>(null)
+  const [loadedStrategyConfiguration, setLoadedStrategyConfiguration] = useState<LoadedRunConfiguration | null>(null)
+  const [definitionError, setDefinitionError] = useState<string | null>(null)
+  const [replayStage, setReplayStage] = useState<ReplayStage>('idle')
+  const [trace, setTrace] = useState<BacktestTrace | null>(null)
+  const [runContext, setRunContext] = useState<RunContext | null>(null)
+  const [replayError, setReplayError] = useState<string | null>(null)
+  const [activeTraceId, setActiveTraceId] = useState<string | null>(null)
+  const [activeRunId, setActiveRunId] = useState<string | null>(initial.runId)
+  const [replayTargetEventId, setReplayTargetEventId] = useState<string | null>(null)
+  const [forwardSessionId, setForwardSessionId] = useState<string | null>(null)
+
+  const loadDefinition = useCallback(async () => {
+    setDefinitionError(null)
+    try {
+      const [nextDefinitions, nextDatasets] = await Promise.all([getStrategyDefinitions(), getDatasets()])
+      if (nextDefinitions.length === 0) throw new Error('The Strategy Library is empty.')
+      if (nextDatasets.length === 0) throw new Error('The Dataset Library is empty.')
+      setDefinitions(nextDefinitions); setDatasets(nextDatasets)
+      const strategy = nextDefinitions.find((item) => item.strategy_id === 'pairs-trading') ?? nextDefinitions[0]
+      const dataset = nextDatasets.find((item) => item.dataset_id === 'pairs-sample-v1') ?? nextDatasets[0]
+      const samplePreset = strategy.strategy_id === 'pairs-trading' && dataset.dataset_id === 'pairs-sample-v1'
+        ? strategy.presets.find((item) => item.preset_id === 'demo-active-signals')
+        : null
+      setSelectedStrategyId(strategy.strategy_id); setSelectedDatasetId(dataset.dataset_id)
+      setResearchConfiguration({
+        strategy_id: strategy.strategy_id,
+        dataset_id: dataset.dataset_id,
+        parameters: samplePreset?.parameters ?? Object.fromEntries(strategy.parameters.map((item) => [item.key, item.default_value])),
+        research_cutoff: null,
+      })
+    }
+    catch (reason) { setDefinitionError(reason instanceof Error ? reason.message : 'Strategy Definition failed with an unknown error.') }
+  }, [])
+
+  useEffect(() => { const timer = window.setTimeout(() => void loadDefinition(), 0); return () => window.clearTimeout(timer) }, [loadDefinition])
+
+  useEffect(() => {
+    function restoreLocation() {
+      const location = initialLocation()
+      setPage(location.page)
+      setActiveRunId(location.runId)
+    }
+    window.addEventListener('popstate', restoreLocation)
+    return () => window.removeEventListener('popstate', restoreLocation)
+  }, [])
+
+  const loadTraceById = useCallback(async (traceId: string) => {
+    setReplayStage('loading-trace'); setReplayError(null); setActiveTraceId(traceId)
+    try { const [nextTrace, nextContext] = await Promise.all([getTrace(traceId), getRunContext(traceId)]); setTrace(nextTrace); setRunContext(nextContext); setActiveRunId(nextContext.run_id); setReplayStage('ready') }
+    catch (reason) { setReplayError(reason instanceof Error ? reason.message : 'Replay failed with an unknown error.'); setReplayStage('error') }
+  }, [])
+
+  const runDemoReplay = useCallback(async () => {
+    const definition = definitions.find((item) => item.strategy_id === 'pairs-trading')
+    if (!definition) return
+    const demo = definition.presets.find((preset) => preset.preset_id === 'demo-active-signals')
+    if (!demo) { setReplayError("Strategy Definition is missing the 'Demo: Active Signals' preset."); setReplayStage('error'); return }
+    setReplayStage('running'); setReplayError(null); setReplayTargetEventId(null)
+    try { const created = await createBacktest({ strategy_id: definition.strategy_id, dataset_id: 'pairs-sample-v1', parameters: demo.parameters }); if (!created.trace_id) throw new Error('Demo run did not produce a trace.'); setActiveRunId(created.run_id); await loadTraceById(created.trace_id) }
+    catch (reason) { setReplayError(reason instanceof Error ? reason.message : 'Demo backtest failed with an unknown error.'); setReplayStage('error') }
+  }, [definitions, loadTraceById])
+
+  function openReplay(traceId: string) { setActiveTraceId(traceId); setReplayTargetEventId(null); setPage('replay'); void loadTraceById(traceId) }
+  function activateTrace(traceId: string, runId?: string) { setActiveTraceId(traceId); setActiveRunId(runId ?? null); setTrace(null); setRunContext(null); setReplayStage('idle'); setReplayTargetEventId(null) }
+  function selectStrategy(strategyId: string) {
+    const next = definitions.find((item) => item.strategy_id === strategyId)
+    if (!next) return
+    setSelectedStrategyId(strategyId)
+    setLoadedStrategyConfiguration(null)
+    setResearchConfiguration({
+      strategy_id: strategyId,
+      dataset_id: selectedDatasetId,
+      parameters: Object.fromEntries(next.parameters.map((item) => [item.key, item.default_value])),
+      research_cutoff: null,
+    })
+  }
+  function navigateReplay() { setPage('replay'); if (trace) setReplayStage('ready'); else if (activeTraceId) void loadTraceById(activeTraceId); else if (replayStage === 'idle' || replayStage === 'error') void runDemoReplay() }
+  function openReplayEvent(eventId: string) { setReplayTargetEventId(eventId || null); setPage('replay'); if (trace) setReplayStage('ready'); else if (activeTraceId) void loadTraceById(activeTraceId) }
+
+  const selectHistoricalRun = useCallback((runId: string) => {
+    setActiveRunId(runId)
+    window.history.replaceState({}, '', `/runs/${runId}`)
+  }, [])
+
+  function navigate(pageId: ProductPage, path = '/') {
+    setPage(pageId)
+    window.history.pushState({}, '', path)
+  }
+
+  function openHistoricalArtifact(runId: string, traceId: string, destination: 'replay' | 'diagnose' | 'autopsy', eventId?: string | null) {
+    setActiveRunId(runId); setActiveTraceId(traceId); setReplayTargetEventId(eventId ?? null); setPage(destination)
+    window.history.pushState({}, '', `/runs/${runId}`)
+    if (destination === 'replay') void loadTraceById(traceId)
+  }
+
+  function loadHistoricalConfiguration(configuration: LoadedRunConfiguration) {
+    if (!definitions.some((item) => item.strategy_id === configuration.strategy_id)) {
+      setDefinitionError(`Strategy '${configuration.strategy_id}' is not currently registered.`)
+      return
+    }
+    setSelectedStrategyId(configuration.strategy_id)
+    setSelectedDatasetId(configuration.dataset_id)
+    setResearchConfiguration(configuration)
+    setLoadedStrategyConfiguration(configuration)
+    navigate('strategy')
+  }
+
+  const definition = definitions.find((item) => item.strategy_id === selectedStrategyId) ?? null
+  if (!definition) {
+    if (definitionError) return <StartupState title={tr('Could not load strategy definition.')} detail={definitionError} error onRetry={() => void loadDefinition()} />
+    return <StartupState title={tr('Loading strategy anatomy…')} />
+  }
+
+  let content
+  const addDataset = (dataset: DatasetDefinition) => { setDatasets((current) => current.some((item) => item.dataset_id === dataset.dataset_id) ? current : [...current, dataset]); setSelectedDatasetId(dataset.dataset_id) }
+  if (page === 'historical') content = <HistoricalMarketPage datasets={datasets} onImported={addDataset} />
+  else if (page === 'factors') content = <FactorLabPage datasets={datasets} onOpenHistorical={() => navigate('historical', '/historical-market')} onOpenReplay={openReplay} onRunComplete={activateTrace} />
+  else if (page === 'portfolio') content = <PortfolioLabPage onOpenReplay={openReplay} onRunComplete={activateTrace} />
+  else if (page === 'walk-forward') content = <WalkForwardPage strategies={definitions} onOpenHistorical={(path) => navigate('historical', path)} onOpenFactor={(path) => navigate('factors', path)} onOpenReplay={(traceId, path) => { window.history.pushState({}, '', path); openReplay(traceId) }} onRunComplete={activateTrace} />
+  else if (page === 'relationships') content = <FactorRelationshipPage />
+  else if (page === 'discovery') content = <DiscoveryWorkspacePage onOpenReplay={openReplay} onRunComplete={(traceId, runId) => activateTrace(traceId, runId)} />
+  else if (page === 'strategy') content = <StrategyPage key={definition.strategy_id} definition={definition} strategies={definitions} datasets={datasets} selectedDatasetId={selectedDatasetId} loadedConfiguration={loadedStrategyConfiguration} onStrategyChange={selectStrategy} onDatasetChange={setSelectedDatasetId} onConfigurationChange={(configuration) => { setResearchConfiguration(configuration); setLoadedStrategyConfiguration(null) }} onOpenReplay={openReplay} onRunComplete={activateTrace} onStrategyImported={(imported) => { setDefinitions((current) => [...current.filter((item) => item.strategy_id !== imported.strategy_id), imported]); setSelectedStrategyId(imported.strategy_id); setResearchConfiguration({ strategy_id: imported.strategy_id, dataset_id: selectedDatasetId, parameters: Object.fromEntries(imported.parameters.map((item) => [item.key, item.default_value])), research_cutoff: null }) }} />
+  else if (page === 'data') content = <DataPage datasets={datasets} onImported={addDataset} />
+  else if (page === 'runs') content = <RunsPage key={activeRunId ?? 'ledger'} strategies={definitions} datasets={datasets} initialRunId={activeRunId} onRunSelection={selectHistoricalRun} onOpenReplay={(runId, traceId, eventId) => openHistoricalArtifact(runId, traceId, 'replay', eventId)} onOpenDiagnose={(runId, traceId) => openHistoricalArtifact(runId, traceId, 'diagnose')} onOpenAutopsy={(runId, traceId) => openHistoricalArtifact(runId, traceId, 'autopsy')} onLoadConfiguration={loadHistoricalConfiguration} />
+  else if (page === 'diagnose') content = <DiagnosePage traceId={activeTraceId} onOpenReplay={navigateReplay} />
+  else if (page === 'autopsy') content = <AutopsyPage traceId={activeTraceId} onReplay={openReplayEvent} />
+  else if (page === 'forward') content = <ForwardPage definition={definition} configuration={researchConfiguration} sessionId={forwardSessionId} onSessionChange={setForwardSessionId} />
+  else if (page === 'paper') {
+    const paperDefinition = definition.historical_research_only ? definitions.find((item) => !item.historical_research_only) : definition
+    content = paperDefinition
+      ? <LivePaperPage definition={paperDefinition} definitions={definitions} onDefinitionChange={selectStrategy} onOpenProfile={() => navigate('profile', '/me')} />
+      : <main className="forward-shell"><section className="workspace-panel capability-blocked"><h1>{tr('Native runtime required')}</h1><p>{tr('Framework strategies are historical-research adapters and cannot run in Forward or Live Paper.')}</p></section></main>
+  }
+  else if (page === 'profile') content = <ProfilePage />
+  else if (replayStage === 'ready' && trace) content = <>{runContext?.status === 'PARTIAL' && <div className="partial-trace-banner global"><strong>{tr('PARTIAL TRACE')}</strong><span>{tr('Replay contains events captured before the strategy failure.')}</span></div>}<ReplayPage key={activeTraceId} trace={trace} initialEventId={replayTargetEventId} onDiagnose={() => setPage('diagnose')} onAutopsy={() => setPage('autopsy')} /></>
+  else if (replayStage === 'error') content = <StartupState title={tr('Could not load trace.')} detail={tr(replayError ?? 'Unknown Replay error.')} error onRetry={() => activeTraceId ? void loadTraceById(activeTraceId) : void runDemoReplay()} />
+  else content = <StartupState title={tr(replayStage === 'running' ? 'Running demo backtest…' : 'Loading trace…')} />
+
+  return <div className="app-frame"><ProductNav activePage={page} onHistorical={() => navigate('historical', '/historical-market')} onFactors={() => navigate('factors', '/factor-lab')} onPortfolio={() => navigate('portfolio', '/portfolio-lab')} onWalkForward={() => navigate('walk-forward', '/walk-forward')} onRelationships={() => navigate('relationships', '/factor-relationships')} onDiscovery={() => navigate('discovery', '/discovery')} onStrategy={() => navigate('strategy')} onData={() => navigate('data')} onRuns={() => navigate('runs', activeRunId ? `/runs/${activeRunId}` : '/runs')} onReplay={navigateReplay} onDiagnose={() => setPage('diagnose')} onAutopsy={() => setPage('autopsy')} onForward={() => setPage('forward')} onPaper={() => navigate('paper', '/paper')} onProfile={() => navigate('profile', '/me')} /><div className="app-workspace">{!['profile', 'paper', 'historical', 'factors', 'portfolio', 'walk-forward', 'relationships', 'discovery'].includes(page) && <RunContextBar runId={activeRunId} traceId={activeTraceId} trace={trace} context={runContext} forwardSessionId={forwardSessionId} />}{content}</div></div>
+}
+
+export default App

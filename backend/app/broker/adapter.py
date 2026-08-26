@@ -1,0 +1,19 @@
+from __future__ import annotations
+
+from typing import Protocol
+
+from app.broker.models import BrokerAccountSnapshot, BrokerOrderRequest, BrokerOrderUpdate
+
+
+class PaperBrokerAdapter(Protocol):
+    async def account(self) -> BrokerAccountSnapshot: ...
+
+    async def submit_market_order(self, request: BrokerOrderRequest) -> BrokerOrderUpdate: ...
+
+    async def get_order(self, provider_order_id: str) -> BrokerOrderUpdate: ...
+
+    async def get_order_by_client_id(self, client_order_id: str) -> BrokerOrderUpdate: ...
+
+    async def cancel_order(self, provider_order_id: str) -> None: ...
+
+    async def close(self) -> None: ...

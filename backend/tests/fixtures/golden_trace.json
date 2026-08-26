@@ -1,0 +1,195 @@
+{
+  "trace_version": "1.0",
+  "dataset_id": "sha256:fb1aa0b3d18fa2f5de3064d5127153b49a72cf889c7dd676db4ffc320fb7c1cf",
+  "diagnostic_count": 0,
+  "trade": {
+    "trade_id": "trade-000001",
+    "direction": "SHORT_SPREAD",
+    "status": "CLOSED",
+    "entry_signal_id": "signal-0001",
+    "exit_signal_id": "signal-0002",
+    "entry_event_id": "timeline-000013",
+    "exit_event_id": "timeline-000017",
+    "opened_at": "2024-01-18T16:00:00Z",
+    "closed_at": "2024-01-24T16:00:00Z",
+    "order_ids": [
+      "signal-0001-order-1",
+      "signal-0001-order-2",
+      "signal-0002-order-1",
+      "signal-0002-order-2"
+    ],
+    "execution_ids": [
+      "signal-0001-order-1-execution",
+      "signal-0001-order-2-execution",
+      "signal-0002-order-1-execution",
+      "signal-0002-order-2-execution"
+    ]
+  },
+  "events": [
+    {
+      "event_id": "timeline-000001",
+      "timestamp": "2024-01-02T16:00:00+00:00",
+      "market": {"ASSET_A": 100.2, "ASSET_B": 50.0},
+      "features": {
+        "hedge_ratio": null,
+        "spread": null,
+        "rolling_mean": null,
+        "rolling_std": null,
+        "zscore": null
+      },
+      "signal": {
+        "signal_id": null,
+        "action": "WARMUP",
+        "previous_state": "FLAT",
+        "next_state": "FLAT",
+        "conditions": [
+          {"left_value": null, "operator": "is_available", "right_value": null, "result": false}
+        ]
+      },
+      "orders": [],
+      "executions": [],
+      "cost": {"fees": 0.0, "slippage": 0.0},
+      "pnl": {"period_net_pnl": 0.0, "cumulative_net_pnl": 0.0, "equity": 100000.0}
+    },
+    {
+      "event_id": "timeline-000010",
+      "timestamp": "2024-01-15T16:00:00+00:00",
+      "market": {"ASSET_A": 107.9, "ASSET_B": 53.6},
+      "features": {
+        "hedge_ratio": 2.0316710662228856,
+        "spread": -0.9975691495466634,
+        "rolling_mean": 0.14780963440725828,
+        "rolling_std": 1.660871292355439,
+        "zscore": -0.689625252255129
+      },
+      "signal": {
+        "signal_id": null,
+        "action": "HOLD",
+        "previous_state": "FLAT",
+        "next_state": "FLAT",
+        "conditions": [
+          {"left_value": -0.689625252255129, "operator": ">", "right_value": 1.0, "result": false},
+          {"left_value": -0.689625252255129, "operator": "<", "right_value": -1.0, "result": false}
+        ]
+      },
+      "orders": [],
+      "executions": [],
+      "cost": {"fees": 0.0, "slippage": 0.0},
+      "pnl": {"period_net_pnl": 0.0, "cumulative_net_pnl": 0.0, "equity": 100000.0}
+    },
+    {
+      "event_id": "timeline-000012",
+      "timestamp": "2024-01-17T16:00:00+00:00",
+      "market": {"ASSET_A": 109.55, "ASSET_B": 54.4},
+      "features": {
+        "hedge_ratio": 2.013985410402049,
+        "spread": -0.01080632587147079,
+        "rolling_mean": -0.7714424950651108,
+        "rolling_std": 0.38150720518091197,
+        "zscore": 1.9937661959305428
+      },
+      "signal": {
+        "signal_id": "signal-0001",
+        "action": "SHORT_SPREAD",
+        "previous_state": "FLAT",
+        "next_state": "SHORT_SPREAD",
+        "conditions": [
+          {"left_value": 1.9937661959305428, "operator": ">", "right_value": 1.0, "result": true},
+          {"left_value": 1.9937661959305428, "operator": "<", "right_value": -1.0, "result": false}
+        ]
+      },
+      "orders": [],
+      "executions": [],
+      "cost": {"fees": 0.0, "slippage": 0.0},
+      "pnl": {"period_net_pnl": 0.0, "cumulative_net_pnl": 0.0, "equity": 100000.0}
+    },
+    {
+      "event_id": "timeline-000013",
+      "timestamp": "2024-01-18T16:00:00+00:00",
+      "market": {"ASSET_A": 106.2, "ASSET_B": 54.8},
+      "features": {
+        "hedge_ratio": 1.9981044604158669,
+        "spread": -3.29612443078949,
+        "rolling_mean": -1.2400731320217317,
+        "rolling_std": 1.0927700176805375,
+        "zscore": -1.8815041275856346
+      },
+      "signal": {
+        "signal_id": null,
+        "action": "HOLD",
+        "previous_state": "SHORT_SPREAD",
+        "next_state": "SHORT_SPREAD",
+        "conditions": [
+          {"left_value": 1.8815041275856346, "operator": "<", "right_value": 0.8, "result": false}
+        ]
+      },
+      "orders": [
+        {"order_id": "signal-0001-order-1", "symbol": "ASSET_A", "side": "SELL", "quantity": 92.35042903583062, "source_signal_id": "signal-0001"},
+        {"order_id": "signal-0001-order-2", "symbol": "ASSET_B", "side": "BUY", "quantity": 185.99241672253262, "source_signal_id": "signal-0001"}
+      ],
+      "executions": [
+        {"execution_id": "signal-0001-order-1-execution", "source_order_id": "signal-0001-order-1", "reference_price": 106.2, "fill_price": 106.1469, "fee": 4.903807781802606, "slippage": 4.903807781802606},
+        {"execution_id": "signal-0001-order-2-execution", "source_order_id": "signal-0001-order-2", "reference_price": 54.8, "fill_price": 54.8274, "fee": 5.096192218197394, "slippage": 5.096192218197394}
+      ],
+      "cost": {"fees": 10.0, "slippage": 10.0},
+      "pnl": {"period_net_pnl": -20.000000000014552, "cumulative_net_pnl": -20.000000000014552, "equity": 99979.99999999999}
+    },
+    {
+      "event_id": "timeline-000016",
+      "timestamp": "2024-01-23T16:00:00+00:00",
+      "market": {"ASSET_A": 112.8, "ASSET_B": 56.0},
+      "features": {
+        "hedge_ratio": 1.9982988554027088,
+        "spread": 0.8952640974483046,
+        "rolling_mean": -0.16235230836156517,
+        "rolling_std": 1.6009415924158152,
+        "zscore": 0.6606214810210099
+      },
+      "signal": {
+        "signal_id": "signal-0002",
+        "action": "CLOSE",
+        "previous_state": "SHORT_SPREAD",
+        "next_state": "FLAT",
+        "conditions": [
+          {"left_value": 0.6606214810210099, "operator": "<", "right_value": 0.8, "result": true}
+        ]
+      },
+      "orders": [],
+      "executions": [],
+      "cost": {"fees": 0.0, "slippage": 0.0},
+      "pnl": {"period_net_pnl": -8.71841944323387, "cumulative_net_pnl": -406.3219315694587, "equity": 99593.67806843054}
+    },
+    {
+      "event_id": "timeline-000017",
+      "timestamp": "2024-01-24T16:00:00+00:00",
+      "market": {"ASSET_A": 113.75, "ASSET_B": 56.4},
+      "features": {
+        "hedge_ratio": 1.9991499767116905,
+        "spread": 0.9979413134606574,
+        "rolling_mean": 0.039397219504860456,
+        "rolling_std": 1.6694232929784611,
+        "zscore": 0.5741767818787491
+      },
+      "signal": {
+        "signal_id": null,
+        "action": "HOLD",
+        "previous_state": "FLAT",
+        "next_state": "FLAT",
+        "conditions": [
+          {"left_value": 0.5741767818787491, "operator": ">", "right_value": 1.0, "result": false},
+          {"left_value": 0.5741767818787491, "operator": "<", "right_value": -1.0, "result": false}
+        ]
+      },
+      "orders": [
+        {"order_id": "signal-0002-order-1", "symbol": "ASSET_A", "side": "BUY", "quantity": 92.35042903583062, "source_signal_id": "signal-0002"},
+        {"order_id": "signal-0002-order-2", "symbol": "ASSET_B", "side": "SELL", "quantity": 185.99241672253262, "source_signal_id": "signal-0002"}
+      ],
+      "executions": [
+        {"execution_id": "signal-0002-order-1-execution", "source_order_id": "signal-0002-order-1", "reference_price": 113.75, "fill_price": 113.80687499999999, "fee": 5.252430651412867, "slippage": 5.252430651412867},
+        {"execution_id": "signal-0002-order-2-execution", "source_order_id": "signal-0002-order-2", "reference_price": 56.4, "fill_price": 56.3718, "fee": 5.244986151575421, "slippage": 5.244986151575421}
+      ],
+      "cost": {"fees": 10.497416802988287, "slippage": 10.497416802988287},
+      "pnl": {"period_net_pnl": -34.330774500995176, "cumulative_net_pnl": -440.65270607045386, "equity": 99559.34729392955}
+    }
+  ]
+}

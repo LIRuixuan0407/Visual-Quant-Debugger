@@ -1,0 +1,355 @@
+from typing import Literal, cast
+
+import numpy as np
+
+from app.datasets import dataset_registry
+from app.diagnostics.metrics import (
+    daily_returns,
+    max_drawdown,
+    sharpe,
+)
+from app.diagnostics.models import (
+    CostStressPoint,
+    DiagnosisObservation,
+    DiagnosisReport,
+    DiagnosisSourceRun,
+    DiagnosticMetrics,
+    DiagnosticSupportSet,
+    ExecutionDelayPoint,
+    LookbackSensitivityPoint,
+    TrainTestSplit,
+)
+from app.runs import BacktestRunRecord, OpenRunResult, execute_open_run
+from app.sdk.loader import load_strategy
+from app.sdk.registry import strategy_registry
+from app.strategies.definition import get_strategy_definition
+from app.trace.models import BacktestTrace
+
+
+def _lookback_candidates(train_bar_count: int, current: int) -> tuple[int, ...]:
+    maximum = max(2, (train_bar_count + 1) // 2)
+    values = {round(2 + index * (maximum - 2) / 6) for index in range(7)}
+    if 2 <= current <= maximum:
+        values.add(current)
+    return tuple(sorted(values))
+
+
+def _cost_split(
+    total_bps: float, original_fee: float, original_slippage: float
+) -> tuple[float, float]:
+    original_total = original_fee + original_slippage
+    fee_ratio = original_fee / original_total if original_total > 0 else 0.5
+    fee = total_bps * fee_ratio
+    return fee, total_bps - fee
+
+
+def _observations(
+    train: DiagnosticMetrics,
+    test: DiagnosticMetrics,
+    costs: tuple[CostStressPoint, ...],
+    delays: tuple[ExecutionDelayPoint, ...],
+) -> tuple[DiagnosisObservation, ...]:
+    observations: list[DiagnosisObservation] = []
+    if test.status == "NO_TRADES":
+        observations.append(
+            DiagnosisObservation(
+                observation_id="observation-test-no-trades",
+                title="The test window contains no new trade entries",
+                detail=(
+                    "This sample cannot establish out-of-sample trading behavior for the "
+                    "active parameters."
+                ),
+                evidence=f"Test trade count: {test.trade_count}; test bars: {test.bar_count}.",
+            )
+        )
+    elif train.status == "OK" and test.status == "OK" and test.sharpe < train.sharpe:
+        observations.append(
+            DiagnosisObservation(
+                observation_id="observation-test-sharpe-lower",
+                title="Test Sharpe is lower than train Sharpe",
+                detail=(
+                    "The difference is descriptive for this single chronological split and "
+                    "is not an overfitting claim."
+                ),
+                evidence=f"Train {train.sharpe:.3f}; test {test.sharpe:.3f}.",
+            )
+        )
+    if costs and costs[-1].metrics.total_return < costs[0].metrics.total_return:
+        observations.append(
+            DiagnosisObservation(
+                observation_id="observation-cost-drag",
+                title="Higher modeled friction reduces the recorded return",
+                detail=(
+                    "Each stress point is a full engine rerun with the same bars and strategy "
+                    "parameters."
+                ),
+                evidence=(
+                    f"0 bps return {costs[0].metrics.total_return:.4%}; "
+                    f"20 bps return {costs[-1].metrics.total_return:.4%}."
+                ),
+            )
+        )
+    baseline = delays[0]
+    delayed = delays[-1]
+    observations.append(
+        DiagnosisObservation(
+            observation_id="observation-delay",
+            title="Execution timing changes are measured, not inferred",
+            detail=(
+                "Delay scenarios rerun order generation, fills, costs, positions, and "
+                "mark-to-market accounting."
+            ),
+            evidence=(
+                f"t+1 return {baseline.metrics.total_return:.4%}; "
+                f"t+3 return {delayed.metrics.total_return:.4%}; "
+                f"t+3 unfilled signals {delayed.unfilled_signal_count}."
+            ),
+        )
+    )
+    return tuple(observations)
+
+
+def _trace_window_metrics(
+    trace: BacktestTrace, initial_cash: float, start_index: int, end_index: int
+) -> DiagnosticMetrics:
+    events = trace.timeline[start_index:end_index]
+    window_initial = (
+        initial_cash if start_index == 0 else trace.timeline[start_index - 1].pnl_snapshot.equity
+    )
+    equity = tuple(event.pnl_snapshot.equity for event in events)
+    returns = daily_returns(equity, window_initial)
+    trade_count = sum(
+        events[0].timestamp <= trade.opened_at <= events[-1].timestamp for trade in trace.trades
+    )
+    traded_notional = sum(
+        execution.traded_notional for event in events for execution in event.execution_events
+    )
+    average_equity = float(np.mean(np.asarray(equity, dtype=np.float64)))
+    status: Literal["OK", "INSUFFICIENT_DATA", "NO_TRADES", "UNDEFINED_SHARPE"]
+    note = None
+    if len(events) < 2:
+        status = "INSUFFICIENT_DATA"
+        note = "Fewer than two bars are available in this window."
+    elif trade_count == 0:
+        status = "NO_TRADES"
+        note = "No trade entry was executed in this window."
+    elif float(np.std(returns, ddof=1)) == 0:
+        status = "UNDEFINED_SHARPE"
+        note = "Return variance is zero; Sharpe is reported as 0."
+    else:
+        status = "OK"
+    return DiagnosticMetrics(
+        status=status,
+        total_return=events[-1].pnl_snapshot.equity / window_initial - 1.0,
+        sharpe=sharpe(returns),
+        max_drawdown=max_drawdown(equity, window_initial),
+        turnover=traded_notional / average_equity if average_equity > 0 else 0.0,
+        trade_count=trade_count,
+        final_equity=events[-1].pnl_snapshot.equity,
+        bar_count=len(events),
+        note=note,
+    )
+
+
+def _native_rerun(
+    record: BacktestRunRecord,
+    *,
+    parameter_updates: dict[str, int | float] | None = None,
+    additional_delay: int = 0,
+) -> OpenRunResult:
+    parameters = {**(record.parameter_values or {}), **(parameter_updates or {})}
+    loaded = (
+        None
+        if record.strategy_source_path is None
+        else load_strategy(record.strategy_source_path, record.strategy_class_name)
+    )
+    return execute_open_run(
+        strategy_id=record.strategy_id,
+        dataset_id=record.dataset_id,
+        parameters=parameters,
+        research_cutoff=record.research_cutoff,
+        additional_execution_delay_bars=additional_delay,
+        strategy_registry=strategy_registry,
+        dataset_registry=dataset_registry,
+        loaded_strategy=loaded,
+    )
+
+
+def _native_trace(result: OpenRunResult) -> BacktestTrace:
+    if result.trace is None:
+        failure = result.failure
+        detail = "before a trace was produced" if failure is None else failure.message
+        raise ValueError(f"Diagnostic rerun failed {detail}")
+    return result.trace
+
+
+def _diagnose_native_run(trace_id: str, record: BacktestRunRecord) -> DiagnosisReport:
+    baseline = record.trace
+    bar_count = len(baseline.timeline)
+    split_index = int(bar_count * 0.7)
+    if split_index < 2 or bar_count - split_index < 1:
+        raise ValueError("A chronological diagnosis requires at least three bars")
+    initial_cash = float((record.parameter_values or {}).get("initial_cash", 100_000.0))
+    train = _trace_window_metrics(baseline, initial_cash, 0, split_index)
+    test = _trace_window_metrics(baseline, initial_cash, split_index, bar_count)
+    definition = get_strategy_definition(record.strategy_id)
+    sensitivity_parameter = (
+        None if definition is None else definition.diagnostic_capabilities.parameter_sensitivity
+    )
+    sensitivity: list[LookbackSensitivityPoint] = []
+    current_value = int((record.parameter_values or {}).get(sensitivity_parameter or "", 0))
+    if sensitivity_parameter is not None and current_value > 0:
+        for candidate in _lookback_candidates(split_index, current_value):
+            rerun = _native_trace(
+                _native_rerun(record, parameter_updates={sensitivity_parameter: candidate})
+            )
+            sensitivity.append(
+                LookbackSensitivityPoint(
+                    lookback=candidate,
+                    is_current=candidate == current_value,
+                    train=_trace_window_metrics(rerun, initial_cash, 0, split_index),
+                    test=_trace_window_metrics(rerun, initial_cash, split_index, bar_count),
+                )
+            )
+    original_fee = float((record.parameter_values or {}).get("fee_bps", 5.0))
+    original_slippage = float((record.parameter_values or {}).get("slippage_bps", 5.0))
+    cost_points: list[CostStressPoint] = []
+    for total_bps in (0.0, 5.0, 10.0, 15.0, 20.0):
+        fee_bps, slippage_bps = _cost_split(total_bps, original_fee, original_slippage)
+        rerun = _native_trace(
+            _native_rerun(
+                record,
+                parameter_updates={"fee_bps": fee_bps, "slippage_bps": slippage_bps},
+            )
+        )
+        cost_points.append(
+            CostStressPoint(
+                total_friction_bps=total_bps,
+                fee_bps=fee_bps,
+                slippage_bps=slippage_bps,
+                metrics=_trace_window_metrics(rerun, initial_cash, 0, bar_count),
+            )
+        )
+    delay_points: list[ExecutionDelayPoint] = []
+    for delay in (0, 1, 2):
+        result = _native_rerun(record, additional_delay=delay)
+        rerun = _native_trace(result)
+        delay_points.append(
+            ExecutionDelayPoint(
+                additional_delay_bars=delay,
+                execution_offset_bars=cast(Literal[1, 2, 3], delay + 1),
+                unfilled_signal_count=result.unfilled_signal_count,
+                metrics=_trace_window_metrics(rerun, initial_cash, 0, bar_count),
+            )
+        )
+    costs = tuple(cost_points)
+    delays = tuple(delay_points)
+    return DiagnosisReport(
+        source_run=DiagnosisSourceRun(
+            trace_id=trace_id,
+            strategy_id=record.strategy_id,
+            dataset_id=record.dataset_id,
+            dataset_name=baseline.metadata.dataset_name,
+            dataset_source=record.dataset_source,
+            bar_count=bar_count,
+            current_lookback=current_value,
+            fee_bps=original_fee,
+            slippage_bps=original_slippage,
+            sensitivity_parameter=sensitivity_parameter,
+        ),
+        train_test=TrainTestSplit(
+            train_start=baseline.timeline[0].timestamp,
+            train_end=baseline.timeline[split_index - 1].timestamp,
+            test_start=baseline.timeline[split_index].timestamp,
+            test_end=baseline.timeline[-1].timestamp,
+            train_bar_count=split_index,
+            test_bar_count=bar_count - split_index,
+            feature_context_policy=(
+                "Test decisions are produced by one chronological full-run pipeline, so each "
+                "test bar may use only earlier bars, including train history."
+            ),
+            pnl_isolation_policy=(
+                "Test metrics start from equity immediately before the first test bar; train "
+                "P&L is not counted in test return."
+            ),
+            train=train,
+            test=test,
+        ),
+        lookback_sensitivity=tuple(sensitivity),
+        cost_stress=costs,
+        execution_delay=delays,
+        observations=_observations(train, test, costs, delays),
+        sensitivity_available=sensitivity_parameter is not None,
+    )
+
+
+def diagnose_run(trace_id: str, record: BacktestRunRecord) -> DiagnosisReport:
+    return _diagnose_native_run(trace_id, record)
+
+
+def diagnose_framework_trace(
+    trace_id: str, run_id: str, trace: BacktestTrace, dataset_source: str
+) -> DiagnosisReport:
+    bar_count = len(trace.timeline)
+    split_index = int(bar_count * 0.7)
+    if split_index < 2 or bar_count - split_index < 1:
+        raise ValueError("A chronological diagnosis requires at least three bars")
+    first = trace.timeline[0]
+    initial_equity = first.pnl_snapshot.equity - first.pnl_snapshot.period_net_pnl
+    train = _trace_window_metrics(trace, initial_equity, 0, split_index)
+    test = _trace_window_metrics(trace, initial_equity, split_index, bar_count)
+    return DiagnosisReport(
+        source_run=DiagnosisSourceRun(
+            trace_id=trace_id,
+            strategy_id=trace.strategy.strategy_id,
+            dataset_id=trace.metadata.dataset_id,
+            dataset_name=trace.metadata.dataset_name,
+            dataset_source=dataset_source,
+            bar_count=bar_count,
+            current_lookback=0,
+            fee_bps=0.0,
+            slippage_bps=0.0,
+            sensitivity_parameter=None,
+        ),
+        train_test=TrainTestSplit(
+            train_start=trace.timeline[0].timestamp,
+            train_end=trace.timeline[split_index - 1].timestamp,
+            test_start=trace.timeline[split_index].timestamp,
+            test_end=trace.timeline[-1].timestamp,
+            train_bar_count=split_index,
+            test_bar_count=bar_count - split_index,
+            feature_context_policy=(
+                "Descriptive chronological split of the persisted framework equity timeline; "
+                "point-in-time strategy provenance is not asserted."
+            ),
+            pnl_isolation_policy=(
+                "Test metrics start from persisted equity immediately before the first test bar."
+            ),
+            train=train,
+            test=test,
+        ),
+        lookback_sensitivity=(),
+        cost_stress=(),
+        execution_delay=(),
+        observations=(
+            DiagnosisObservation(
+                observation_id=f"framework-diagnosis-{run_id}",
+                title="Framework diagnostics are capability-limited",
+                detail=(
+                    "Train/test uses persisted equity. Parameter sensitivity, cost stress, and "
+                    "execution delay require adapter rerun support and are not inferred."
+                ),
+                evidence=(
+                    f"Runtime: {trace.metadata.runtime.framework_name}; "
+                    f"Trace Fidelity: {trace.metadata.runtime.trace_fidelity}."
+                ),
+            ),
+        ),
+        sensitivity_available=False,
+        support=DiagnosticSupportSet(
+            train_test="AVAILABLE",
+            parameter_sensitivity="NOT_SUPPORTED",
+            cost_stress="NOT_SUPPORTED",
+            execution_delay="NOT_SUPPORTED",
+        ),
+    )
