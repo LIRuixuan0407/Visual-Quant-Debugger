@@ -41,6 +41,10 @@ RUN uv sync --frozen --no-dev --extra frameworks --no-install-project
 COPY backend/ ./
 RUN uv sync --frozen --no-dev --extra frameworks
 
+# Runtime-backed built-in datasets live at /app/sample_data.
+COPY sample_data/ /app/sample_data/
+RUN test -f /app/sample_data/pairs_daily.csv
+
 COPY --from=frontend-build /build/frontend/dist /app/frontend/dist
 
 RUN mkdir -p /data
