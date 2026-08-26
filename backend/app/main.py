@@ -1,8 +1,12 @@
+import os
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.api import router as replay_router
 from app.paper import paper_store
@@ -41,3 +45,31 @@ app.include_router(replay_router)
 @app.get("/health", tags=["system"])
 def health() -> dict[str, str]:
     return {"status": "ok", "service": "visual-quant-debugger-backend"}
+
+
+frontend_dist = Path(
+    os.environ.get(
+        "VQD_FRONTEND_DIST",
+        Path(__file__).resolve().parents[2] / "frontend" / "dist",
+    )
+).resolve()
+
+if frontend_dist.is_dir():
+    assets_dir = frontend_dist / "assets"
+    if assets_dir.is_dir():
+        app.mount(
+            "/assets",
+            StaticFiles(directory=assets_dir),
+            name="frontend-assets",
+        )
+
+    @app.get("/{path:path}", include_in_schema=False)
+    def frontend_spa(path: str) -> FileResponse:
+        if path == "api" or path.startswith("api/"):
+            raise HTTPException(status_code=404)
+
+        requested = (frontend_dist / path).resolve()
+        if path and requested.is_relative_to(frontend_dist) and requested.is_file():
+            return FileResponse(requested)
+
+        return FileResponse(frontend_dist / "index.html")
