@@ -20,6 +20,47 @@ const zh: Record<string, string> = {
   'Correlation Matrix': '相关矩阵', 'Factor Values': '因子值', 'Rank Correlation': '秩相关', 'Factor Return Correlation': '因子收益相关', 'Rolling Correlation': '滚动相关', 'Pair and semantic': '因子对与语义',
   Redundancy: '冗余度', Overlap: '重叠率', 'Top Quantile Overlap & Jaccard': '顶部组合重叠与 Jaccard', Pair: '因子对', Intersection: '交集数量', Union: '并集数量', Date: '日期',
   'Incremental Information': '增量信息', 'Base + Added': '基础因子 + 新增因子', 'Portfolio effect': '组合效果关联', 'Factor Cluster': '因子聚类',
+  'Multi-factor portfolio research': '多因子组合研究', 'Stability research': '稳定性研究', 'Factor relationship research': '因子关系研究',
+  'Hypothesis workbench': '研究假设工作台', 'Hypothesis · Evidence · Lineage': '研究假设 · 证据 · 追溯链路',
+  'Strategy Discovery': '策略发现',
+  'Turn existing research evidence into explicit, revisioned hypotheses without searching for a historical winner.': '把已有研究证据整理成明确、可修订的研究假设，而不是搜索历史表现最好的赢家。',
+  Hypotheses: '研究假设', 'No hypotheses yet.': '还没有研究假设。',
+  'Research hypothesis': '研究假设', 'Create from existing Factor evidence': '基于已有因子证据创建', 'No mass search': '不进行批量搜索',
+  'Research Ideas': '研究想法', 'RESEARCH IDEA': '研究想法', Title: '标题', 'Holding horizon': '持有周期', 'Rebalance idea': '调仓设想',
+  '20 trading days': '20 个交易日', 'Long-only': '只做多', 'No automatic optimization': '不进行自动优化',
+  'Expected relationship': '预期关系', 'Risk assumptions': '风险假设',
+  'Discovery stores the hypothesis first. Candidate construction is a separate deterministic backend action.': '系统会先保存研究假设；候选策略构建是之后独立执行的确定性后端步骤。',
+  'Create Hypothesis': '创建研究假设', 'Create Candidate': '创建候选策略', 'Run Validation': '运行验证',
+  'Holdout remains sealed until you explicitly reveal it. The system does not use it to modify this hypothesis.': '留出集会一直保持封存，直到你主动揭示；系统不会用留出集结果反过来修改这个研究假设。',
+  'Discovery candidate did not produce a replayable Trace.': '候选策略运行后没有生成可回放的追踪记录。',
+  'Backtest & Replay': '回测并回放', Experiment: '实验', Evidence: '证据', Supporting: '支持证据', Contradicting: '反对证据', 'Neutral / insufficient': '中性 / 证据不足',
+  'No evidence in this category.': '这一类目前没有证据。', 'Support + contradiction': '支持证据 + 反对证据', items: '项证据',
+  'Fixed candidate template': '固定候选模板', 'Long only': '只做多', Combine: '组合', Top: '前',
+  Lineage: '追溯链路', 'Why this strategy exists': '这个策略为什么存在', Factors: '因子', Relationships: '因子关系', Portfolio: '组合', 'Runs / Traces': '运行 / 追踪',
+  'known at creation': '创建时已知', 'Create a new revision': '创建新修订版', 'Immutable experiment': '不可变实验', 'Never mutate in place': '不原地修改',
+  'If you change the hypothesis after seeing Validation or Holdout, create a new revision. The current experiment remains unchanged in the Research Ledger.': '如果在看到验证集或留出集后修改研究假设，请创建新的修订版；当前实验会原样保留在研究记录中。',
+  'New holding horizon': '新的持有周期', 'New rebalance': '新的调仓频率', 'Revision reason': '修订原因', 'Create Revision': '创建修订版', Unchanged: '保持不变',
+  'Optional AI boundary': '可选 AI 能力边界',
+  'Optional AI may summarize already revealed evidence, propose testable hypotheses, and explain Factor relationships. It cannot calculate quantitative metrics, change backend results, read sealed Holdout evidence, optimize, run unbounded experiments, or claim alpha.': '可选 AI 只能总结已经揭示的证据、提出可测试的研究假设并解释因子关系；不能计算量化指标、修改后端结果、读取仍封存的留出集、执行优化或无限实验，也不能宣称发现 Alpha。',
+  'Investigate low-redundancy Factor combination': '研究低冗余因子组合',
+  'Both Factors have positive Research Rank IC, and the selected relationship study does not classify them as HIGH REDUNDANCY. The deterministic Rank Average comparison increases both Rank IC and Q5−Q1. Investigate the combination as a new hypothesis; this is not a recommendation.': '两个因子的研究阶段 Rank IC 都为正，且所选因子关系研究未将它们判定为高冗余。确定性的秩均值组合同时提高了 Rank IC 与 Q5−Q1。可以把这个组合作为新的研究假设继续验证；这不是策略推荐。',
+  'Direction-adjusted percentile Rank Average comparison from Factor Relationship research; association only, not causality.': '来自因子关系研究的方向调整百分位秩均值比较；这里只表示关联，不表示因果。',
+  'Fixed-definition rolling stability evidence. Discovery does not optimize windows or parameters from this result.': '固定定义的滚动稳定性证据。策略发现不会根据这个结果优化窗口或参数。',
+  'Native Portfolio Lab result using the fixed hypothesis template and the real Execution Engine cost model.': '使用固定研究假设模板和真实执行引擎成本模型得到的原生组合实验室结果。',
+  'High absolute cross-sectional rank correlation and high internal top-quantile portfolio overlap. Review the pair; nothing is removed or reweighted.': '横截面秩相关绝对值较高，同时内部顶部组合重叠较高。建议检查这一对因子；系统不会自动删除或重加权。',
+  'The pair shares either meaningful rank association or internal portfolio overlap, but does not satisfy both high-redundancy thresholds.': '这一对因子存在较明显的秩关联或内部组合重叠，但没有同时达到两项高冗余阈值。',
+  'The pair stays below the configured rank-correlation and internal-overlap redundancy rules.': '这一对因子低于当前配置的秩相关与内部重叠冗余规则。',
+  FACTOR: '因子', RELATIONSHIP: '因子关系', WALK_FORWARD: '滚动前向', PORTFOLIO: '组合',
+  SUPPORTING: '支持', CONTRADICTING: '反对', NEUTRAL: '中性', HIGH_REDUNDANCY: '高冗余', RELATED: '相关', LOW_REDUNDANCY: '低冗余',
+  DRAFT: '草稿', RESEARCHED: '已完成研究', VALIDATED: '已完成验证', HOLDOUT_REVEALED: '已揭示留出集', STRATEGY_CREATED: '已创建策略',
+  SUPPORTED: '得到支持', NOT_SUPPORTED: '未得到支持', INSUFFICIENT_EVIDENCE: '证据不足',
+  EQUAL_WEIGHT: '等权', RANK_AVERAGE: '秩均值', TOP_PERCENT: '前百分比', SCORE_WEIGHTED: '按分数加权',
+  DAILY: '每日', WEEKLY: '每周', MONTHLY: '每月',
+  'rank ic': 'Rank IC', 'q5 minus q1': 'Q5−Q1', coverage: '覆盖率', monotonic: '单调性',
+  'rank correlation': '秩相关', 'top quantile overlap': '顶部组合重叠', 'rank ic delta': 'Rank IC 增量', 'spread delta': '价差增量', 'coverage delta': '覆盖率增量', 'turnover delta': '换手率增量', 'portfolio effect': '组合效果关联',
+  'positive ic window ratio': 'IC 为正窗口占比', 'factor sign consistency': '因子方向一致性', 'quantile monotonicity stability': '分位单调稳定性', 'turnover stability': '换手稳定性', 'rank ic mean': 'Rank IC 均值', 'strategy return mean': '策略收益均值',
+  'gross return': '毛收益', 'net return': '净收益', 'rebalance count': '调仓次数',
+  'Hover the chart or use left and right arrow keys to inspect each lookback.': '在图表上移动鼠标，或使用左右方向键逐个查看回看窗口。',
   'High-redundancy warning': '高冗余警告', 'Portfolio Lab does not remove, reweight, or optimize these factors.': '组合实验室不会自动删除、重加权或优化这些因子。',
   'Positive IC windows': 'IC 为正窗口占比', 'Rank IC std': 'Rank IC 标准差', 'Factor sign consistency': '因子方向一致性', 'Quantile monotonicity stability': '分位单调稳定性', 'Turnover stability': '换手稳定性', 'Strategy return mean': '策略收益均值', 'Strategy return range': '策略收益区间',
   'No deterministic degradation found': '未发现确定性退化点', 'All forward windows remained inside the configured deterministic degradation rules.': '所有前向窗口均未触发已配置的确定性退化规则。', 'Open Factor Lab': '打开因子实验室',
@@ -582,6 +623,16 @@ function translateDynamic(text: string): string {
   if (text === 'CSV column names must be unique') return 'CSV 列名必须唯一。'
   if (text === 'CSV must contain at least one data row') return 'CSV 至少需要一行数据。'
   if (text === 'Naive timestamps require an explicit IANA timezone before import') return '无时区时间戳必须在导入前明确指定 IANA 时区。'
+  const discoveryFactorEvidence = text.match(/^(\d+)D Factor evidence known when this hypothesis revision was created, from the saved (RESEARCH|VALIDATION|HOLDOUT) evaluation; no metric is recomputed in Discovery\.$/)
+  if (discoveryFactorEvidence) return `${discoveryFactorEvidence[1]} 日因子证据，来自创建该研究假设修订版时已经保存的${translateDynamic(discoveryFactorEvidence[2])}评估；策略发现不会重新计算这些指标。`
+  const discoveryStageLabel = text.match(/^(.+) · (RESEARCH|VALIDATION|HOLDOUT)$/)
+  if (discoveryStageLabel) return `${translateDynamic(discoveryStageLabel[1])} · ${translateDynamic(discoveryStageLabel[2])}`
+  const discoveryRedundancyLabel = text.match(/^(HIGH REDUNDANCY|RELATED|LOW REDUNDANCY) · Factor pair$/)
+  if (discoveryRedundancyLabel) return `${translateDynamic(discoveryRedundancyLabel[1].replaceAll(' ', '_'))} · 因子对`
+  const discoveryWalkForwardLabel = text.match(/^Walk-Forward Stability · (.+)$/)
+  if (discoveryWalkForwardLabel) return `滚动前向稳定性 · ${translateDynamic(discoveryWalkForwardLabel[1])}`
+  const discoveryPortfolioLabel = text.match(/^Candidate Portfolio · (RESEARCH|VALIDATION|HOLDOUT)$/)
+  if (discoveryPortfolioLabel) return `候选组合 · ${translateDynamic(discoveryPortfolioLabel[1])}`
   const warmup = text.match(/^Need two complete (\d+)-bar windows$/)
   if (warmup) return `需要两个完整的 ${warmup[1]} 根 K 线窗口`
   const lastRun = text.match(/^Last run · (.+)$/)

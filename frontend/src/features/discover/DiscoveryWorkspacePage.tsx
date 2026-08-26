@@ -36,15 +36,16 @@ function EvidenceColumn({
   stance: HypothesisEvidence['stance']
   evidence: HypothesisEvidence[]
 }) {
+  const { tr } = useI18n()
   const rows = evidence.filter((item) => item.stance === stance)
   return <section className={`discovery-evidence-column ${stance.toLowerCase()}`}>
     <header><strong>{title}</strong><span>{rows.length}</span></header>
-    {rows.length === 0 && <p className="empty-copy">No evidence in this category.</p>}
+    {rows.length === 0 && <p className="empty-copy">{tr('No evidence in this category.')}</p>}
     {rows.map((item) => <article key={item.evidence_id}>
-      <div><span>{item.source_type}</span><code>{item.stage}</code></div>
-      <strong>{item.label}</strong>
-      <p>{item.detail}</p>
-      <dl>{Object.entries(item.metrics).map(([key, value]) => <div key={key}><dt>{key.replaceAll('_', ' ')}</dt><dd>{metricValue(value)}</dd></div>)}</dl>
+      <div><span>{tr(item.source_type)}</span><code>{tr(item.stage)}</code></div>
+      <strong>{tr(item.label)}</strong>
+      <p>{tr(item.detail)}</p>
+      <dl>{Object.entries(item.metrics).map(([key, value]) => <div key={key}><dt>{tr(key.replaceAll('_', ' '))}</dt><dd>{typeof value === 'boolean' ? tr(String(value).toUpperCase()) : metricValue(value)}</dd></div>)}</dl>
     </article>)}
   </section>
 }
@@ -67,9 +68,9 @@ export default function DiscoveryWorkspacePage({
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [expectedRelationship, setExpectedRelationship] = useState('')
-  const [holdingHorizon, setHoldingHorizon] = useState('20 trading days')
+  const [holdingHorizon, setHoldingHorizon] = useState(() => tr('20 trading days'))
   const [rebalance, setRebalance] = useState<RebalanceRule>('MONTHLY')
-  const [riskAssumptions, setRiskAssumptions] = useState('Long-only\nNo automatic optimization')
+  const [riskAssumptions, setRiskAssumptions] = useState(() => `${tr('Long-only')}\n${tr('No automatic optimization')}`)
   const [revisionReason, setRevisionReason] = useState('')
   const [revisionHorizon, setRevisionHorizon] = useState('')
   const [revisionRebalance, setRevisionRebalance] = useState<RebalanceRule | ''>('')
@@ -119,8 +120,8 @@ export default function DiscoveryWorkspacePage({
 
   function applySuggestion(suggestion: DiscoverySuggestion) {
     setSelected([...suggestion.factor_research_ids])
-    setTitle('Investigate low-redundancy Factor combination')
-    setExpectedRelationship(suggestion.rationale)
+    setTitle(tr('Investigate low-redundancy Factor combination'))
+    setExpectedRelationship(tr(suggestion.rationale))
   }
 
   async function createNewHypothesis() {
@@ -204,8 +205,8 @@ export default function DiscoveryWorkspacePage({
 
   return <main className="discover-shell research-workbench discovery-workspace">
     <section className="discover-title">
-      <div><span className="section-kicker">PHASE 23 · STRATEGY DISCOVERY</span><h1>{tr('Strategy Discovery')}</h1><p>{tr('Turn existing research evidence into explicit, revisioned hypotheses without searching for a historical winner.')}</p></div>
-      <span className="bias-tag">HYPOTHESIS · EVIDENCE · LINEAGE</span>
+      <div><span className="section-kicker">{tr('Hypothesis workbench')}</span><h1>{tr('Strategy Discovery')}</h1><p>{tr('Turn existing research evidence into explicit, revisioned hypotheses without searching for a historical winner.')}</p></div>
+      <span className="bias-tag">{tr('Hypothesis · Evidence · Lineage')}</span>
     </section>
 
     {error && <section className="workspace-panel research-error" role="alert">{tr(error)}</section>}
@@ -215,19 +216,19 @@ export default function DiscoveryWorkspacePage({
         <div className="section-heading"><h2>{tr('Hypotheses')}</h2><span>{records.length}</span></div>
         {records.length === 0 && <p className="empty-copy">{tr('No hypotheses yet.')}</p>}
         {records.map((item) => <button key={item.hypothesis_id} className={record?.hypothesis_id === item.hypothesis_id ? 'selected' : ''} onClick={() => selectRecord(item)}>
-          <strong>{item.title}</strong><span>rev {item.revision} · {item.status}</span><small>{item.outcome.replaceAll('_', ' ')}</small>
+          <strong>{item.title}</strong><span>{tr('Revision')} {item.revision} · {tr(item.status)}</span><small>{tr(item.outcome).replaceAll('_', ' ')}</small>
         </button>)}
       </aside>
 
       <div className="discovery-stack">
         <section className="workspace-panel discovery-builder">
-          <div className="section-heading"><div><span className="section-kicker">RESEARCH HYPOTHESIS</span><h2>{tr('Create from existing Factor evidence')}</h2></div><span>NO MASS SEARCH</span></div>
-          {suggestions.length > 0 && <div className="discovery-suggestions"><strong>{tr('Research Ideas')}</strong>{suggestions.map((item) => <button key={`${item.source_relationship_id}:${item.factor_research_ids.join(':')}`} onClick={() => applySuggestion(item)}><span>{item.label}</span><p>{item.rationale}</p><code>{shortId(item.source_relationship_id)}</code></button>)}</div>}
-          <div className="discovery-factor-picker">{factors.map((item) => <label key={item.research_id} className={selected.includes(item.research_id) ? 'selected' : ''}><input type="checkbox" checked={selected.includes(item.research_id)} onChange={() => toggleFactor(item.research_id)} /><span><strong>{tr(item.factor_id)}</strong><small>{item.name}</small></span><code>{item.revealed_stage}</code></label>)}</div>
+          <div className="section-heading"><div><span className="section-kicker">{tr('Research hypothesis')}</span><h2>{tr('Create from existing Factor evidence')}</h2></div><span>{tr('No mass search')}</span></div>
+          {suggestions.length > 0 && <div className="discovery-suggestions"><strong>{tr('Research Ideas')}</strong>{suggestions.map((item) => <button key={`${item.source_relationship_id}:${item.factor_research_ids.join(':')}`} onClick={() => applySuggestion(item)}><span>{tr(item.label)}</span><p>{tr(item.rationale)}</p><code>{shortId(item.source_relationship_id)}</code></button>)}</div>}
+          <div className="discovery-factor-picker">{factors.map((item) => <label key={item.research_id} className={selected.includes(item.research_id) ? 'selected' : ''}><input type="checkbox" checked={selected.includes(item.research_id)} onChange={() => toggleFactor(item.research_id)} /><span><strong>{tr(item.factor_id)}</strong><small>{item.name}</small></span><code>{tr(item.revealed_stage)}</code></label>)}</div>
           <div className="discovery-form-grid">
             <label><span>{tr('Title')}</span><input value={title} onChange={(event) => setTitle(event.target.value)} /></label>
             <label><span>{tr('Holding horizon')}</span><input value={holdingHorizon} onChange={(event) => setHoldingHorizon(event.target.value)} /></label>
-            <label><span>{tr('Rebalance idea')}</span><select value={rebalance} onChange={(event) => setRebalance(event.target.value as RebalanceRule)}><option value="DAILY">DAILY</option><option value="WEEKLY">WEEKLY</option><option value="MONTHLY">MONTHLY</option></select></label>
+            <label><span>{tr('Rebalance idea')}</span><select value={rebalance} onChange={(event) => setRebalance(event.target.value as RebalanceRule)}><option value="DAILY">{tr('DAILY')}</option><option value="WEEKLY">{tr('WEEKLY')}</option><option value="MONTHLY">{tr('MONTHLY')}</option></select></label>
             <label className="wide"><span>{tr('Description')}</span><textarea value={description} onChange={(event) => setDescription(event.target.value)} /></label>
             <label className="wide"><span>{tr('Expected relationship')}</span><textarea value={expectedRelationship} onChange={(event) => setExpectedRelationship(event.target.value)} /></label>
             <label className="wide"><span>{tr('Risk assumptions')}</span><textarea value={riskAssumptions} onChange={(event) => setRiskAssumptions(event.target.value)} /></label>
@@ -238,15 +239,15 @@ export default function DiscoveryWorkspacePage({
 
         {record && <>
           <section className="workspace-panel discovery-summary">
-            <div className="section-heading"><div><span className="section-kicker">{record.status} · REV {record.revision}</span><h2>{record.title}</h2></div><span className={`discovery-outcome ${record.outcome.toLowerCase()}`}>{record.outcome.replaceAll('_', ' ')}</span></div>
+            <div className="section-heading"><div><span className="section-kicker">{tr(record.status)} · {tr('Revision')} {record.revision}</span><h2>{record.title}</h2></div><span className={`discovery-outcome ${record.outcome.toLowerCase()}`}>{tr(record.outcome).replaceAll('_', ' ')}</span></div>
             <p>{record.description}</p>
-            <div className="discovery-identity"><code>{record.hypothesis_id}</code><span>{record.lineage.factor_ids.join(' · ')}</span><b>{record.created_with_known_stage} known at creation</b></div>
+            <div className="discovery-identity"><code>{record.hypothesis_id}</code><span>{record.lineage.factor_ids.join(' · ')}</span><b>{tr(record.created_with_known_stage)} · {tr('known at creation')}</b></div>
             <blockquote>{record.expected_relationship}</blockquote>
           </section>
 
           <section className="workspace-panel discovery-experiment">
-            <div className="section-heading"><div><span className="section-kicker">FIXED CANDIDATE TEMPLATE</span><h2>{tr('Experiment')}</h2></div><span>LONG ONLY</span></div>
-            <div className="candidate-contract"><span>Combine <strong>{record.candidate.combination}</strong></span><span>Select <strong>TOP {record.candidate.top_percent}%</strong></span><span>Weight <strong>{record.candidate.weighting}</strong></span><span>Rebalance <strong>{record.candidate.rebalance}</strong></span></div>
+            <div className="section-heading"><div><span className="section-kicker">{tr('Fixed candidate template')}</span><h2>{tr('Experiment')}</h2></div><span>{tr('Long only')}</span></div>
+            <div className="candidate-contract"><span>{tr('Combine')} <strong>{tr(record.candidate.combination)}</strong></span><span>{tr('Select')} <strong>{tr('Top')} {record.candidate.top_percent}%</strong></span><span>{tr('Weight')} <strong>{tr(record.candidate.weighting)}</strong></span><span>{tr('Rebalance')} <strong>{tr(record.candidate.rebalance)}</strong></span></div>
             <div className="discovery-actions">
               {record.status === 'DRAFT' && <button className="primary-button" disabled={busy} onClick={() => void act('candidate')}>{tr('Create Candidate')}</button>}
               {record.status === 'RESEARCHED' && <button className="primary-button" disabled={busy} onClick={() => void act('validate')}>{tr('Run Validation')}</button>}
@@ -258,7 +259,7 @@ export default function DiscoveryWorkspacePage({
           </section>
 
           <section className="workspace-panel discovery-evidence">
-            <div className="section-heading"><div><span className="section-kicker">SUPPORT + CONTRADICTION</span><h2>{tr('Evidence')}</h2></div><span>{record.evidence.length} items</span></div>
+            <div className="section-heading"><div><span className="section-kicker">{tr('Support + contradiction')}</span><h2>{tr('Evidence')}</h2></div><span>{record.evidence.length} {tr('items')}</span></div>
             <div className="discovery-evidence-grid">
               <EvidenceColumn title={tr('Supporting')} stance="SUPPORTING" evidence={record.evidence} />
               <EvidenceColumn title={tr('Contradicting')} stance="CONTRADICTING" evidence={record.evidence} />
@@ -267,18 +268,18 @@ export default function DiscoveryWorkspacePage({
           </section>
 
           <section className="workspace-panel discovery-lineage">
-            <div className="section-heading"><div><span className="section-kicker">WHY THIS STRATEGY EXISTS</span><h2>{tr('Lineage')}</h2></div><span>{record.family_id}</span></div>
-            <div className="lineage-chain"><article><span>Factors</span><code>{record.lineage.factor_ids.join(' · ')}</code><small>{record.lineage.factor_research_ids.map(shortId).join(' · ')}</small></article><i>→</i><article><span>Relationships</span><code>{record.lineage.relationship_ids.length || '—'}</code><small>{record.lineage.relationship_ids.map(shortId).join(' · ') || 'None'}</small></article><i>→</i><article><span>Walk-Forward</span><code>{record.lineage.walk_forward_ids.length || '—'}</code><small>{record.lineage.walk_forward_ids.map(shortId).join(' · ') || 'None'}</small></article><i>→</i><article><span>Portfolio</span><code>{shortId(record.lineage.portfolio_research_id)}</code></article><i>→</i><article><span>Strategy</span><code>{shortId(record.lineage.strategy_id)}</code></article><i>→</i><article><span>Runs / Traces</span><code>{record.lineage.run_ids.length} / {record.lineage.trace_ids.length}</code></article></div>
+            <div className="section-heading"><div><span className="section-kicker">{tr('Why this strategy exists')}</span><h2>{tr('Lineage')}</h2></div><span>{record.family_id}</span></div>
+            <div className="lineage-chain"><article><span>{tr('Factors')}</span><code>{record.lineage.factor_ids.join(' · ')}</code><small>{record.lineage.factor_research_ids.map(shortId).join(' · ')}</small></article><i>→</i><article><span>{tr('Relationships')}</span><code>{record.lineage.relationship_ids.length || '—'}</code><small>{record.lineage.relationship_ids.map(shortId).join(' · ') || tr('None')}</small></article><i>→</i><article><span>{tr('Walk-Forward')}</span><code>{record.lineage.walk_forward_ids.length || '—'}</code><small>{record.lineage.walk_forward_ids.map(shortId).join(' · ') || tr('None')}</small></article><i>→</i><article><span>{tr('Portfolio')}</span><code>{shortId(record.lineage.portfolio_research_id)}</code></article><i>→</i><article><span>{tr('Strategy')}</span><code>{shortId(record.lineage.strategy_id)}</code></article><i>→</i><article><span>{tr('Runs / Traces')}</span><code>{record.lineage.run_ids.length} / {record.lineage.trace_ids.length}</code></article></div>
           </section>
 
           <section className="workspace-panel discovery-revision">
-            <div className="section-heading"><div><span className="section-kicker">IMMUTABLE EXPERIMENT</span><h2>{tr('Create a new revision')}</h2></div><span>NEVER MUTATE IN PLACE</span></div>
+            <div className="section-heading"><div><span className="section-kicker">{tr('Immutable experiment')}</span><h2>{tr('Create a new revision')}</h2></div><span>{tr('Never mutate in place')}</span></div>
             <p>{tr('If you change the hypothesis after seeing Validation or Holdout, create a new revision. The current experiment remains unchanged in the Research Ledger.')}</p>
-            <div className="revision-grid"><label><span>{tr('New holding horizon')}</span><input placeholder={record.holding_horizon} value={revisionHorizon} onChange={(event) => setRevisionHorizon(event.target.value)} /></label><label><span>{tr('New rebalance')}</span><select value={revisionRebalance} onChange={(event) => setRevisionRebalance(event.target.value as RebalanceRule | '')}><option value="">Unchanged</option><option value="DAILY">DAILY</option><option value="WEEKLY">WEEKLY</option><option value="MONTHLY">MONTHLY</option></select></label><label className="wide"><span>{tr('Revision reason')}</span><input value={revisionReason} onChange={(event) => setRevisionReason(event.target.value)} /></label></div>
+            <div className="revision-grid"><label><span>{tr('New holding horizon')}</span><input placeholder={tr(record.holding_horizon)} value={revisionHorizon} onChange={(event) => setRevisionHorizon(event.target.value)} /></label><label><span>{tr('New rebalance')}</span><select value={revisionRebalance} onChange={(event) => setRevisionRebalance(event.target.value as RebalanceRule | '')}><option value="">{tr('Unchanged')}</option><option value="DAILY">{tr('DAILY')}</option><option value="WEEKLY">{tr('WEEKLY')}</option><option value="MONTHLY">{tr('MONTHLY')}</option></select></label><label className="wide"><span>{tr('Revision reason')}</span><input value={revisionReason} onChange={(event) => setRevisionReason(event.target.value)} /></label></div>
             <button disabled={busy || !revisionReason.trim()} onClick={() => void createRevision()}>{tr('Create Revision')}</button>
           </section>
 
-          <section className="workspace-panel discovery-ai-boundary"><strong>{tr('Optional AI boundary')}</strong><p>{record.ai_boundary}</p></section>
+          <section className="workspace-panel discovery-ai-boundary"><strong>{tr('Optional AI boundary')}</strong><p>{tr(record.ai_boundary)}</p></section>
         </>}
       </div>
     </section>

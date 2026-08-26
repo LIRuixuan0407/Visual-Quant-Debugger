@@ -237,7 +237,7 @@ export default function PortfolioLabPage({
   return <main className="discover-shell research-workbench portfolio-lab">
     <section className="discover-title">
       <div>
-        <span className="section-kicker">PHASE 20 · MULTI-FACTOR</span>
+        <span className="section-kicker">{tr('Multi-factor portfolio research')}</span>
         <h1>{tr('Portfolio Lab')}</h1>
         <p>{tr('Combine existing Factor evidence into a transparent long-only Native VQD Strategy.')}</p>
       </div>

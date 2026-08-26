@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent, type MouseEvent } from 'react'
 
 import { createDiagnosis } from '../../api/diagnostics'
 import { useI18n } from '../../i18n/I18nProvider'
 import type { DiagnosisReport, DiagnosticMetrics } from '../../types/diagnostics'
+import { nearestChartIndex, pointerToViewBoxX } from '../discover/chartInteraction'
 import { formatCurrency } from '../replay/utils/format'
 
 function percent(value: number) { return `${(value * 100).toFixed(2)}%` }
@@ -12,6 +13,8 @@ function sharpeDisplay(metrics: DiagnosticMetrics) { return metrics.status === '
 function SensitivityChart({ report }: { report: DiagnosisReport }) {
   const { tr } = useI18n()
   const points = report.lookback_sensitivity
+  const currentIndex = Math.max(points.findIndex((point) => point.is_current), 0)
+  const [activeIndex, setActiveIndex] = useState(currentIndex)
   const chart = useMemo(() => {
     const validValues = points.flatMap((point) => [point.train, point.test]).filter((item) => item.status === 'OK').map((item) => item.sharpe)
     const values = validValues.length ? validValues : [0]
@@ -21,16 +24,47 @@ function SensitivityChart({ report }: { report: DiagnosisReport }) {
     const line = (key: 'train' | 'test') => points.map((point, index) => ({ point, index })).filter(({ point }) => point[key].status === 'OK').map(({ point, index }) => `${x(index)},${y(point[key].sharpe)}`).join(' ')
     return { train: line('train'), test: line('test'), x, y }
   }, [points])
-  return <svg className="sensitivity-chart" viewBox="0 0 920 220" role="img" aria-label={tr('Train and test Sharpe across lookback candidates')}>
-    <line className="diagnostic-axis" x1="48" x2="872" y1="174" y2="174" />
-    <polyline className="train-line" points={chart.train} /><polyline className="test-line" points={chart.test} />
-    {points.map((point, index) => <g key={point.lookback}>
-      {point.is_current && <line className="current-candidate" x1={chart.x(index)} x2={chart.x(index)} y1="28" y2="184" />}
-      {point.train.status === 'OK' && <circle className="train-point" cx={chart.x(index)} cy={chart.y(point.train.sharpe)} r="4" />}
-      {point.test.status === 'OK' && <circle className="test-point" cx={chart.x(index)} cy={chart.y(point.test.sharpe)} r="4" />}
-      <text x={chart.x(index)} y="204" textAnchor="middle">{point.lookback}</text>
-    </g>)}
-  </svg>
+  const safeIndex = Math.min(Math.max(activeIndex, 0), Math.max(points.length - 1, 0))
+  const active = points[safeIndex]
+  const activeX = chart.x(safeIndex)
+  const tooltipWidth = 190
+  const tooltipX = activeX > 460 ? activeX - tooltipWidth - 12 : activeX + 12
+
+  function handleHover(event: MouseEvent<SVGSVGElement>) {
+    const pointerX = pointerToViewBoxX(event.clientX, event.currentTarget.getBoundingClientRect(), 920, 220)
+    setActiveIndex(nearestChartIndex(pointerX, points.length, 48, 872))
+  }
+
+  function handleKeyDown(event: KeyboardEvent<SVGSVGElement>) {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+    event.preventDefault()
+    if (event.key === 'Home') setActiveIndex(0)
+    else if (event.key === 'End') setActiveIndex(points.length - 1)
+    else setActiveIndex((current) => Math.min(points.length - 1, Math.max(0, current + (event.key === 'ArrowRight' ? 1 : -1))))
+  }
+
+  return <>
+    <svg className="sensitivity-chart interactive-research-chart" viewBox="0 0 920 220" role="img" tabIndex={0} aria-label={tr('Train and test Sharpe across lookback candidates')} onMouseMove={handleHover} onKeyDown={handleKeyDown}>
+      <line className="diagnostic-axis" x1="48" x2="872" y1="174" y2="174" />
+      <polyline className="train-line" points={chart.train} /><polyline className="test-line" points={chart.test} />
+      {points.map((point, index) => <g key={point.lookback}>
+        {point.is_current && <line className="current-candidate" x1={chart.x(index)} x2={chart.x(index)} y1="28" y2="184" />}
+        {point.train.status === 'OK' && <circle className="train-point" cx={chart.x(index)} cy={chart.y(point.train.sharpe)} r={safeIndex === index ? 6 : 4} />}
+        {point.test.status === 'OK' && <circle className="test-point" cx={chart.x(index)} cy={chart.y(point.test.sharpe)} r={safeIndex === index ? 6 : 4} />}
+        <text x={chart.x(index)} y="204" textAnchor="middle">{point.lookback}</text>
+      </g>)}
+      {active && <>
+        <line className="research-hover-guide" x1={activeX} x2={activeX} y1="28" y2="184" />
+        <g className="research-chart-tooltip" transform={`translate(${tooltipX} 28)`}>
+          <rect width={tooltipWidth} height="72" rx="5" />
+          <text className="tooltip-date" x="10" y="18">{tr('Lookback')} {active.lookback}{active.is_current ? ` · ${tr('current')}` : ''}</text>
+          <text x="10" y="41">{tr('Train Sharpe')}</text><text className="tooltip-value" x={tooltipWidth - 10} y="41" textAnchor="end">{sharpeDisplay(active.train)}</text>
+          <text x="10" y="61">{tr('Test Sharpe')}</text><text className="tooltip-value" x={tooltipWidth - 10} y="61" textAnchor="end">{sharpeDisplay(active.test)}</text>
+        </g>
+      </>}
+    </svg>
+    <p className="empty-copy">{tr('Hover the chart or use left and right arrow keys to inspect each lookback.')}</p>
+  </>
 }
 
 function DiagnoseContent({ report, onOpenReplay }: { report: DiagnosisReport; onOpenReplay: () => void }) {

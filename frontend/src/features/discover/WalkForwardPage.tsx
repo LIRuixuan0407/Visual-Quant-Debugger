@@ -112,7 +112,7 @@ export default function WalkForwardPage({
 
   return <main className="discover-shell research-workbench walk-forward-lab">
     <section className="discover-title">
-      <div><span className="section-kicker">PHASE 21 · STABILITY</span><h1>{tr('Walk-Forward')}</h1><p>{tr('Measure factor and strategy stability across rolling Research, Validation, and Forward windows.')}</p></div>
+      <div><span className="section-kicker">{tr('Stability research')}</span><h1>{tr('Walk-Forward')}</h1><p>{tr('Measure factor and strategy stability across rolling Research, Validation, and Forward windows.')}</p></div>
       <span className="bias-tag">PIT SAFE · NO OPTIMIZER</span>
     </section>
 

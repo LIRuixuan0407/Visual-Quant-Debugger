@@ -172,3 +172,34 @@ it('never reveals Holdout until the user explicitly clicks the Holdout action', 
     expect.objectContaining({ method: 'POST' }),
   ))
 })
+
+
+it('renders the Strategy Discovery workspace in Chinese without internal phase labels', async () => {
+  window.localStorage.setItem('vqd-language', 'zh')
+  const record = hypothesis()
+  vi.stubGlobal('fetch', vi.fn((input: string | URL | Request) => {
+    const url = String(input)
+    const body = url.includes('/api/factor-research')
+      ? [factor]
+      : url.includes('/api/hypotheses/suggestions')
+        ? []
+        : [record]
+    return Promise.resolve(new Response(JSON.stringify(body), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
+  }))
+
+  render(
+    <I18nProvider>
+      <DiscoveryWorkspacePage onOpenReplay={() => undefined} onRunComplete={() => undefined} />
+    </I18nProvider>,
+  )
+
+  expect(await screen.findByRole('heading', { name: '策略发现' })).toBeInTheDocument()
+  expect(screen.getByText('研究假设工作台')).toBeInTheDocument()
+  expect(screen.getByText('基于已有因子证据创建')).toBeInTheDocument()
+  expect(screen.getByText('支持证据')).toBeInTheDocument()
+  expect(screen.getByText('反对证据')).toBeInTheDocument()
+  expect(screen.queryByText(/PHASE 23/i)).not.toBeInTheDocument()
+})

@@ -134,7 +134,7 @@ export default function FactorRelationshipPage() {
 
   return <main className="discover-shell research-workbench factor-relationship-lab">
     <section className="discover-title">
-      <div><span className="section-kicker">PHASE 22 · RELATIONSHIP</span><h1>{tr('Factor Relationships')}</h1><p>{tr('Compare what existing factors express, where they overlap, and what association remains when they are combined.')}</p></div>
+      <div><span className="section-kicker">{tr('Factor relationship research')}</span><h1>{tr('Factor Relationships')}</h1><p>{tr('Compare what existing factors express, where they overlap, and what association remains when they are combined.')}</p></div>
       <span className="bias-tag">BACKEND CALCULATION · NO OPTIMIZER</span>
     </section>
 
