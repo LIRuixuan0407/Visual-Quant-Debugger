@@ -120,6 +120,16 @@ A hypothesis keeps:
 
 Changing an idea after seeing new evidence creates a new revision instead of rewriting history.
 
+### Research Snapshots
+
+Freeze one completed research chain as an immutable, content-verified record.
+
+A Research Snapshot preserves the exact Dataset revision, Factor and Strategy revisions, parameters, Research / Validation / Holdout boundaries, Hypothesis, Portfolio, Run and Trace artifacts, and creation environment. Every embedded artifact has its own source revision and frozen-payload hash, so later source changes cannot silently rewrite the saved experiment.
+
+Snapshots are append-only. Creating a different experiment creates a new identity instead of updating an existing Snapshot.
+
+Select two to four Snapshots in **Experiment Compare** to inspect controlled context, artifact revisions, parameter changes, frozen Portfolio and primary Run results, Hypothesis evidence states, and recorded Run / Trace behavior side by side. The comparison reads only content-verified frozen payloads and reuses the Run Comparison contract; it describes differences without selecting a winner, optimizing parameters, or making a recommendation.
+
 ### Replay
 
 Replay a completed strategy run bar by bar.
@@ -237,7 +247,7 @@ For real Alpaca market data or SEC filing downloads, configure the optional prov
 
 VQD includes native strategy and factor SDKs for trusted local Python research.
 
-Custom factors can participate in the same Factor Research, Validation, Portfolio, Walk-Forward, Relationship, and Discovery workflow as built-in factors.
+Custom factors can participate in the same Factor Research, Validation, Portfolio, Walk-Forward, Relationship, Discovery, and Research Snapshot workflow as built-in factors.
 
 Custom native strategies can use the same Backtest, Trace, Replay, Diagnose, Autopsy, Forward, and Paper workflow as built-in strategies.
 
@@ -259,7 +269,7 @@ VQD follows a few deliberately strict rules:
 
 VQD is an active open-source project focused on a personal, evidence-first quantitative research workspace.
 
-The current product covers historical market research, factors, multi-factor portfolios, walk-forward validation, factor relationships, hypothesis-driven strategy discovery, backtesting, replay, diagnostics, P&L attribution, forward validation, and paper trading.
+The current product covers historical market research, factors, multi-factor portfolios, walk-forward validation, factor relationships, hypothesis-driven strategy discovery, immutable Research Snapshots, backtesting, replay, diagnostics, P&L attribution, forward validation, and paper trading.
 
 It should be treated as research software, not investment advice or a promise of strategy profitability.
 

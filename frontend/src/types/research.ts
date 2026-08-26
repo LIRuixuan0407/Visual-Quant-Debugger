@@ -1,4 +1,5 @@
 import type { ResearchStage } from './factor'
+import type { RunComparisonReport } from './run'
 
 export type CombinationMethod = 'EQUAL_WEIGHT' | 'USER_DEFINED_WEIGHT' | 'RANK_AVERAGE' | 'Z_SCORE_COMPOSITE'
 export type RebalanceRule = 'DAILY' | 'WEEKLY' | 'MONTHLY'
@@ -63,3 +64,45 @@ export interface HypothesisEvidence { evidence_id: string; source_type: 'FACTOR'
 export interface CandidateStrategyTemplate { combination: 'RANK_AVERAGE'; selection: 'TOP_PERCENT'; top_percent: number; weighting: 'EQUAL_WEIGHT'; max_single_position_weight: number; rebalance: RebalanceRule; long_only: true; portfolio_research_id: string | null }
 export interface ResearchHypothesis { hypothesis_id: string; family_id: string; parent_hypothesis_id: string | null; revision: number; title: string; description: string; dataset_id: string; dataset_fingerprint: string; universe: string[]; factor_research_ids: string[]; expected_relationship: string; holding_horizon: string; rebalance_idea: RebalanceRule; risk_assumptions: string[]; created_at: string; status: 'DRAFT' | 'RESEARCHED' | 'VALIDATED' | 'HOLDOUT_REVEALED' | 'STRATEGY_CREATED'; outcome: OutcomeClassification; created_with_known_stage: ResearchStage; source_revealed_stages: Record<string, ResearchStage>; evidence: HypothesisEvidence[]; candidate: CandidateStrategyTemplate; lineage: { factor_research_ids: string[]; factor_ids: string[]; relationship_ids: string[]; walk_forward_ids: string[]; portfolio_research_id: string | null; strategy_id: string | null; run_ids: string[]; trace_ids: string[] }; revision_reason: string | null; ai_boundary: string }
 export interface DiscoverySuggestion { label: 'RESEARCH IDEA'; factor_research_ids: string[]; rationale: string; source_relationship_id: string }
+
+export type SnapshotArtifactKind = 'DATASET' | 'FACTOR_RESEARCH' | 'FACTOR_RELATIONSHIP' | 'WALK_FORWARD' | 'HYPOTHESIS' | 'PORTFOLIO_RESEARCH' | 'STRATEGY_SOURCE' | 'RUN_MANIFEST' | 'TRACE'
+export interface FrozenArtifact { kind: SnapshotArtifactKind; artifact_id: string; source_revision: string; payload_sha256: string; payload_json: string }
+export interface SnapshotParameterSet { owner_type: 'HYPOTHESIS' | 'FACTOR' | 'PORTFOLIO' | 'STRATEGY' | 'RUN'; owner_id: string; values: Array<{ key: string; value: string | number | boolean | null }> }
+export interface SnapshotPeriod { label: string; source_id: string; start: string | null; end: string | null; cutoff: string | null }
+export interface ResearchSnapshotSummary { snapshot_id: string; name: string; created_at: string; content_fingerprint: string; hypothesis_id: string; hypothesis_revision: number; dataset_id: string; factor_count: number; strategy_id: string; run_count: number; trace_count: number }
+export interface ResearchSnapshot {
+  snapshot_version: '1.0'
+  snapshot_id: string
+  name: string
+  created_at: string
+  content_fingerprint: string
+  lineage: { dataset_id: string; factor_research_ids: string[]; factor_ids: string[]; relationship_ids: string[]; walk_forward_ids: string[]; hypothesis_id: string; hypothesis_revision: number; portfolio_research_id: string; strategy_id: string; run_ids: string[]; trace_ids: string[] }
+  dataset: FrozenArtifact
+  factors: FrozenArtifact[]
+  relationships: FrozenArtifact[]
+  walk_forward: FrozenArtifact[]
+  hypothesis: FrozenArtifact
+  portfolio: FrozenArtifact
+  strategy: FrozenArtifact
+  runs: FrozenArtifact[]
+  traces: FrozenArtifact[]
+  parameters: SnapshotParameterSet[]
+  time_boundaries: { research: SnapshotPeriod; validation: SnapshotPeriod; holdout: SnapshotPeriod; runs: SnapshotPeriod[] }
+  environment: { python_version: string; python_implementation: string; platform: string; machine: string; vqd_version: string; dependencies: Array<{ name: string; version: string }> }
+  immutability_disclosure: string
+}
+
+export type ExperimentComparability = 'STRICTLY_COMPARABLE' | 'CONTEXTUALLY_COMPARABLE' | 'DESCRIPTIVE_ONLY'
+export interface ExperimentComparisonReport {
+  comparison_version: '1.0'
+  snapshot_ids: string[]
+  snapshots: Array<{ snapshot_id: string; name: string; content_fingerprint: string; hypothesis_id: string; hypothesis_revision: number; run_id: string; trace_id: string }>
+  comparability: ExperimentComparability
+  context_diff: Array<{ field: 'dataset_revision' | 'research_periods' | 'run_period' | 'execution_model' | 'runtime' | 'creation_environment'; same: boolean; significance: 'STRICT_CONTROL' | 'CONTEXT' | 'INFORMATIONAL'; values: string[] }>
+  artifact_diff: Array<{ kind: SnapshotArtifactKind; semantic_key: string; artifact_ids: Array<string | null>; source_revisions: Array<string | null>; payload_fingerprints: Array<string | null>; same_revision: boolean }>
+  parameter_diff: Array<{ owner_type: 'HYPOTHESIS' | 'FACTOR' | 'PORTFOLIO' | 'STRATEGY' | 'RUN'; owner_key: string; parameter: string; values: Array<string | number | boolean | null>; changed: true }>
+  metric_diff: Array<{ scope: string; metric: string; values: Array<number | null>; differences_from_first: Array<number | null> }>
+  hypothesis_states: Array<{ snapshot_id: string; status: string; outcome: string; supporting_evidence: number; contradicting_evidence: number; neutral_evidence: number }>
+  primary_run_comparison: RunComparisonReport
+  comparison_disclosure: string
+}

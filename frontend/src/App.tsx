@@ -17,6 +17,7 @@ import FactorRelationshipPage from './features/discover/FactorRelationshipPage'
 import DiscoveryWorkspacePage from './features/discover/DiscoveryWorkspacePage'
 import PortfolioLabPage from './features/discover/PortfolioLabPage'
 import WalkForwardPage from './features/discover/WalkForwardPage'
+import ResearchSnapshotsPage from './features/research/ResearchSnapshotsPage'
 import ReplayPage from './features/replay/ReplayPage'
 import RunsPage from './features/runs/RunsPage'
 import type { LoadedRunConfiguration } from './features/runs/RunsPage'
@@ -40,6 +41,7 @@ function initialLocation(): { page: ProductPage; runId: string | null } {
   if (window.location.pathname === '/walk-forward') return { page: 'walk-forward', runId: null }
   if (window.location.pathname === '/factor-relationships') return { page: 'relationships', runId: null }
   if (window.location.pathname === '/discovery') return { page: 'discovery', runId: null }
+  if (window.location.pathname === '/research-snapshots') return { page: 'snapshots', runId: null }
   return { page: 'strategy', runId: null }
 }
 
@@ -201,6 +203,7 @@ function App() {
   else if (page === 'walk-forward') content = <WalkForwardPage strategies={definitions} onOpenHistorical={(path) => navigate('historical', path)} onOpenFactor={(path) => navigate('factors', path)} onOpenReplay={(traceId, path) => { window.history.pushState({}, '', path); openReplay(traceId) }} onRunComplete={activateTrace} />
   else if (page === 'relationships') content = <FactorRelationshipPage />
   else if (page === 'discovery') content = <DiscoveryWorkspacePage onOpenReplay={openReplay} onRunComplete={(traceId, runId) => activateTrace(traceId, runId)} />
+  else if (page === 'snapshots') content = <ResearchSnapshotsPage onOpenRuns={(runId) => { setActiveRunId(runId); navigate('runs', `/runs/${runId}`) }} onOpenReplay={openReplay} />
   else if (page === 'strategy') content = <StrategyPage key={definition.strategy_id} definition={definition} strategies={definitions} datasets={datasets} selectedDatasetId={selectedDatasetId} loadedConfiguration={loadedStrategyConfiguration} onStrategyChange={selectStrategy} onDatasetChange={setSelectedDatasetId} onConfigurationChange={(configuration) => { setResearchConfiguration(configuration); setLoadedStrategyConfiguration(null) }} onOpenReplay={openReplay} onRunComplete={activateTrace} onStrategyImported={(imported) => { setDefinitions((current) => [...current.filter((item) => item.strategy_id !== imported.strategy_id), imported]); setSelectedStrategyId(imported.strategy_id); setResearchConfiguration({ strategy_id: imported.strategy_id, dataset_id: selectedDatasetId, parameters: Object.fromEntries(imported.parameters.map((item) => [item.key, item.default_value])), research_cutoff: null }) }} />
   else if (page === 'data') content = <DataPage datasets={datasets} onImported={addDataset} />
   else if (page === 'runs') content = <RunsPage key={activeRunId ?? 'ledger'} strategies={definitions} datasets={datasets} initialRunId={activeRunId} onRunSelection={selectHistoricalRun} onOpenReplay={(runId, traceId, eventId) => openHistoricalArtifact(runId, traceId, 'replay', eventId)} onOpenDiagnose={(runId, traceId) => openHistoricalArtifact(runId, traceId, 'diagnose')} onOpenAutopsy={(runId, traceId) => openHistoricalArtifact(runId, traceId, 'autopsy')} onLoadConfiguration={loadHistoricalConfiguration} />
@@ -218,7 +221,7 @@ function App() {
   else if (replayStage === 'error') content = <StartupState title={tr('Could not load trace.')} detail={tr(replayError ?? 'Unknown Replay error.')} error onRetry={() => activeTraceId ? void loadTraceById(activeTraceId) : void runDemoReplay()} />
   else content = <StartupState title={tr(replayStage === 'running' ? 'Running demo backtest…' : 'Loading trace…')} />
 
-  return <div className="app-frame"><ProductNav activePage={page} onHistorical={() => navigate('historical', '/historical-market')} onFactors={() => navigate('factors', '/factor-lab')} onPortfolio={() => navigate('portfolio', '/portfolio-lab')} onWalkForward={() => navigate('walk-forward', '/walk-forward')} onRelationships={() => navigate('relationships', '/factor-relationships')} onDiscovery={() => navigate('discovery', '/discovery')} onStrategy={() => navigate('strategy')} onData={() => navigate('data')} onRuns={() => navigate('runs', activeRunId ? `/runs/${activeRunId}` : '/runs')} onReplay={navigateReplay} onDiagnose={() => setPage('diagnose')} onAutopsy={() => setPage('autopsy')} onForward={() => setPage('forward')} onPaper={() => navigate('paper', '/paper')} onProfile={() => navigate('profile', '/me')} /><div className="app-workspace">{!['profile', 'paper', 'historical', 'factors', 'portfolio', 'walk-forward', 'relationships', 'discovery'].includes(page) && <RunContextBar runId={activeRunId} traceId={activeTraceId} trace={trace} context={runContext} forwardSessionId={forwardSessionId} />}{content}</div></div>
+  return <div className="app-frame"><ProductNav activePage={page} onHistorical={() => navigate('historical', '/historical-market')} onFactors={() => navigate('factors', '/factor-lab')} onPortfolio={() => navigate('portfolio', '/portfolio-lab')} onWalkForward={() => navigate('walk-forward', '/walk-forward')} onRelationships={() => navigate('relationships', '/factor-relationships')} onDiscovery={() => navigate('discovery', '/discovery')} onSnapshots={() => navigate('snapshots', '/research-snapshots')} onStrategy={() => navigate('strategy')} onData={() => navigate('data')} onRuns={() => navigate('runs', activeRunId ? `/runs/${activeRunId}` : '/runs')} onReplay={navigateReplay} onDiagnose={() => setPage('diagnose')} onAutopsy={() => setPage('autopsy')} onForward={() => setPage('forward')} onPaper={() => navigate('paper', '/paper')} onProfile={() => navigate('profile', '/me')} /><div className="app-workspace">{!['profile', 'paper', 'historical', 'factors', 'portfolio', 'walk-forward', 'relationships', 'discovery', 'snapshots'].includes(page) && <RunContextBar runId={activeRunId} traceId={activeTraceId} trace={trace} context={runContext} forwardSessionId={forwardSessionId} />}{content}</div></div>
 }
 
 export default App

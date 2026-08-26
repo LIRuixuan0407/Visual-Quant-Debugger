@@ -5,7 +5,13 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-LedgerKind = Literal["PORTFOLIO", "WALK_FORWARD", "FACTOR_RELATIONSHIP", "HYPOTHESIS"]
+LedgerKind = Literal[
+    "PORTFOLIO",
+    "WALK_FORWARD",
+    "FACTOR_RELATIONSHIP",
+    "HYPOTHESIS",
+    "SNAPSHOT",
+]
 LedgerMetric = str | int | float | bool | None
 
 
@@ -37,6 +43,7 @@ class ResearchLedgerEntry(LedgerModel):
     factor_relationship_id: str | None = None
     hypothesis_id: str | None = None
     portfolio_research_id: str | None = None
+    research_snapshot_id: str | None = None
 
     @field_validator("created_at")
     @classmethod

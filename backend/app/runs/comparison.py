@@ -291,16 +291,20 @@ def _first_divergence(
     )
 
 
-def compare_runs(repository: RunRepository, run_ids: tuple[str, ...]) -> RunComparisonReport:
+def compare_run_records(
+    manifests: tuple[RunManifest, ...],
+    traces: tuple[BacktestTrace, ...],
+) -> RunComparisonReport:
+    run_ids = tuple(item.run_id for item in manifests)
+    if not 2 <= len(run_ids) <= 4:
+        raise ValueError("Select 2-4 runs for comparison")
     if len(set(run_ids)) != len(run_ids):
         raise ValueError("Select distinct runs for comparison")
-    manifests = tuple(repository.get_manifest(run_id) for run_id in run_ids)
+    if traces and len(traces) != len(manifests):
+        raise ValueError("Run manifests and Traces must have matching lengths")
     context = _context(manifests)
     comparability = _comparability(manifests, context)
     parameter_diff = _parameter_diff(manifests)
-    traces: tuple[BacktestTrace, ...] = ()
-    if all(manifest.trace_id is not None for manifest in manifests):
-        traces = tuple(repository.load_trace_for_run(run_id) for run_id in run_ids)
     equity: tuple[EquityComparisonPoint, ...] = ()
     if traces and comparability != "DESCRIPTIVE_ONLY":
         timestamps = tuple(tuple(event.timestamp for event in trace.timeline) for trace in traces)
@@ -353,3 +357,11 @@ def compare_runs(repository: RunRepository, run_ids: tuple[str, ...]) -> RunComp
         first_decision_divergence=decision,
         first_trading_divergence=trading,
     )
+
+
+def compare_runs(repository: RunRepository, run_ids: tuple[str, ...]) -> RunComparisonReport:
+    manifests = tuple(repository.get_manifest(run_id) for run_id in run_ids)
+    traces: tuple[BacktestTrace, ...] = ()
+    if all(manifest.trace_id is not None for manifest in manifests):
+        traces = tuple(repository.load_trace_for_run(run_id) for run_id in run_ids)
+    return compare_run_records(manifests, traces)

@@ -1,5 +1,5 @@
 import { readJson } from './client'
-import type { CombinationMethod, DiscoverySuggestion, FactorRelationshipRecord, PortfolioResearchRecord, PortfolioResearchSummary, RebalanceRule, ResearchHypothesis, WalkForwardResearchRecord } from '../types/research'
+import type { CombinationMethod, DiscoverySuggestion, ExperimentComparisonReport, FactorRelationshipRecord, PortfolioResearchRecord, PortfolioResearchSummary, RebalanceRule, ResearchHypothesis, ResearchSnapshot, ResearchSnapshotSummary, WalkForwardResearchRecord } from '../types/research'
 import type { ResearchStage } from '../types/factor'
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
@@ -24,3 +24,8 @@ export function createHypothesis(input: { title: string; description: string; un
 export function createHypothesisRevision(id: string, input: { title?: string; description?: string; universe?: string[]; factor_research_ids?: string[]; expected_relationship?: string; holding_horizon?: string; rebalance_idea?: RebalanceRule; risk_assumptions?: string[]; revision_reason: string }): Promise<ResearchHypothesis> { return post(`/api/hypotheses/${encodeURIComponent(id)}/revisions`, input) }
 export function hypothesisAction(id: string, action: 'candidate' | 'validate' | 'reveal-holdout' | 'strategy'): Promise<ResearchHypothesis> { return post(`/api/hypotheses/${encodeURIComponent(id)}/${action}`) }
 export function attachHypothesisRun(id: string, runId: string, traceId: string): Promise<ResearchHypothesis> { return post(`/api/hypotheses/${encodeURIComponent(id)}/runs`, { run_id: runId, trace_id: traceId }) }
+
+export async function getResearchSnapshots(): Promise<ResearchSnapshotSummary[]> { return readJson(await fetch('/api/research-snapshots'), 'GET /api/research-snapshots') as Promise<ResearchSnapshotSummary[]> }
+export async function getResearchSnapshot(id: string): Promise<ResearchSnapshot> { return readJson(await fetch(`/api/research-snapshots/${encodeURIComponent(id)}`), 'GET research snapshot') as Promise<ResearchSnapshot> }
+export function createResearchSnapshot(input: { name: string; hypothesis_id: string }): Promise<ResearchSnapshot> { return post('/api/research-snapshots', input) }
+export function compareResearchSnapshots(snapshotIds: string[]): Promise<ExperimentComparisonReport> { return post('/api/research-snapshots/compare', { snapshot_ids: snapshotIds }) }
