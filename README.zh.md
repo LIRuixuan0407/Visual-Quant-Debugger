@@ -1,4 +1,4 @@
-# Visual Quant Debugger
+<h1 align="center">Visual Quant Debugger</h1>
 
 <p align="center">
   <strong>提出量化想法，验证证据，回看每一次决策。</strong>
