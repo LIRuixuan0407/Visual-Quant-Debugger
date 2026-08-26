@@ -650,6 +650,16 @@ const zh: Record<string, string> = {
   'Current-to-target delta orders filled at close(t+1).': '根据当前持仓与目标持仓的差额生成订单，并在 close(t+1) 成交。',
   'Only data available through the current watermark can be used.': '策略只能使用当前数据水位线之前已经可用的数据。',
   'Target transitions execute at the next synchronized close.': '目标持仓变更在下一根同步收盘价执行。', 'Observed runtime features': '已观测运行时特征',
+  'Research Integrity': '研究完整性', 'Research Integrity Guardrails': '研究完整性护栏',
+  'Audit every hypothesis against its recorded ledger, dataset revisions, time boundaries, and strategy semantics. Each check reports an explicit status and reason; nothing is modified automatically.': '对照已记录的研究台账、数据集修订、时间边界和策略语义审计每个研究假设。每项检查都给出明确状态与原因；系统不会自动修改任何记录。',
+  violations: '项违规', 'No hypotheses to audit yet.': '还没有可审计的研究假设。',
+  'Create a hypothesis in Strategy Discovery first; the guardrails audit recorded research automatically.': '请先在策略发现中创建研究假设；护栏会自动审计已记录的研究。',
+  'Audited experiment': '已审计实验', 'Hypothesis ID': '研究假设 ID', Lifecycle: '生命周期', Checked: '检查时间',
+  'Explicit status and reason': '明确的状态与原因', 'Guardrail checks': '护栏检查',
+  'POST HOLDOUT MODIFICATION': 'Holdout 揭示后修改实验', 'FUTURE DATA LEAK': '未来数据越界',
+  'DATASET SILENT CHANGE': '数据集静默变化', 'STRATEGY SEMANTIC MISMATCH': '研究与策略语义不一致',
+  'MISSING LINEAGE': '缺失研究链路', 'MISSING REVISION': '缺失修订版本',
+  VIOLATION: '违规', PASS: '通过',
 }
 
 function translateDynamic(text: string): string {

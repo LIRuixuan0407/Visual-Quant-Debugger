@@ -106,3 +106,31 @@ export interface ExperimentComparisonReport {
   primary_run_comparison: RunComparisonReport
   comparison_disclosure: string
 }
+
+export type IntegrityCheckCode = 'POST_HOLDOUT_MODIFICATION' | 'FUTURE_DATA_LEAK' | 'DATASET_SILENT_CHANGE' | 'STRATEGY_SEMANTIC_MISMATCH' | 'MISSING_LINEAGE' | 'MISSING_REVISION'
+export type IntegritySeverity = 'PASS' | 'WARNING' | 'VIOLATION'
+export interface IntegrityFinding { code: IntegrityCheckCode; severity: IntegritySeverity; subject: string; reason: string; evidence: string[] }
+export interface HypothesisIntegrityReport {
+  report_version: '1.0'
+  hypothesis_id: string
+  family_id: string
+  title: string
+  revision: number
+  lifecycle_status: string
+  checked_at: string
+  findings: IntegrityFinding[]
+  violation_count: number
+  warning_count: number
+  overall_status: IntegritySeverity
+  disclosure: string
+}
+export interface HypothesisIntegritySummary { hypothesis_id: string; family_id: string; title: string; revision: number; lifecycle_status: string; overall_status: IntegritySeverity; violation_count: number; warning_count: number }
+export interface WorkspaceIntegrityReport {
+  report_version: '1.0'
+  generated_at: string
+  hypotheses: HypothesisIntegritySummary[]
+  overall_status: IntegritySeverity
+  total_violations: number
+  total_warnings: number
+  disclosure: string
+}
