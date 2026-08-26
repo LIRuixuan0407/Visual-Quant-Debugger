@@ -7,7 +7,8 @@ FROM node:22-slim AS frontend-build
 
 WORKDIR /build/frontend
 
-RUN corepack enable
+RUN npm install --global pnpm@11.20.0 \
+    && pnpm --version
 
 COPY frontend/package.json frontend/pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
