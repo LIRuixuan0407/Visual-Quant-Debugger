@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://visual-quant-debugger-production.up.railway.app"><strong>Live Demo</strong></a>
   ·
-  <a href="README.zh-CN.md">中文</a>
+  <a href="README.zh.md">中文</a>
   ·
   <a href="https://github.com/LIRuixuan0407/Visual-Quant-Debugger/actions/workflows/ci.yml">CI</a>
 </p>
