@@ -305,7 +305,7 @@ class StrategyRuntime:
 
 
 def legacy_timeline(rows: tuple[RuntimeRow, ...]) -> tuple[TimelineRow, ...]:
-    """Project native runtime rows into the Phase 1 domain without changing its semantics."""
+    """Project native runtime rows into the legacy domain without changing its semantics."""
 
     timeline: list[TimelineRow] = []
     for row in rows:

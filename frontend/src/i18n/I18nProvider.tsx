@@ -5,6 +5,16 @@ export type Language = 'zh' | 'en'
 
 const zh: Record<string, string> = {
   'Visual Quant Debugger': '可视化量化调试器',
+  'Global Search': '全局搜索', 'Open Global Search': '打开全局搜索',
+  'Search research workspace': '搜索研究工作区', 'Search IDs, names, symbols, and tags…': '搜索 ID、名称、标的与标签…',
+  'Search type': '搜索类型', 'All types': '全部类型', Results: '结果', Recent: '最近打开',
+  '↑↓ Navigate · Enter Open · Esc Close': '↑↓ 选择 · Enter 打开 · Esc 关闭',
+  'Search results': '搜索结果', 'Recent searches': '最近打开记录',
+  'Search failed': '搜索失败', 'No matching research objects.': '没有匹配的研究对象。',
+  'No recent research objects.': '还没有最近打开的研究对象。',
+  'Deterministic local search': '确定性本地搜索',
+  'No Trace events or source files are searched.': '不搜索 Trace 事件或源码文件。',
+  entity_id: 'ID', title: '标题', subtitle: '副标题', alias: '别名', tag: '标签',
   'Strategy evidence system': '策略证据系统',
   'Primary navigation': '主导航', 'Language switcher': '语言切换',
   'Quant research workspace': '量化研究工作台', RESEARCH: '研究', DISCOVER: '发现', VALIDATE: '验证',

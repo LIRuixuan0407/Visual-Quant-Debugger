@@ -55,6 +55,7 @@ export default function WalkForwardPage({
   const [record, setRecord] = useState<WalkForwardResearchRecord | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const initialWalkForwardId = new URLSearchParams(window.location.search).get('walk_forward_id')
 
   const nativeStrategies = useMemo(
     () => strategies.filter((item) => !item.historical_research_only && item.available !== false),
@@ -69,12 +70,12 @@ export default function WalkForwardPage({
         setFactors(factorRows)
         setRecords(walkForwardRows)
         setFactorId((current) => current || factorRows[0]?.research_id || '')
-        setRecord(walkForwardRows[0] ?? null)
+        setRecord(walkForwardRows.find((item) => item.walk_forward_id === initialWalkForwardId) ?? walkForwardRows[0] ?? null)
       },
       (reason) => mounted && setError(reason instanceof Error ? reason.message : String(reason)),
     )
     return () => { mounted = false }
-  }, [])
+  }, [initialWalkForwardId])
 
   async function run() {
     if (!factorId) return

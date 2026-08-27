@@ -19,7 +19,7 @@ def ensure_schema_version(connection: sqlite3.Connection) -> int:
         return SCHEMA_VERSION
     version = int(row["value"])
     if version == 1:
-        # Phase 10 adds component-owned paper_sessions tables. The migration marker is
+        # Paper sessions use component-owned tables. The migration marker is
         # shared; each repository creates its own tables idempotently below this call.
         connection.execute(
             "UPDATE metadata SET value = ? WHERE key = 'schema_version'",
@@ -27,7 +27,7 @@ def ensure_schema_version(connection: sqlite3.Connection) -> int:
         )
         version = 2
     if version == 2:
-        # Phase 11 component repositories add framework runtime metadata columns
+        # Component repositories add framework runtime metadata columns
         # idempotently after advancing the shared migration marker.
         connection.execute(
             "UPDATE metadata SET value = ? WHERE key = 'schema_version'",
@@ -35,7 +35,7 @@ def ensure_schema_version(connection: sqlite3.Connection) -> int:
         )
         version = 3
     if version == 3:
-        # Phase 12 adds persistent paper accounts, orders, fills, and PAPER runs.
+        # Persistent paper accounts, orders, fills, and PAPER runs use component tables.
         # Component repositories create their tables and columns idempotently.
         connection.execute(
             "UPDATE metadata SET value = ? WHERE key = 'schema_version'",

@@ -12,7 +12,7 @@ from app.factor_sdk import (
 
 
 class VolumeConfirmedMomentum(VQDFactor):
-    """Transparent example factor used by the Phase 22 real-data verification."""
+    """Transparent example factor used by the real-data verification."""
 
     metadata = FactorMetadata(
         factor_id="volume-confirmed-momentum",

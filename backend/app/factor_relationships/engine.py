@@ -699,7 +699,7 @@ class FactorRelationshipEngine:
                 "are reported separately. Forward-return endpoints must remain inside the stage."
             ),
             incremental_disclosure=(
-                "Incremental information uses the Phase 20 Rank Average rule: 0.5 × base "
+                "Incremental information uses an equal-weight Rank Average rule: 0.5 × base "
                 "direction-adjusted percentile rank + 0.5 × added direction-adjusted percentile "
                 "rank. Deltas are associations, not causal improvement claims or optimization."
             ),

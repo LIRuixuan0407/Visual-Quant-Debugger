@@ -16,6 +16,7 @@ interface ProductNavProps {
   onLineage?: () => void
   onSnapshots?: () => void
   onIntegrity?: () => void
+  onSearch?: () => void
   onStrategy: () => void
   onData: () => void
   onRuns: () => void
@@ -52,7 +53,7 @@ function NavIcon({ page }: { page: ProductPage }) {
   return <svg className="nav-icon" viewBox="0 0 20 20" aria-hidden="true">{paths[page]}</svg>
 }
 
-function ProductNav({ activePage, onHistorical = () => undefined, onFactors = () => undefined, onPortfolio = () => undefined, onWalkForward = () => undefined, onRelationships = () => undefined, onDiscovery = () => undefined, onWorkspace = () => undefined, onLineage = () => undefined, onSnapshots = () => undefined, onIntegrity = () => undefined, onStrategy, onData, onRuns, onReplay, onDiagnose, onAutopsy, onForward, onPaper, onProfile }: ProductNavProps) {
+function ProductNav({ activePage, onHistorical = () => undefined, onFactors = () => undefined, onPortfolio = () => undefined, onWalkForward = () => undefined, onRelationships = () => undefined, onDiscovery = () => undefined, onWorkspace = () => undefined, onLineage = () => undefined, onSnapshots = () => undefined, onIntegrity = () => undefined, onSearch = () => undefined, onStrategy, onData, onRuns, onReplay, onDiagnose, onAutopsy, onForward, onPaper, onProfile }: ProductNavProps) {
   const { language, setLanguage, tr } = useI18n()
   const research: Array<[ProductPage, string, () => void]> = [
     ['workspace', 'Research Workspace', onWorkspace],
@@ -72,6 +73,7 @@ function ProductNav({ activePage, onHistorical = () => undefined, onFactors = ()
   return (
     <aside className="product-sidebar">
       <div className="sidebar-brand"><span className="brand-mark" aria-hidden="true">VQD</span><div><strong>{tr('Visual Quant Debugger')}</strong><small>{tr('Quant research workspace')}</small></div></div>
+      <button className="sidebar-search" type="button" onClick={onSearch} aria-label={tr('Open Global Search')}><span aria-hidden="true">⌕</span><strong>{tr('Search')}</strong><kbd>⌘K</kbd></button>
       <nav className="sidebar-nav" aria-label={tr('Primary navigation')}>
         <span className="nav-group-label">{tr('DISCOVER')}</span>
         {renderItems(discover)}

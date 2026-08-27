@@ -8,6 +8,7 @@ from app.api.factor_relationships import router as factor_relationships_router
 from app.api.factors import router as factors_router
 from app.api.forward import router as forward_router
 from app.api.fundamentals import router as fundamentals_router
+from app.api.global_search import router as global_search_router
 from app.api.paper import account_router, market_router
 from app.api.paper import router as paper_router
 from app.api.portfolio_lab import router as portfolio_lab_router
@@ -22,6 +23,7 @@ from app.api.strategies import router as strategies_router
 from app.api.walk_forward import router as walk_forward_router
 
 router = APIRouter()
+router.include_router(global_search_router)
 router.include_router(replay_router)
 router.include_router(research_snapshots_router)
 router.include_router(research_integrity_router)

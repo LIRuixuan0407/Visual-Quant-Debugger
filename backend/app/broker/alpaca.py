@@ -70,7 +70,7 @@ def normalize_alpaca_status(value: str) -> BrokerOrderStatus:
 class AlpacaPaperBrokerAdapter:
     """Thin, paper-only Alpaca Trading API boundary.
 
-    The live Trading API domain is intentionally not configurable here. Phase 16
+    The live Trading API domain is intentionally not configurable here. This integration
     may never route an order outside Alpaca's paper environment.
     """
 

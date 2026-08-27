@@ -77,6 +77,7 @@ export default function FactorRelationshipPage() {
   const [rollingKey, setRollingKey] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const initialRelationshipId = new URLSearchParams(window.location.search).get('relationship_id')
 
   useEffect(() => {
     let mounted = true
@@ -85,12 +86,12 @@ export default function FactorRelationshipPage() {
         if (!mounted) return
         setFactors(factorRows)
         setRecords(relationshipRows)
-        setRecord(relationshipRows[0] ?? null)
+        setRecord(relationshipRows.find((item) => item.relationship_id === initialRelationshipId) ?? relationshipRows[0] ?? null)
       },
       (reason) => mounted && setError(reason instanceof Error ? reason.message : String(reason)),
     )
     return () => { mounted = false }
-  }, [])
+  }, [initialRelationshipId])
 
   const selectedFactors = useMemo(
     () => factors.filter((item) => selected.includes(item.research_id)),

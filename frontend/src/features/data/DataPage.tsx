@@ -20,7 +20,12 @@ interface DataPageProps {
 
 export default function DataPage({ datasets, onImported }: DataPageProps) {
   const { tr } = useI18n()
-  const [selectedId, setSelectedId] = useState(datasets[0]?.dataset_id ?? '')
+  const requestedDatasetId = new URLSearchParams(window.location.search).get('dataset_id')
+  const [selectedId, setSelectedId] = useState(
+    datasets.some((item) => item.dataset_id === requestedDatasetId)
+      ? requestedDatasetId ?? ''
+      : datasets[0]?.dataset_id ?? '',
+  )
   const [preview, setPreview] = useState<DatasetPreview | null>(null)
   const [mapping, setMapping] = useState<Record<string, string>>({})
   const [name, setName] = useState('')

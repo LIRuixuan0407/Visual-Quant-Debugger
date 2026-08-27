@@ -1,8 +1,8 @@
 /*
  * VQD UI 2.0
- * Visual-only override layer for the Phase 10 application.
+ * Visual-only override layer for the research application.
  * Keeps the existing React/API contracts intact while replacing the
- * undersized, low-contrast Phase 6.5 presentation with a readable,
+ * undersized, low-contrast legacy presentation with a readable,
  * aligned research-workspace system.
  */
 
@@ -55,6 +55,151 @@
 
   --sidebar-width: 244px;
   --workspace-pad: 24px;
+}
+
+/* Global research search */
+.sidebar-search {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  min-height: 40px;
+  margin: 12px 2px 0;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+  color: var(--muted);
+  cursor: pointer;
+  text-align: left;
+}
+.sidebar-search:hover { border-color: var(--line-strong); background: #f5f6f1; color: var(--ink); }
+.sidebar-search > span { color: var(--ink); font-size: 20px; line-height: 1; }
+.sidebar-search strong { overflow: hidden; font-size: 13px; font-weight: 620; text-overflow: ellipsis; }
+.sidebar-search kbd,
+.global-search-dialog kbd {
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-bottom-color: var(--line-strong);
+  border-radius: 5px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  font: 650 10px var(--mono);
+}
+
+.global-search-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  align-items: start;
+  justify-items: center;
+  padding: min(12vh, 110px) 18px 24px;
+  background: rgba(19, 24, 21, .46);
+  backdrop-filter: blur(5px);
+}
+.global-search-dialog {
+  width: min(760px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  background: var(--panel);
+  box-shadow: 0 28px 80px rgba(20, 27, 23, .28);
+}
+.global-search-input-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 165px auto;
+  align-items: center;
+  gap: 9px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--line);
+}
+.search-glyph { color: var(--accent); font-size: 27px; line-height: 1; }
+.global-search-input-row input,
+.global-search-input-row select {
+  width: 100%;
+  min-height: 40px;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+}
+.global-search-input-row input { font-size: 16px; font-weight: 560; }
+.global-search-input-row input:focus,
+.global-search-input-row select:focus { outline: 0; }
+.global-search-input-row select {
+  padding: 0 8px;
+  border-left: 1px solid var(--line);
+  color: var(--muted-strong);
+  font-size: 12px;
+}
+.global-search-status,
+.global-search-dialog footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 14px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.global-search-status strong { color: var(--muted-strong); font-size: 11px; letter-spacing: .04em; text-transform: uppercase; }
+.global-search-results { max-height: min(58vh, 520px); overflow-y: auto; padding: 0 7px 7px; }
+.global-search-result {
+  display: grid;
+  grid-template-columns: 118px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 67px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+.global-search-result:hover,
+.global-search-result[aria-selected='true'] { border-color: #d7dbca; background: var(--accent-soft); }
+.search-result-type {
+  width: max-content;
+  max-width: 118px;
+  padding: 3px 6px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--muted);
+  font: 700 9px var(--mono);
+  letter-spacing: .04em;
+}
+.search-result-copy { display: grid; gap: 2px; min-width: 0; }
+.search-result-copy strong,
+.search-result-copy small,
+.search-result-copy code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.search-result-copy strong { font-size: 13px; }
+.search-result-copy small { color: var(--muted); font-size: 11px; }
+.search-result-copy code { color: var(--muted); font-size: 9px; }
+.search-result-match,
+.global-search-result time { color: var(--muted); font: 600 9px var(--mono); }
+.search-message { margin: 0; padding: 34px 16px; color: var(--muted); font-size: 13px; text-align: center; }
+.search-message.error { color: var(--danger); }
+.global-search-dialog footer { border-top: 1px solid var(--line); font-size: 10px; }
+
+@media (max-width: 1100px) {
+  .sidebar-search { grid-template-columns: 1fr; justify-items: center; margin-inline: 0; padding: 0; }
+  .sidebar-search strong,
+  .sidebar-search kbd { display: none; }
+}
+@media (max-width: 700px) {
+  .sidebar-search { min-width: 40px; margin: 0; }
+  .global-search-backdrop { align-items: start; padding: 10px; }
+  .global-search-dialog { max-height: calc(100vh - 20px); }
+  .global-search-input-row { grid-template-columns: 24px minmax(0, 1fr) 105px; }
+  .global-search-input-row > kbd { display: none; }
+  .global-search-result { grid-template-columns: 88px minmax(0, 1fr); }
+  .search-result-match,
+  .global-search-result time { display: none; }
+  .global-search-dialog footer span:last-child,
+  .global-search-status span { display: none; }
 }
 
 html,
@@ -3417,7 +3562,7 @@ body { background: var(--bg); color: var(--ink); }
 }
 
 /* -------------------------------------------------------------------------- */
-/* Phase 17 · Historical Market and Factor Lab                                */
+/* Historical Market and Factor Lab                                           */
 /* -------------------------------------------------------------------------- */
 
 .discover-shell {
@@ -3495,7 +3640,7 @@ body { background: var(--bg); color: var(--ink); }
 }
 
 .command-status { align-self: stretch; display: flex; align-items: center; padding: 0 12px; border-radius: 6px; background: var(--panel-soft); color: var(--muted-strong); font-size: 13px; }
-.research-command-bar.phase18-command { grid-template-columns: minmax(240px, 1.3fr) 150px 135px minmax(220px, 1fr) auto; }
+.research-command-bar.historical-market-command { grid-template-columns: minmax(240px, 1.3fr) 150px 135px minmax(220px, 1fr) auto; }
 
 .universe-builder { margin-top: 16px; }
 .universe-builder > p { margin: 10px 0 18px; color: var(--muted); }
@@ -3633,7 +3778,7 @@ body { background: var(--bg); color: var(--ink); }
 
 .factor-builder { padding: 22px; }
 .factor-definition-grid { display: grid; grid-template-columns: 1.2fr 1fr .65fr; gap: 14px; margin-top: 20px; }
-.factor-definition-grid.phase18-factor-grid { grid-template-columns: 1.2fr 1fr 1fr; }
+.factor-definition-grid.factor-lab-definition-grid { grid-template-columns: 1.2fr 1fr 1fr; }
 .factor-definition-grid label small { min-height: 38px; color: var(--muted); font-weight: 480; line-height: 1.45; }
 .factor-definition-grid label:first-child small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .period-editor { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin-top: 18px; overflow: hidden; border: 1px solid var(--line); border-radius: 7px; background: var(--line); }
@@ -3742,7 +3887,7 @@ body { background: var(--bg); color: var(--ink); }
 
 @media (max-width: 1120px) {
   .research-command-bar { grid-template-columns: 1fr 1fr; }
-  .research-command-bar.phase18-command { grid-template-columns: 1fr 1fr; }
+  .research-command-bar.historical-market-command { grid-template-columns: 1fr 1fr; }
   .universe-form { grid-template-columns: 1fr 1fr; }
   .universe-form .wide { grid-column: 1 / -1; }
   .factor-layout { grid-template-columns: 1fr; }
@@ -3784,7 +3929,7 @@ body { background: var(--bg); color: var(--ink); }
   .mixed-row > :nth-child(3) { grid-column: 1 / -1; }
 }
 
-/* Phase 20 · Multi-Factor Portfolio Construction */
+/* Multi-Factor Portfolio Construction */
 .portfolio-workspace-grid { display: grid; grid-template-columns: 255px minmax(0, 1fr); align-items: start; gap: 14px; margin-top: 14px; }
 .portfolio-lab .research-ledger { position: sticky; top: 14px; display: grid; align-content: start; gap: 7px; max-height: calc(100vh - 110px); overflow-y: auto; padding: 14px; }
 .portfolio-lab .research-ledger .section-heading { margin-bottom: 4px; }
@@ -3870,7 +4015,7 @@ body { background: var(--bg); color: var(--ink); }
   .lineage-factor-grid > div { grid-template-columns: 1fr auto; }
 }
 
-/* Phase 21 · Walk-Forward Stability */
+/* Walk-Forward Stability */
 .wf-workspace-grid { display: grid; grid-template-columns: 255px minmax(0, 1fr); align-items: start; gap: 14px; margin-top: 14px; }
 .wf-ledger { position: sticky; top: 14px; display: grid; align-content: start; gap: 7px; max-height: calc(100vh - 110px); overflow-y: auto; padding: 14px; }
 .wf-ledger > button { display: grid; gap: 4px; width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); cursor: pointer; text-align: left; }
@@ -3941,7 +4086,7 @@ body { background: var(--bg); color: var(--ink); }
   .wf-strategy-row { grid-template-columns: repeat(2, 1fr); }
 }
 
-/* Phase 22 · Factor Relationships */
+/* Factor Relationships */
 .relationship-workspace-grid { display: grid; grid-template-columns: 255px minmax(0, 1fr); align-items: start; gap: 14px; margin-top: 14px; }
 .relationship-ledger { position: sticky; top: 14px; display: grid; align-content: start; gap: 7px; max-height: calc(100vh - 110px); padding: 14px; overflow-y: auto; }
 .relationship-ledger > button { display: grid; gap: 4px; width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); cursor: pointer; text-align: left; }
@@ -4037,7 +4182,7 @@ body { background: var(--bg); color: var(--ink); }
   .rolling-correlation-chart { height: 170px; }
 }
 
-/* Phase 23 · Strategy Discovery Workbench */
+/* Strategy Discovery Workbench */
 .discovery-workspace-grid { display: grid; grid-template-columns: 255px minmax(0, 1fr); align-items: start; gap: 14px; margin-top: 14px; }
 .discovery-ledger { position: sticky; top: 14px; display: grid; align-content: start; gap: 7px; max-height: calc(100vh - 110px); padding: 14px; overflow-y: auto; }
 .discovery-ledger > button { display: grid; gap: 4px; width: 100%; padding: 10px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--ink); cursor: pointer; text-align: left; }
@@ -4459,4 +4604,9 @@ body { background: var(--bg); color: var(--ink); }
   .lineage-controls select, .lineage-controls button { width: 100%; }
   .lineage-type-filter { flex-wrap: nowrap; overflow-x: auto; }
   .lineage-type-filter label { flex-shrink: 0; }
+}
+
+@media (max-width: 760px) {
+  .product-sidebar { grid-template-columns: auto auto minmax(0, 1fr) auto; }
+  .sidebar-search { width: 38px; min-width: 38px; min-height: 36px; margin: 0 0 0 5px; }
 }

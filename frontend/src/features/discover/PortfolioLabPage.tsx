@@ -57,6 +57,7 @@ export default function PortfolioLabPage({
   const [record, setRecord] = useState<PortfolioResearchRecord | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const initialPortfolioId = new URLSearchParams(window.location.search).get('portfolio_research_id')
 
   const latest = record?.stages.at(-1) ?? null
   const latestSnapshot = latest?.snapshots.at(-1) ?? null
@@ -103,6 +104,8 @@ export default function PortfolioLabPage({
         setFactors(factorRows)
         setLedger(portfolioRows)
         setRelationships(relationshipRows)
+        const requested = portfolioRows.find((item) => item.portfolio_research_id === initialPortfolioId)
+        if (requested) void getPortfolioResearch(requested.portfolio_research_id).then((next) => { if (mounted) setRecord(next) })
       },
       (reason) => {
         if (!mounted) return
@@ -112,7 +115,7 @@ export default function PortfolioLabPage({
     return () => {
       mounted = false
     }
-  }, [])
+  }, [initialPortfolioId])
 
   function directionOverride(id: string): 'HIGH' | 'LOW' | null {
     const value = directions[id]
