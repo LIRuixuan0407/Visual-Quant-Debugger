@@ -1,5 +1,5 @@
 import { readJson } from './client'
-import type { CombinationMethod, DiscoverySuggestion, ExperimentComparisonReport, FactorRelationshipRecord, HypothesisIntegrityReport, PortfolioResearchRecord, PortfolioResearchSummary, RebalanceRule, ResearchHypothesis, ResearchSnapshot, ResearchSnapshotSummary, WalkForwardResearchRecord, WorkspaceIntegrityReport } from '../types/research'
+import type { CombinationMethod, DiscoverySuggestion, ExperimentComparisonReport, FactorRelationshipRecord, HypothesisIntegrityReport, PortfolioResearchRecord, PortfolioResearchSummary, RebalanceRule, ResearchHypothesis, ResearchSnapshot, ResearchSnapshotSummary, ResearchWorkspace, ResearchWorkspaceSummary, WalkForwardResearchRecord, WorkspaceIntegrityReport } from '../types/research'
 import type { ResearchStage } from '../types/factor'
 
 async function post<T>(path: string, body?: unknown): Promise<T> {
@@ -32,3 +32,6 @@ export function compareResearchSnapshots(snapshotIds: string[]): Promise<Experim
 
 export async function getWorkspaceIntegrity(): Promise<WorkspaceIntegrityReport> { return readJson(await fetch('/api/research-integrity'), 'GET /api/research-integrity') as Promise<WorkspaceIntegrityReport> }
 export async function getHypothesisIntegrity(id: string): Promise<HypothesisIntegrityReport> { return readJson(await fetch(`/api/research-integrity/${encodeURIComponent(id)}`), 'GET hypothesis integrity') as Promise<HypothesisIntegrityReport> }
+
+export async function getResearchWorkspaces(): Promise<ResearchWorkspaceSummary[]> { return readJson(await fetch('/api/research-workspaces'), 'GET /api/research-workspaces') as Promise<ResearchWorkspaceSummary[]> }
+export async function getResearchWorkspace(id: string): Promise<ResearchWorkspace> { return readJson(await fetch(`/api/research-workspaces/${encodeURIComponent(id)}`), 'GET research workspace') as Promise<ResearchWorkspace> }

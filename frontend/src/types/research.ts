@@ -134,3 +134,46 @@ export interface WorkspaceIntegrityReport {
   total_warnings: number
   disclosure: string
 }
+
+export type WorkspaceStageKey = 'DATA' | 'FACTOR' | 'PORTFOLIO' | 'VALIDATION' | 'HYPOTHESIS' | 'STRATEGY' | 'RUN'
+export type WorkspaceStageStatus = 'COMPLETE' | 'CURRENT' | 'BLOCKED'
+export type WorkspaceAction = 'BUILD_CANDIDATE' | 'RUN_VALIDATION' | 'REVEAL_HOLDOUT' | 'CREATE_STRATEGY' | 'RUN_BACKTEST' | 'OPEN_RUN'
+export interface WorkspaceNextAction { action: WorkspaceAction; label: string; requires_explicit_confirmation: boolean }
+export interface WorkspaceStage { key: WorkspaceStageKey; status: WorkspaceStageStatus; summary: string; artifact_ids: string[] }
+export interface WorkspaceFactor { research_id: string; factor_id: string; name: string; revealed_stage: string; revision: string }
+export interface WorkspacePortfolio { portfolio_research_id: string; name: string; revealed_stage: string; combination: string; rebalance: string; net_return: number; turnover: number }
+export interface WorkspaceStrategy { strategy_id: string; source_fingerprint: string }
+export interface WorkspaceRun { run_id: string; trace_id: string | null; status: string; created_at: string; run_fingerprint: string; total_return: number | null; max_drawdown: number | null }
+export interface ResearchWorkspaceSummary { idea_id: string; family_id: string; title: string; revision: number; lifecycle_status: string; outcome: string; dataset_id: string; factor_count: number; completed_stage_count: number; total_stage_count: 7; integrity_status: IntegritySeverity; next_action: WorkspaceNextAction; updated_at: string }
+export interface ResearchWorkspace {
+  workspace_version: '1.0'
+  idea_id: string
+  family_id: string
+  parent_idea_id: string | null
+  title: string
+  description: string
+  revision: number
+  lifecycle_status: string
+  outcome: string
+  expected_relationship: string
+  holding_horizon: string
+  rebalance_idea: string
+  risk_assumptions: string[]
+  created_at: string
+  updated_at: string
+  dataset_id: string
+  dataset_name: string | null
+  dataset_revision: string
+  dataset_period: [string, string] | null
+  factors: WorkspaceFactor[]
+  portfolio: WorkspacePortfolio | null
+  strategy: WorkspaceStrategy | null
+  runs: WorkspaceRun[]
+  snapshot_ids: string[]
+  integrity_status: IntegritySeverity
+  integrity_violations: number
+  integrity_warnings: number
+  stages: WorkspaceStage[]
+  next_action: WorkspaceNextAction
+  disclosure: string
+}

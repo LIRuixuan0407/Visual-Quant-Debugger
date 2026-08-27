@@ -51,11 +51,13 @@ function EvidenceColumn({
 }
 
 interface DiscoveryWorkspacePageProps {
+  initialHypothesisId?: string | null
   onOpenReplay: (traceId: string) => void
   onRunComplete: (traceId: string, runId: string) => void
 }
 
 export default function DiscoveryWorkspacePage({
+  initialHypothesisId,
   onOpenReplay,
   onRunComplete,
 }: DiscoveryWorkspacePageProps) {
@@ -85,14 +87,14 @@ export default function DiscoveryWorkspacePage({
         setFactors(factorRows)
         setRecords(hypothesisRows)
         setSuggestions(ideaRows)
-        setRecord(hypothesisRows[0] ?? null)
+        setRecord(hypothesisRows.find((item) => item.hypothesis_id === initialHypothesisId) ?? hypothesisRows[0] ?? null)
       },
       (reason) => {
         if (mounted) setError(reason instanceof Error ? reason.message : String(reason))
       },
     )
     return () => { mounted = false }
-  }, [])
+  }, [initialHypothesisId])
 
   const selectedFactors = useMemo(
     () => factors.filter((item) => selected.includes(item.research_id)),

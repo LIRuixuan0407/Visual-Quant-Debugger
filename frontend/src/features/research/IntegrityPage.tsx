@@ -22,11 +22,11 @@ function FindingCard({ finding }: { finding: IntegrityFinding }) {
       <b className={`integrity-severity ${finding.severity.toLowerCase()}`}>{tr(finding.severity)}</b>
     </header>
     <p>{tr(finding.reason)}</p>
-    {finding.evidence.length > 0 && <ul>{finding.evidence.map((item, index) => <li key={index}><code>{item}</code></li>)}</ul>}
+    {finding.evidence.length > 0 && <ul>{finding.evidence.map((item, index) => <li key={index}><code>{tr(item)}</code></li>)}</ul>}
   </article>
 }
 
-export default function IntegrityPage() {
+export default function IntegrityPage({ initialHypothesisId }: { initialHypothesisId?: string | null }) {
   const { tr } = useI18n()
   const [overview, setOverview] = useState<WorkspaceIntegrityReport | null>(null)
   const [report, setReport] = useState<HypothesisIntegrityReport | null>(null)
@@ -39,9 +39,10 @@ export default function IntegrityPage() {
       async (result) => {
         if (!mounted) return
         setOverview(result)
-        if (result.hypotheses[0]) {
+        const selected = result.hypotheses.find((item) => item.hypothesis_id === initialHypothesisId) ?? result.hypotheses[0]
+        if (selected) {
           try {
-            const detail = await getHypothesisIntegrity(result.hypotheses[0].hypothesis_id)
+            const detail = await getHypothesisIntegrity(selected.hypothesis_id)
             if (mounted) setReport(detail)
           } catch (reason) {
             if (mounted) setError(reason instanceof Error ? reason.message : String(reason))
@@ -51,7 +52,7 @@ export default function IntegrityPage() {
       (reason) => { if (mounted) setError(reason instanceof Error ? reason.message : String(reason)) },
     )
     return () => { mounted = false }
-  }, [])
+  }, [initialHypothesisId])
 
   async function selectHypothesis(id: string) {
     setBusy(true)

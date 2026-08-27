@@ -14,6 +14,7 @@ from app.api.portfolio_lab import router as portfolio_lab_router
 from app.api.replay import router as replay_router
 from app.api.research_integrity import router as research_integrity_router
 from app.api.research_snapshots import router as research_snapshots_router
+from app.api.research_workspace import router as research_workspace_router
 from app.api.runs import router as runs_router
 from app.api.settings import router as settings_router
 from app.api.strategies import router as strategies_router
@@ -23,6 +24,7 @@ router = APIRouter()
 router.include_router(replay_router)
 router.include_router(research_snapshots_router)
 router.include_router(research_integrity_router)
+router.include_router(research_workspace_router)
 router.include_router(runs_router)
 router.include_router(datasets_router)
 router.include_router(strategies_router)

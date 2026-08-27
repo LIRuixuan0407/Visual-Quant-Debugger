@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 
 import { useI18n } from '../i18n/I18nProvider'
 
-export type ProductPage = 'historical' | 'factors' | 'portfolio' | 'walk-forward' | 'relationships' | 'discovery' | 'snapshots' | 'integrity' | 'strategy' | 'data' | 'runs' | 'replay' | 'diagnose' | 'autopsy' | 'forward' | 'paper' | 'profile'
+export type ProductPage = 'historical' | 'factors' | 'portfolio' | 'walk-forward' | 'relationships' | 'discovery' | 'workspace' | 'snapshots' | 'integrity' | 'strategy' | 'data' | 'runs' | 'replay' | 'diagnose' | 'autopsy' | 'forward' | 'paper' | 'profile'
 
 interface ProductNavProps {
   activePage: ProductPage
@@ -12,6 +12,7 @@ interface ProductNavProps {
   onWalkForward?: () => void
   onRelationships?: () => void
   onDiscovery?: () => void
+  onWorkspace?: () => void
   onSnapshots?: () => void
   onIntegrity?: () => void
   onStrategy: () => void
@@ -33,6 +34,7 @@ function NavIcon({ page }: { page: ProductPage }) {
     'walk-forward': <><path d="M3 14V8h4v6h3V5h4v9h3" /><path d="m12 3 2 2-2 2M3 17h14" /></>,
     relationships: <><circle cx="5" cy="6" r="2" /><circle cx="15" cy="6" r="2" /><circle cx="10" cy="15" r="2" /><path d="m6.7 7.2 2.2 5.9m4.4-5.9-2.2 5.9M7 6h6" /></>,
     discovery: <><path d="M4 5h12v10H4z" /><path d="M7 8h6M7 11h4" /><circle cx="14.5" cy="14.5" r="2" /></>,
+    workspace: <><path d="M3 4h5v5H3zM12 4h5v5h-5zM7.5 12h5v5h-5z" /><path d="M8 6.5h4M5.5 9v2l4.5 1m4.5-3v2L10 12" /></>,
     snapshots: <><path d="M5 4h10v12H5z" /><path d="M7.5 7h5M7.5 10h5M7.5 13h3" /><path d="M3 6V3h9" /></>,
     integrity: <><path d="M10 2.5 4 5v4.5c0 4 2.6 6.9 6 8 3.4-1.1 6-4 6-8V5z" /><path d="m7.5 10 1.8 1.8 3.4-3.6" /></>,
     strategy: <><path d="M4 5h12M7 5v10m6-10v10M4 15h12" /><circle cx="7" cy="9" r="1.5" /><circle cx="13" cy="12" r="1.5" /></>,
@@ -48,9 +50,10 @@ function NavIcon({ page }: { page: ProductPage }) {
   return <svg className="nav-icon" viewBox="0 0 20 20" aria-hidden="true">{paths[page]}</svg>
 }
 
-function ProductNav({ activePage, onHistorical = () => undefined, onFactors = () => undefined, onPortfolio = () => undefined, onWalkForward = () => undefined, onRelationships = () => undefined, onDiscovery = () => undefined, onSnapshots = () => undefined, onIntegrity = () => undefined, onStrategy, onData, onRuns, onReplay, onDiagnose, onAutopsy, onForward, onPaper, onProfile }: ProductNavProps) {
+function ProductNav({ activePage, onHistorical = () => undefined, onFactors = () => undefined, onPortfolio = () => undefined, onWalkForward = () => undefined, onRelationships = () => undefined, onDiscovery = () => undefined, onWorkspace = () => undefined, onSnapshots = () => undefined, onIntegrity = () => undefined, onStrategy, onData, onRuns, onReplay, onDiagnose, onAutopsy, onForward, onPaper, onProfile }: ProductNavProps) {
   const { language, setLanguage, tr } = useI18n()
   const research: Array<[ProductPage, string, () => void]> = [
+    ['workspace', 'Research Workspace', onWorkspace],
     ['snapshots', 'Research Snapshots', onSnapshots],
     ['integrity', 'Research Integrity', onIntegrity],
     ['strategy', 'Strategy', onStrategy],

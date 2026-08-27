@@ -650,6 +650,38 @@ const zh: Record<string, string> = {
   'Current-to-target delta orders filled at close(t+1).': '根据当前持仓与目标持仓的差额生成订单，并在 close(t+1) 成交。',
   'Only data available through the current watermark can be used.': '策略只能使用当前数据水位线之前已经可用的数据。',
   'Target transitions execute at the next synchronized close.': '目标持仓变更在下一根同步收盘价执行。', 'Observed runtime features': '已观测运行时特征',
+  'Research Workspace': '研究工作台', 'Idea-centered research': '以研究构想为中心',
+  'Continue one research Idea across its existing Data, Factor, Portfolio, Validation, Hypothesis, Native Strategy, and Run records without losing context.': '在现有的数据、因子、组合、验证、研究假设、原生策略与运行记录之间持续推进同一个研究构想，不丢失上下文。',
+  'One Idea · one continuous chain': '一个研究构想 · 一条连续链路',
+  'No Research Ideas yet.': '还没有研究构想。', 'Create Research Idea': '创建研究构想',
+  'Loading Research Workspace…': '正在加载研究工作台…',
+  'Start in Strategy Discovery': '从策略发现开始',
+  'A Research Workspace appears automatically when you record a versioned Hypothesis from existing Factor evidence.': '当你根据现有因子证据记录带版本的研究假设后，研究工作台会自动出现。',
+  'Open Strategy Discovery': '打开策略发现', Updated: '更新于',
+  'Continuous research path': '连续研究路径', 'Idea progress': '构想进度', complete: '已完成',
+  COMPLETE: '已完成', CURRENT: '当前', BLOCKED: '待前置步骤',
+  'Next explicit action': '下一个显式操作', 'Create candidate Portfolio': '创建候选组合',
+  'Open latest Run': '打开最新运行',
+  'Continue this Idea through the existing research and execution services. Every completed action returns here with the same context.': '通过现有研究与执行服务继续推进这个构想。每个操作完成后都会带着同一份上下文返回这里。',
+  'Holdout is sealed. Confirming will reveal it for this immutable Hypothesis revision; no parameter or Idea is changed automatically.': 'Holdout 当前已封存。确认后将对这个不可变研究假设修订版揭示 Holdout；不会自动修改任何参数或研究构想。',
+  'Keep Holdout sealed': '保持 Holdout 封存', 'Confirm Reveal Holdout': '确认揭示 Holdout',
+  'Research context': '研究上下文', 'Data & Factors': '数据与因子', 'Open Data': '打开数据',
+  'Idea contract': '构想契约', 'Open Hypothesis': '打开研究假设', 'Constructed research': '已构建研究',
+  'Portfolio & Strategy': '组合与策略', 'Open Portfolio': '打开组合', Combination: '组合方式',
+  'Candidate Portfolio has not been created.': '尚未创建候选组合。',
+  'Recorded execution': '已记录执行', 'Runs & Evidence': '运行与证据',
+  'No immutable Run / Trace is attached yet.': '尚未绑定不可变的运行 / 追踪记录。', 'frozen records': '份冻结记录',
+  'Dataset revision is linked and available.': '数据集修订版已关联且可用。', 'The linked Dataset is missing.': '关联的数据集缺失。',
+  'One or more Factor research revisions are missing.': '一个或多个因子研究修订版缺失。',
+  'Candidate Portfolio is recorded.': '候选组合已记录。', 'Create the deterministic candidate Portfolio from this Idea.': '从这个研究构想创建确定性候选组合。',
+  'Validation evidence is recorded.': '验证证据已记录。', 'Validation remains pending.': '验证仍待执行。',
+  'Hypothesis evidence includes the explicitly revealed Holdout.': '研究假设证据已包含经显式操作揭示的 Holdout。',
+  'The Idea is recorded; its evidence state advances only by explicit actions.': '研究构想已记录；其证据状态只会因显式操作而推进。',
+  'Native Strategy revision is linked.': '原生策略修订版已关联。', 'Native Strategy creation remains pending.': '原生策略仍待创建。',
+  'Run the Native Strategy through the existing Execution Engine.': '通过现有执行引擎运行原生策略。',
+  'Native Strategy is missing from this Research Workspace.': '该研究工作台中缺少原生策略。',
+  'Workspace Backtest did not produce a replayable Trace.': '工作台回测未生成可回放的追踪记录。',
+  'The unified Research Workspace is a read model over the existing Dataset, Factor, Portfolio, Hypothesis, Native Strategy, Run, Trace, Snapshot, and Integrity records. It does not duplicate quantitative engines, mutate evidence, reveal Holdout automatically, optimize parameters, or select a winner.': '统一研究工作台是现有数据集、因子、组合、研究假设、原生策略、运行、追踪、快照与完整性记录之上的读模型。它不复制量化引擎、不修改证据、不自动揭示 Holdout、不优化参数，也不选择胜者。',
   'Research Integrity': '研究完整性', 'Research Integrity Guardrails': '研究完整性护栏',
   'Audit every hypothesis against its recorded ledger, dataset revisions, time boundaries, and strategy semantics. Each check reports an explicit status and reason; nothing is modified automatically.': '对照已记录的研究台账、数据集修订、时间边界和策略语义审计每个研究假设。每项检查都给出明确状态与原因；系统不会自动修改任何记录。',
   violations: '项违规', 'No hypotheses to audit yet.': '还没有可审计的研究假设。',
@@ -660,11 +692,101 @@ const zh: Record<string, string> = {
   'DATASET SILENT CHANGE': '数据集静默变化', 'STRATEGY SEMANTIC MISMATCH': '研究与策略语义不一致',
   'MISSING LINEAGE': '缺失研究链路', 'MISSING REVISION': '缺失修订版本',
   VIOLATION: '违规', PASS: '通过',
+  'Research Integrity Guardrails audit recorded lineage, dataset revisions, time boundaries, and strategy semantics against the append-only research ledger. They report evidence and reasons; they do not modify records, reveal Holdout, or judge whether a hypothesis is profitable.': '研究完整性护栏对照只追加的研究台账，审计已记录的链路、数据集修订、时间边界和策略语义。它们只报告证据和原因；不会修改记录、揭示 Holdout，也不会评价研究假设是否盈利。',
+  'The Hypothesis has no research ledger entries, so its mutation history cannot be verified.': '该研究假设没有任何研究台账条目，无法验证其变更历史。',
+  'The same experiment was modified after its Holdout had been revealed; only Strategy creation and Run attachment may follow the reveal, and a new revision is the sanctioned way to change the experiment.': '同一实验在 Holdout 揭示后被修改；揭示之后只允许创建策略和绑定运行，修改实验的正确方式是创建新修订版。',
+  'The Hypothesis changed without a matching research ledger event, so the change was applied outside the disciplined revision flow.': '该研究假设在没有对应研究台账事件的情况下发生了变化，说明修改绕过了受控的修订流程。',
+  'The experiment was not modified after Holdout reveal; later revisions live in separate hypothesis records and every recorded change has a matching ledger event.': '实验在 Holdout 揭示后未被修改；后续修订保存在独立的研究假设记录中，且每次已记录的变更都有对应的台账事件。',
+  'Research or Run evidence crosses a point-in-time boundary: stage windows, dataset coverage, run cutoffs, or the Holdout reveal order.': '研究或运行证据越过了时点边界：阶段窗口、数据集覆盖范围、运行截止时间或 Holdout 揭示顺序。',
+  'The experiment was defined with Holdout already revealed or uses inputs that are not restatement safe.': '该实验在 Holdout 已揭示后才定义，或使用了不具备重述安全性的输入。',
+  'All Factor evaluation timelines and Run periods stay inside their declared stage windows, dataset coverage, and research cutoffs, and the hypothesis was created before Holdout was revealed.': '所有因子评估时间线和运行周期都保持在声明的阶段窗口、数据集覆盖范围与研究截止时间之内，且研究假设在 Holdout 揭示前创建。',
+  'The dataset behind this hypothesis changed or no longer matches the revision the research was computed on.': '该研究假设背后的数据集已变化，或不再匹配研究计算时所用的修订版本。',
+  'The current dataset revision still matches the Hypothesis, its Factor research, and every attached Run.': '当前数据集修订版本仍与研究假设、其因子研究以及每个绑定的运行保持一致。',
+  'The executed Strategy no longer expresses the semantics of the research hypothesis it claims to implement.': '被执行的策略已不再表达它所声称实现的研究假设语义。',
+  'The Portfolio, Native Strategy, and attached Runs still express the recorded hypothesis semantics with matching source revisions and cost parameters.': '组合、原生策略和绑定的运行仍表达已记录的研究假设语义，源修订版本与成本参数一致。',
+  'The recorded research lineage references records that no longer exist or are required by the current lifecycle status.': '已记录的研究链路引用了已不存在的记录，或缺少当前生命周期状态所要求的记录。',
+  'Every lineage reference (Factor, Relationship, Walk-Forward, Portfolio, Strategy, Run, Trace) resolves to a stored record with matched ownership.': '所有链路引用（因子、关系、滚动前向、组合、策略、运行、追踪）都能解析到所有权匹配的已存储记录。',
+  'Some lineage records cannot be pinned to an exact revision, which weakens reproducibility.': '部分链路记录无法锁定到确切修订版本，这会削弱可复现性。',
+  'All lineage records carry an exact revision identity and the hypothesis is covered by research ledger entries.': '所有链路记录都带有确切的修订标识，且研究假设被研究台账条目覆盖。',
+  'hypothesis was created after its Factor research Holdout was already revealed': '该研究假设在其因子研究 Holdout 已揭示之后才创建',
+  'portfolio factor references do not match the hypothesis Factor research': '组合的因子引用与研究假设的因子研究不一致',
+  'portfolio universe filter does not match the hypothesis universe': '组合的股票池筛选与研究假设的股票池不一致',
+  'registered strategy source fingerprint no longer matches the strategy created from this research': '已注册策略的源码指纹不再与从该研究生成的策略一致',
+  'status STRATEGY_CREATED requires a Native Strategy in lineage': '状态 STRATEGY_CREATED 要求链路中包含原生策略',
+  'attached Run and Trace identifiers are not matched pairs': '绑定的运行与追踪标识不是成对匹配的',
+  'status STRATEGY_CREATED requires at least one attached Run / Trace pair': '状态 STRATEGY_CREATED 要求至少绑定一对运行 / 追踪记录',
+  'hypothesis has no research ledger revision entries': '研究假设没有研究台账修订条目',
+}
+
+const integrityPortfolioFields: Record<string, string> = {
+  combination: '组合方式',
+  selection: '选股方式',
+  'top percent': '头部百分比',
+  weighting: '加权方式',
+  'max single position weight': '单持仓权重上限',
+}
+
+const integrityEvidencePatterns: Array<[RegExp, (match: RegExpMatchArray) => string]> = [
+  [/^(.+) event at (.+) modified this hypothesis after Holdout reveal$/, (m) => `${m[1]} 事件于 ${m[2]} 在 Holdout 揭示后修改了该研究假设`],
+  [/^revision recorded (.+) but current record is (.+)$/, (m) => `台账记录修订版本为 ${m[1]}，但当前记录为 ${m[2]}`],
+  [/^dataset fingerprint recorded (.+) but current record uses (.+)$/, (m) => `台账记录数据集指纹为 ${m[1]}，但当前记录使用 ${m[2]}`],
+  [/^status recorded (.+) but current record is (.+)$/, (m) => `台账记录状态为 ${m[1]}，但当前记录为 ${m[2]}`],
+  [/^strategy recorded (.+) but current lineage uses (.+)$/, (m) => `台账记录策略为 ${m[1]}，但当前链路使用 ${m[2]}`],
+  [/^portfolio recorded (.+) but current lineage uses (.+)$/, (m) => `台账记录组合为 ${m[1]}，但当前链路使用 ${m[2]}`],
+  [/^factor ids recorded (.+) but current lineage uses (.+)$/, (m) => `台账记录因子 ID 为 ${m[1]}，但当前链路使用 ${m[2]}`],
+  [/^factor revisions recorded (.+) but current factors are (.+)$/, (m) => `台账记录因子修订为 ${m[1]}，但当前因子为 ${m[2]}`],
+  [/^factor research '(.+)' Holdout period ends after the dataset coverage end (.+)$/, (m) => `因子研究“${m[1]}”的 Holdout 期结束于数据集覆盖结束时间 ${m[2]} 之后`],
+  [/^factor research '(.+)' (RESEARCH|VALIDATION|HOLDOUT) evaluation period does not match its declared stage boundaries$/, (m) => `因子研究“${m[1]}”的${translateDynamic(m[2])}评估期与声明的阶段边界不一致`],
+  [/^factor research '(.+)' (RESEARCH|VALIDATION|HOLDOUT) evaluation timeline reaches outside its (RESEARCH|VALIDATION|HOLDOUT) window at (.+)$/, (m) => `因子研究“${m[1]}”的${translateDynamic(m[2])}评估时间线在 ${m[4]} 越出了${translateDynamic(m[3])}窗口`],
+  [/^factor research '(.+)' observation at (.+) claims availability at (.+) before its input window closed$/, (m) => `因子研究“${m[1]}”在 ${m[2]} 的观测声称于 ${m[3]} 可用，早于其输入窗口关闭`],
+  [/^factor research '(.+)' is not restatement safe: (.+)$/, (m) => `因子研究“${m[1]}”不具备重述安全性：${m[2]}`],
+  [/^run '(.+)' period ends after the dataset coverage end (.+)$/, (m) => `运行“${m[1]}”的周期结束于数据集覆盖结束时间 ${m[2]} 之后`],
+  [/^run '(.+)' period starts before the dataset coverage start (.+)$/, (m) => `运行“${m[1]}”的周期开始于数据集覆盖开始时间 ${m[2]} 之前`],
+  [/^run '(.+)' period end (.+) exceeds its declared research cutoff (.+)$/, (m) => `运行“${m[1]}”的周期结束时间 ${m[2]} 超出了其声明的研究截止时间 ${m[3]}`],
+  [/^run '(.+)' covers the Holdout window before Holdout was revealed$/, (m) => `运行“${m[1]}”在 Holdout 揭示前就覆盖了 Holdout 窗口`],
+  [/^dataset '(.+)' is no longer registered$/, (m) => `数据集“${m[1]}”已不存在`],
+  [/^dataset fingerprint drifted from (.+) to (.+)$/, (m) => `数据集指纹从 ${m[1]} 漂移到 ${m[2]}`],
+  [/^factor research '(.+)' was computed on dataset revision (.+)$/, (m) => `因子研究“${m[1]}”基于数据集修订 ${m[2]} 计算`],
+  [/^run '(.+)' was executed on dataset '(.+)' instead of '(.+)'$/, (m) => `运行“${m[1]}”在数据集“${m[2]}”上执行，而非“${m[3]}”`],
+  [/^run '(.+)' was executed on dataset revision (.+)$/, (m) => `运行“${m[1]}”基于数据集修订 ${m[2]} 执行`],
+  [/^portfolio rebalances (.+) while the hypothesis defines (.+)$/, (m) => `组合按 ${m[1]} 再平衡，而研究假设定义为 ${m[2]}`],
+  [/^portfolio (.+) is (.+) while the hypothesis candidate defines (.+)$/, (m) => `组合的${integrityPortfolioFields[m[1]] ?? m[1]}为 ${m[2]}，而研究假设候选定义为 ${m[3]}`],
+  [/^portfolio has no Native Strategy while lineage claims '(.+)'$/, (m) => `组合没有原生策略，而链路声称存在“${m[1]}”`],
+  [/^portfolio strategy '(.+)' does not match lineage strategy '(.+)'$/, (m) => `组合策略“${m[1]}”与链路策略“${m[2]}”不一致`],
+  [/^strategy '(.+)' has no registration revision$/, (m) => `策略“${m[1]}”没有注册修订版本`],
+  [/^portfolio configuration changed after the Native Strategy was generated: strategy '(.+)' no longer matches the current Portfolio semantics$/, (m) => `原生策略生成后组合配置发生了变化：策略“${m[1]}”不再匹配当前组合语义`],
+  [/^run '(.+)' uses strategy '(.+)' instead of '(.+)'$/, (m) => `运行“${m[1]}”使用策略“${m[2]}”，而非“${m[3]}”`],
+  [/^run '(.+)' uses strategy source revision (.+) instead of (.+)$/, (m) => `运行“${m[1]}”使用策略源修订 ${m[2]}，而非 ${m[3]}`],
+  [/^run '(.+)' executed with (.+) (.+) while the research portfolio defines (.+)$/, (m) => `运行“${m[1]}”以 ${m[2]} ${m[3]} 执行，而研究组合定义为 ${m[4]}`],
+  [/^factor research '(.+)' is missing$/, (m) => `因子研究“${m[1]}”缺失`],
+  [/^factor relationship '(.+)' is missing$/, (m) => `因子关系“${m[1]}”缺失`],
+  [/^walk-forward research '(.+)' is missing$/, (m) => `滚动前向研究“${m[1]}”缺失`],
+  [/^portfolio research '(.+)' is missing$/, (m) => `组合研究“${m[1]}”缺失`],
+  [/^status (.+) requires a Portfolio research record in lineage$/, (m) => `状态 ${translateDynamic(m[1])} 要求链路中包含组合研究记录`],
+  [/^run '(.+)' is missing from the Run store$/, (m) => `运行“${m[1]}”在运行存储中缺失`],
+  [/^run '(.+)' does not own Trace '(.+)'$/, (m) => `运行“${m[1]}”不拥有追踪“${m[2]}”`],
+  [/^Trace '(.+)' belongs to a different Run$/, (m) => `追踪“${m[1]}”属于另一个运行`],
+  [/^run '(.+)' has no readable Trace artifact$/, (m) => `运行“${m[1]}”没有可读取的追踪制品`],
+  [/^factor research '(.+)' has no revision identity$/, (m) => `因子研究“${m[1]}”没有修订标识`],
+]
+
+function translateIntegrityEvidence(text: string): string | null {
+  for (const [pattern, render] of integrityEvidencePatterns) {
+    const match = text.match(pattern)
+    if (match) return render(match)
+  }
+  return null
 }
 
 function translateDynamic(text: string): string {
   const exact = zh[text]
   if (exact) return exact
+  const workspaceFactors = text.match(/^(\d+) Factor research revisions are linked\.$/)
+  if (workspaceFactors) return `已关联 ${workspaceFactors[1]} 个因子研究修订版。`
+  const workspaceRuns = text.match(/^(\d+) immutable Run \/ Trace pairs are linked\.$/)
+  if (workspaceRuns) return `已关联 ${workspaceRuns[1]} 对不可变的运行 / 追踪记录。`
+  const integrityEvidence = translateIntegrityEvidence(text)
+  if (integrityEvidence) return integrityEvidence
   if (text === 'CSV must be UTF-8 encoded') return 'CSV 必须使用 UTF-8 编码。'
   if (text === 'CSV must contain a header row') return 'CSV 必须包含表头行。'
   if (text === 'CSV column names must be unique') return 'CSV 列名必须唯一。'
