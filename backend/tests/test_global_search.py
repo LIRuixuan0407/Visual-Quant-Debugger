@@ -48,9 +48,7 @@ def _service(tmp_path: Path, hypothesis: ResearchHypothesis | None = None) -> Gl
     discovery, _, factors, hypotheses, _, datasets, strategies, research_ids = assets
     if hypothesis is None:
         hypotheses.save(
-            discovery.create(
-                _request(research_ids).model_copy(update={"title": "苹果动量研究"})
-            )
+            discovery.create(_request(research_ids).model_copy(update={"title": "苹果动量研究"}))
         )
     else:
         hypotheses.save(hypothesis)

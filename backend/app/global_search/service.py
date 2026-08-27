@@ -69,8 +69,8 @@ def _match(document: SearchDocument, query: str) -> tuple[int, tuple[str, ...]] 
         ("entity_id", entity_id),
         ("title", title),
         ("subtitle", subtitle),
-        *(('alias', value) for value in aliases),
-        *(('tag', value) for value in tags),
+        *(("alias", value) for value in aliases),
+        *(("tag", value) for value in tags),
     )
     fields = tuple(dict.fromkeys(field for field, value in searchable if query in value))
     if fields:
@@ -251,8 +251,7 @@ class GlobalSearchService:
                     entity_id=record.research_id,
                     title=record.name,
                     subtitle=(
-                        f"{record.factor.name} · "
-                        f"{datasets[record.dataset_id].name}"
+                        f"{record.factor.name} · {datasets[record.dataset_id].name}"
                         if record.dataset_id in datasets
                         else record.dataset_id
                     ),
@@ -294,26 +293,22 @@ class GlobalSearchService:
         for factor_registration in self.factors.list_registrations():
             factor_documents[
                 (factor_registration.factor_id, factor_registration.source_fingerprint)
-            ] = (
-                SearchDocument(
-                    entity_type="FACTOR",
-                    entity_id=factor_registration.factor_id,
-                    title=factor_registration.class_name,
-                    subtitle="CUSTOM · registered Factor",
-                    aliases=(
-                        factor_registration.class_name,
-                        factor_registration.source_fingerprint,
-                        "CUSTOM",
-                    ),
-                    created_at=factor_registration.registered_at,
-                    route=_route(
-                        "/factor-lab", "factor_id", factor_registration.factor_id
-                    ),
-                    metadata={
-                        "revision": factor_registration.source_fingerprint,
-                        "origin": "CUSTOM",
-                    },
-                )
+            ] = SearchDocument(
+                entity_type="FACTOR",
+                entity_id=factor_registration.factor_id,
+                title=factor_registration.class_name,
+                subtitle="CUSTOM · registered Factor",
+                aliases=(
+                    factor_registration.class_name,
+                    factor_registration.source_fingerprint,
+                    "CUSTOM",
+                ),
+                created_at=factor_registration.registered_at,
+                route=_route("/factor-lab", "factor_id", factor_registration.factor_id),
+                metadata={
+                    "revision": factor_registration.source_fingerprint,
+                    "origin": "CUSTOM",
+                },
             )
         for record in research_records:
             definition = record.factor
@@ -399,9 +394,7 @@ class GlobalSearchService:
                     entity_type="PORTFOLIO_RESEARCH",
                     entity_id=portfolio.portfolio_research_id,
                     title=portfolio.name,
-                    subtitle=(
-                        f"{', '.join(portfolio.factor_names)} · {portfolio.revealed_stage}"
-                    ),
+                    subtitle=(f"{', '.join(portfolio.factor_names)} · {portfolio.revealed_stage}"),
                     aliases=(
                         portfolio.dataset_id,
                         portfolio.revealed_stage,
@@ -444,9 +437,7 @@ class GlobalSearchService:
                         *hypothesis.lineage.factor_ids,
                     ),
                     created_at=hypothesis.created_at,
-                    route=(
-                        f"/research-workspace/{quote(hypothesis.hypothesis_id, safe='')}"
-                    ),
+                    route=(f"/research-workspace/{quote(hypothesis.hypothesis_id, safe='')}"),
                     metadata={
                         "family_id": hypothesis.family_id,
                         "revision": hypothesis.revision,
@@ -480,17 +471,14 @@ class GlobalSearchService:
             manifest = registration.adapter_manifest
             name = run_strategy_names.get(registration.strategy_id, registration.class_name)
             version = manifest.version if manifest is not None else None
-            framework = (
-                f" · {registration.framework_name}" if registration.framework_name else ""
-            )
+            framework = f" · {registration.framework_name}" if registration.framework_name else ""
             documents.append(
                 SearchDocument(
                     entity_type="STRATEGY",
                     entity_id=registration.strategy_id,
                     title=name,
                     subtitle=(
-                        f"{version or 'registered'} · {registration.runtime_kind}"
-                        f"{framework}"
+                        f"{version or 'registered'} · {registration.runtime_kind}{framework}"
                     ),
                     aliases=(
                         registration.class_name,
@@ -579,9 +567,7 @@ class GlobalSearchService:
                         snapshot.content_fingerprint,
                     ),
                     created_at=snapshot.created_at,
-                    route=_route(
-                        "/research-snapshots", "snapshot_id", snapshot.snapshot_id
-                    ),
+                    route=_route("/research-snapshots", "snapshot_id", snapshot.snapshot_id),
                     metadata={
                         "hypothesis_id": snapshot.hypothesis_id,
                         "hypothesis_revision": snapshot.hypothesis_revision,
