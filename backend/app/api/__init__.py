@@ -13,6 +13,7 @@ from app.api.paper import router as paper_router
 from app.api.portfolio_lab import router as portfolio_lab_router
 from app.api.replay import router as replay_router
 from app.api.research_integrity import router as research_integrity_router
+from app.api.research_lineage import router as research_lineage_router
 from app.api.research_snapshots import router as research_snapshots_router
 from app.api.research_workspace import router as research_workspace_router
 from app.api.runs import router as runs_router
@@ -24,6 +25,7 @@ router = APIRouter()
 router.include_router(replay_router)
 router.include_router(research_snapshots_router)
 router.include_router(research_integrity_router)
+router.include_router(research_lineage_router)
 router.include_router(research_workspace_router)
 router.include_router(runs_router)
 router.include_router(datasets_router)

@@ -5,6 +5,8 @@ from .models import (
     ResearchWorkspaceSummary,
     WorkspaceAction,
     WorkspaceFactor,
+    WorkspaceFactorRelationship,
+    WorkspaceLineageStatus,
     WorkspaceNextAction,
     WorkspacePortfolio,
     WorkspaceRun,
@@ -12,6 +14,7 @@ from .models import (
     WorkspaceStageKey,
     WorkspaceStageStatus,
     WorkspaceStrategy,
+    WorkspaceWalkForward,
 )
 
 __all__ = [
@@ -21,6 +24,8 @@ __all__ = [
     "WORKSPACE_DISCLOSURE",
     "WorkspaceAction",
     "WorkspaceFactor",
+    "WorkspaceFactorRelationship",
+    "WorkspaceLineageStatus",
     "WorkspaceNextAction",
     "WorkspacePortfolio",
     "WorkspaceRun",
@@ -28,4 +33,5 @@ __all__ = [
     "WorkspaceStageKey",
     "WorkspaceStageStatus",
     "WorkspaceStrategy",
+    "WorkspaceWalkForward",
 ]

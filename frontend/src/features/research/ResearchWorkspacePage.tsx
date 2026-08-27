@@ -32,6 +32,9 @@ interface ResearchWorkspacePageProps {
   onIdeaChange: (ideaId: string) => void
   onOpenData: () => void
   onOpenFactors: () => void
+  onOpenRelationships: () => void
+  onOpenWalkForward: () => void
+  onOpenLineage: (ideaId: string) => void
   onOpenPortfolio: () => void
   onOpenHypothesis: (ideaId: string) => void
   onOpenStrategy: (strategyId: string, datasetId: string) => void
@@ -47,6 +50,9 @@ export default function ResearchWorkspacePage({
   onIdeaChange,
   onOpenData,
   onOpenFactors,
+  onOpenRelationships,
+  onOpenWalkForward,
+  onOpenLineage,
   onOpenPortfolio,
   onOpenHypothesis,
   onOpenStrategy,
@@ -168,7 +174,7 @@ export default function ResearchWorkspacePage({
 
   return <main className="discover-shell research-workbench unified-workspace">
     <section className="discover-title">
-      <div><span className="section-kicker">{tr('Idea-centered research')}</span><h1>{tr('Research Workspace')}</h1><p>{tr('Continue one research Idea across its existing Data, Factor, Portfolio, Validation, Hypothesis, Native Strategy, and Run records without losing context.')}</p></div>
+      <div><span className="section-kicker">{tr('Idea-centered research')}</span><h1>{tr('Research Workspace')}</h1><p>{tr('Continue one research Idea across its existing Data, Factor, Factor Relationship, Walk-Forward, Portfolio, Validation, Hypothesis, Native Strategy, and Run records without losing context.')}</p></div>
       <span className="bias-tag">{tr('One Idea · one continuous chain')}</span>
     </section>
 
@@ -202,6 +208,31 @@ export default function ResearchWorkspacePage({
             <div className="workspace-stage-rail">{workspace.stages.map((stage, index) => <button key={stage.key} className={stage.status.toLowerCase()} onClick={() => openStage(stage.key)}>
               <span>{String(index + 1).padStart(2, '0')}</span><b>{tr(stageLabel[stage.key])}</b><small>{tr(stage.status)}</small><p>{tr(stage.summary)}</p>{stage.artifact_ids[0] && <code title={stage.artifact_ids.join(' · ')}>{shortId(stage.artifact_ids[0])}</code>}
             </button>)}</div>
+          </section>
+
+          <section className="workspace-panel workspace-research-lineage">
+            <div className="section-heading"><div><span className="section-kicker">{tr('Explicit Hypothesis lineage')}</span><h2>{tr('Relationship & Walk-Forward evidence')}</h2></div><div className="workspace-lineage-actions"><span>{workspace.relationships.length + workspace.walk_forward.length} {tr('linked records')}</span><button onClick={() => onOpenLineage(workspace.idea_id)}>{tr('Open in Lineage')}</button></div></div>
+            <p>{tr('Only the Factor Relationship and Walk-Forward IDs recorded by this Hypothesis are resolved. Missing referenced records remain visible as MISSING.')}</p>
+            <div className="workspace-lineage-evidence-grid">
+              <article aria-label={tr('Factor Relationship lineage')}>
+                <header><div><span>{tr('Association evidence')}</span><h3>{tr('Factor Relationships')}</h3></div><button onClick={onOpenRelationships}>{tr('Open Relationships')}</button></header>
+                {workspace.relationships.length === 0 && <p className="empty-copy">{tr('No Factor Relationship is linked to this Idea.')}</p>}
+                <div className="workspace-lineage-records">{workspace.relationships.map((relationship) => <div key={relationship.relationship_id} className={relationship.status.toLowerCase()}>
+                  <span><strong>{relationship.name ?? tr('MISSING')}</strong><code title={relationship.relationship_id}>{shortId(relationship.relationship_id)}</code></span>
+                  <b>{tr(relationship.status)}</b>
+                  {relationship.status === 'AVAILABLE' && <small>{tr(relationship.stage ?? '')} · {relationship.factor_research_ids.length} {tr('Factors')} · {relationship.redundancy_count} {tr('redundancy checks')}</small>}
+                </div>)}</div>
+              </article>
+              <article aria-label={tr('Walk-Forward lineage')}>
+                <header><div><span>{tr('Stability evidence')}</span><h3>{tr('Walk-Forward')}</h3></div><button onClick={onOpenWalkForward}>{tr('Open Walk-Forward')}</button></header>
+                {workspace.walk_forward.length === 0 && <p className="empty-copy">{tr('No Walk-Forward research is linked to this Idea.')}</p>}
+                <div className="workspace-lineage-records">{workspace.walk_forward.map((walkForward) => <div key={walkForward.walk_forward_id} className={walkForward.status.toLowerCase()}>
+                  <span><strong>{walkForward.name ?? tr('MISSING')}</strong><code title={walkForward.walk_forward_id}>{shortId(walkForward.walk_forward_id)}</code></span>
+                  <b>{tr(walkForward.status)}</b>
+                  {walkForward.status === 'AVAILABLE' && <small>{tr(walkForward.factor_id ?? '')} · {walkForward.window_count} {tr('forward windows')} · {tr('Positive IC windows')} {number(walkForward.positive_ic_window_ratio)}</small>}
+                </div>)}</div>
+              </article>
+            </div>
           </section>
 
           <section className={`workspace-panel workspace-next-action ${confirmHoldout ? 'confirming' : ''}`}>

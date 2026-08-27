@@ -5,6 +5,7 @@ from datetime import datetime
 from app.datasets import DatasetRegistry
 from app.discovery.models import ResearchHypothesis
 from app.discovery.repository import HypothesisRepository
+from app.factor_relationships.repository import FactorRelationshipRepository
 from app.factors.repository import FactorResearchRepository
 from app.portfolio_lab.models import PortfolioResearchRecord
 from app.portfolio_lab.repository import PortfolioResearchRepository
@@ -13,17 +14,20 @@ from app.research_ledger import ResearchLedgerRepository
 from app.research_snapshots import ResearchSnapshotRepository
 from app.runs import ArtifactIntegrityError, RunNotFoundError, RunRepository
 from app.sdk.registry import StrategyRegistry
+from app.walk_forward.repository import WalkForwardRepository
 
 from .models import (
     ResearchWorkspace,
     ResearchWorkspaceSummary,
     WorkspaceFactor,
+    WorkspaceFactorRelationship,
     WorkspaceNextAction,
     WorkspacePortfolio,
     WorkspaceRun,
     WorkspaceStage,
     WorkspaceStageStatus,
     WorkspaceStrategy,
+    WorkspaceWalkForward,
 )
 
 _STATUS_RANK = {
@@ -40,6 +44,8 @@ class ResearchWorkspaceEngine:
         self,
         datasets: DatasetRegistry,
         factors: FactorResearchRepository,
+        relationships: FactorRelationshipRepository,
+        walk_forward: WalkForwardRepository,
         hypotheses: HypothesisRepository,
         portfolios: PortfolioResearchRepository,
         strategies: StrategyRegistry,
@@ -50,6 +56,8 @@ class ResearchWorkspaceEngine:
     ) -> None:
         self.datasets = datasets
         self.factors = factors
+        self.relationships = relationships
+        self.walk_forward = walk_forward
         self.hypotheses = hypotheses
         self.portfolios = portfolios
         self.strategies = strategies
@@ -214,6 +222,35 @@ class ResearchWorkspaceEngine:
             )
             for item in factor_rows
         )
+        relationships = tuple(
+            WorkspaceFactorRelationship(
+                relationship_id=relationship_id,
+                status="MISSING" if item is None else "AVAILABLE",
+                name=None if item is None else item.name,
+                stage=None if item is None else item.stage,
+                factor_research_ids=() if item is None else item.factor_research_ids,
+                redundancy_count=0 if item is None else len(item.redundancy),
+                cluster_count=0 if item is None else len(item.clusters),
+            )
+            for relationship_id in record.lineage.relationship_ids
+            for item in (self.relationships.get(relationship_id),)
+        )
+        walk_forward = tuple(
+            WorkspaceWalkForward(
+                walk_forward_id=walk_forward_id,
+                status="MISSING" if item is None else "AVAILABLE",
+                name=None if item is None else item.name,
+                factor_research_id=None if item is None else item.factor_research_id,
+                factor_id=None if item is None else item.factor_id,
+                dataset_id=None if item is None else item.dataset_id,
+                window_count=0 if item is None else len(item.windows),
+                positive_ic_window_ratio=(
+                    None if item is None else item.stability.positive_ic_window_ratio
+                ),
+            )
+            for walk_forward_id in record.lineage.walk_forward_ids
+            for item in (self.walk_forward.get(walk_forward_id),)
+        )
         portfolio_record = (
             None
             if record.lineage.portfolio_research_id is None
@@ -297,6 +334,8 @@ class ResearchWorkspaceEngine:
             dataset_revision=record.dataset_fingerprint,
             dataset_period=(dataset.start_time, dataset.end_time) if dataset is not None else None,
             factors=factors,
+            relationships=relationships,
+            walk_forward=walk_forward,
             portfolio=portfolio,
             strategy=strategy,
             runs=runs,

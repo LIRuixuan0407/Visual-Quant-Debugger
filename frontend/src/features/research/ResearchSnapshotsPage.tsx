@@ -115,11 +115,13 @@ function ExperimentComparison({
 }
 
 interface ResearchSnapshotsPageProps {
+  initialSnapshotId?: string | null
   onOpenRuns: (runId: string) => void
   onOpenReplay: (traceId: string) => void
 }
 
 export default function ResearchSnapshotsPage({
+  initialSnapshotId = null,
   onOpenRuns,
   onOpenReplay,
 }: ResearchSnapshotsPageProps) {
@@ -154,9 +156,10 @@ export default function ResearchSnapshotsPage({
           setSelectedHypothesisId(ready.hypothesis_id)
           setName(`${ready.title} · ${tr('frozen research')}`)
         }
-        if (snapshotRows[0]) {
+        const detailId = initialSnapshotId ?? snapshotRows[0]?.snapshot_id
+        if (detailId) {
           try {
-            const detail = await getResearchSnapshot(snapshotRows[0].snapshot_id)
+            const detail = await getResearchSnapshot(detailId)
             if (mounted) setSnapshot(detail)
           } catch (reason) {
             if (mounted) setError(reason instanceof Error ? reason.message : String(reason))
@@ -166,7 +169,7 @@ export default function ResearchSnapshotsPage({
       (reason) => { if (mounted) setError(reason instanceof Error ? reason.message : String(reason)) },
     )
     return () => { mounted = false }
-  }, [tr])
+  }, [initialSnapshotId, tr])
 
   function selectHypothesis(id: string) {
     setSelectedHypothesisId(id)

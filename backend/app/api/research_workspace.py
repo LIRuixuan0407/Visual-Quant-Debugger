@@ -35,6 +35,8 @@ def _engine() -> ResearchWorkspaceEngine:
     return ResearchWorkspaceEngine(
         dataset_registry,
         factor_research_repository,
+        factor_relationship_repository,
+        walk_forward_repository,
         hypothesis_repository,
         portfolio_research_repository,
         strategy_registry,

@@ -20,6 +20,7 @@ import WalkForwardPage from './features/discover/WalkForwardPage'
 import IntegrityPage from './features/research/IntegrityPage'
 import ResearchSnapshotsPage from './features/research/ResearchSnapshotsPage'
 import ResearchWorkspacePage from './features/research/ResearchWorkspacePage'
+import ResearchLineagePage from './features/research/ResearchLineagePage'
 import ReplayPage from './features/replay/ReplayPage'
 import RunsPage from './features/runs/RunsPage'
 import type { LoadedRunConfiguration } from './features/runs/RunsPage'
@@ -27,6 +28,7 @@ import StrategyPage from './features/strategy/StrategyPage'
 import { useI18n } from './i18n/I18nProvider'
 import type { BacktestTrace, RunContext } from './types/trace'
 import type { DatasetDefinition } from './types/dataset'
+import type { LineageNode } from './types/researchLineage'
 import type { StrategyDefinition, StrategyParameters } from './types/strategy'
 
 type ReplayStage = 'idle' | 'running' | 'loading-trace' | 'ready' | 'error'
@@ -44,6 +46,7 @@ function initialLocation(): { page: ProductPage; runId: string | null } {
   if (window.location.pathname === '/factor-relationships') return { page: 'relationships', runId: null }
   if (window.location.pathname === '/discovery') return { page: 'discovery', runId: null }
   if (window.location.pathname.startsWith('/research-workspace')) return { page: 'workspace', runId: null }
+  if (window.location.pathname === '/research-lineage') return { page: 'lineage', runId: null }
   if (window.location.pathname === '/research-snapshots') return { page: 'snapshots', runId: null }
   if (window.location.pathname === '/research-integrity') return { page: 'integrity', runId: null }
   if (window.location.pathname === '/data') return { page: 'data', runId: null }
@@ -224,6 +227,28 @@ function App() {
     }
   }
 
+  function openLineageNode(node: LineageNode) {
+    if (node.node_type === 'HYPOTHESIS') {
+      setActiveIdeaId(node.artifact_id)
+      navigate('workspace', `/research-workspace/${node.artifact_id}`)
+    } else if (node.node_type === 'RUN') {
+      setActiveRunId(node.artifact_id)
+      navigate('runs', `/runs/${node.artifact_id}`)
+    } else if (node.node_type === 'TRACE') {
+      window.history.pushState({}, '', `/replay?trace_id=${encodeURIComponent(node.artifact_id)}`)
+      openReplay(node.artifact_id)
+    } else if (node.node_type === 'SNAPSHOT') {
+      navigate('snapshots', `/research-snapshots?snapshot_id=${encodeURIComponent(node.artifact_id)}`)
+    } else if (node.node_type === 'STRATEGY') {
+      const datasetId = typeof node.metadata.dataset_id === 'string' ? node.metadata.dataset_id : selectedDatasetId
+      void openWorkspaceStrategy(node.artifact_id, datasetId)
+    } else if (node.node_type === 'DATASET') navigate('data', node.route ?? '/data')
+    else if (node.node_type === 'FACTOR' || node.node_type === 'FACTOR_RESEARCH') navigate('factors', node.route ?? '/factor-lab')
+    else if (node.node_type === 'FACTOR_RELATIONSHIP') navigate('relationships', node.route ?? '/factor-relationships')
+    else if (node.node_type === 'WALK_FORWARD') navigate('walk-forward', node.route ?? '/walk-forward')
+    else if (node.node_type === 'PORTFOLIO_RESEARCH') navigate('portfolio', node.route ?? '/portfolio-lab')
+  }
+
   const definition = definitions.find((item) => item.strategy_id === selectedStrategyId) ?? null
   if (!definition) {
     if (definitionError) return <StartupState title={tr('Could not load strategy definition.')} detail={definitionError} error onRetry={() => void loadDefinition()} />
@@ -238,8 +263,9 @@ function App() {
   else if (page === 'walk-forward') content = <WalkForwardPage strategies={definitions} onOpenHistorical={(path) => navigate('historical', path)} onOpenFactor={(path) => navigate('factors', path)} onOpenReplay={(traceId, path) => { window.history.pushState({}, '', path); openReplay(traceId) }} onRunComplete={activateTrace} />
   else if (page === 'relationships') content = <FactorRelationshipPage />
   else if (page === 'discovery') content = <DiscoveryWorkspacePage initialHypothesisId={activeIdeaId} onOpenReplay={openReplay} onRunComplete={(traceId, runId) => activateTrace(traceId, runId)} />
-  else if (page === 'workspace') content = <ResearchWorkspacePage initialIdeaId={activeIdeaId} onIdeaChange={setActiveIdeaId} onOpenData={() => navigate('data', '/data')} onOpenFactors={() => navigate('factors', '/factor-lab')} onOpenPortfolio={() => navigate('portfolio', '/portfolio-lab')} onOpenHypothesis={(ideaId) => { setActiveIdeaId(ideaId || null); navigate('discovery', '/discovery') }} onOpenStrategy={(strategyId, datasetId) => void openWorkspaceStrategy(strategyId, datasetId)} onOpenRun={(runId) => { setActiveRunId(runId); navigate('runs', `/runs/${runId}`) }} onOpenReplay={openReplay} onOpenIntegrity={(ideaId) => { setActiveIdeaId(ideaId); navigate('integrity', '/research-integrity') }} onOpenSnapshots={() => navigate('snapshots', '/research-snapshots')} onRunComplete={(traceId, runId) => activateTrace(traceId, runId)} />
-  else if (page === 'snapshots') content = <ResearchSnapshotsPage onOpenRuns={(runId) => { setActiveRunId(runId); navigate('runs', `/runs/${runId}`) }} onOpenReplay={openReplay} />
+  else if (page === 'workspace') content = <ResearchWorkspacePage initialIdeaId={activeIdeaId} onIdeaChange={setActiveIdeaId} onOpenData={() => navigate('data', '/data')} onOpenFactors={() => navigate('factors', '/factor-lab')} onOpenRelationships={() => navigate('relationships', '/factor-relationships')} onOpenWalkForward={() => navigate('walk-forward', '/walk-forward')} onOpenLineage={(ideaId) => navigate('lineage', `/research-lineage?root_type=HYPOTHESIS&root_id=${encodeURIComponent(ideaId)}&direction=BOTH&max_depth=8`)} onOpenPortfolio={() => navigate('portfolio', '/portfolio-lab')} onOpenHypothesis={(ideaId) => { setActiveIdeaId(ideaId || null); navigate('discovery', '/discovery') }} onOpenStrategy={(strategyId, datasetId) => void openWorkspaceStrategy(strategyId, datasetId)} onOpenRun={(runId) => { setActiveRunId(runId); navigate('runs', `/runs/${runId}`) }} onOpenReplay={openReplay} onOpenIntegrity={(ideaId) => { setActiveIdeaId(ideaId); navigate('integrity', '/research-integrity') }} onOpenSnapshots={() => navigate('snapshots', '/research-snapshots')} onRunComplete={(traceId, runId) => activateTrace(traceId, runId)} />
+  else if (page === 'lineage') content = <ResearchLineagePage onOpenNode={openLineageNode} />
+  else if (page === 'snapshots') content = <ResearchSnapshotsPage initialSnapshotId={new URLSearchParams(window.location.search).get('snapshot_id')} onOpenRuns={(runId) => { setActiveRunId(runId); navigate('runs', `/runs/${runId}`) }} onOpenReplay={openReplay} />
   else if (page === 'integrity') content = <IntegrityPage initialHypothesisId={activeIdeaId} />
   else if (page === 'strategy') content = <StrategyPage key={definition.strategy_id} definition={definition} strategies={definitions} datasets={datasets} selectedDatasetId={selectedDatasetId} loadedConfiguration={loadedStrategyConfiguration} onStrategyChange={selectStrategy} onDatasetChange={setSelectedDatasetId} onConfigurationChange={(configuration) => { setResearchConfiguration(configuration); setLoadedStrategyConfiguration(null) }} onOpenReplay={openReplay} onRunComplete={activateTrace} onStrategyImported={(imported) => { setDefinitions((current) => [...current.filter((item) => item.strategy_id !== imported.strategy_id), imported]); setSelectedStrategyId(imported.strategy_id); setResearchConfiguration({ strategy_id: imported.strategy_id, dataset_id: selectedDatasetId, parameters: Object.fromEntries(imported.parameters.map((item) => [item.key, item.default_value])), research_cutoff: null }) }} />
   else if (page === 'data') content = <DataPage datasets={datasets} onImported={addDataset} />
@@ -258,7 +284,7 @@ function App() {
   else if (replayStage === 'error') content = <StartupState title={tr('Could not load trace.')} detail={tr(replayError ?? 'Unknown Replay error.')} error onRetry={() => activeTraceId ? void loadTraceById(activeTraceId) : void runDemoReplay()} />
   else content = <StartupState title={tr(replayStage === 'running' ? 'Running demo backtest…' : 'Loading trace…')} />
 
-  return <div className="app-frame"><ProductNav activePage={page} onHistorical={() => navigate('historical', '/historical-market')} onFactors={() => navigate('factors', '/factor-lab')} onPortfolio={() => navigate('portfolio', '/portfolio-lab')} onWalkForward={() => navigate('walk-forward', '/walk-forward')} onRelationships={() => navigate('relationships', '/factor-relationships')} onDiscovery={() => navigate('discovery', '/discovery')} onWorkspace={() => navigate('workspace', activeIdeaId ? `/research-workspace/${activeIdeaId}` : '/research-workspace')} onSnapshots={() => navigate('snapshots', '/research-snapshots')} onIntegrity={() => navigate('integrity', '/research-integrity')} onStrategy={() => navigate('strategy')} onData={() => navigate('data')} onRuns={() => navigate('runs', activeRunId ? `/runs/${activeRunId}` : '/runs')} onReplay={navigateReplay} onDiagnose={() => setPage('diagnose')} onAutopsy={() => setPage('autopsy')} onForward={() => setPage('forward')} onPaper={() => navigate('paper', '/paper')} onProfile={() => navigate('profile', '/me')} /><div className="app-workspace">{!['profile', 'paper', 'historical', 'factors', 'portfolio', 'walk-forward', 'relationships', 'discovery', 'workspace', 'snapshots', 'integrity'].includes(page) && <RunContextBar runId={activeRunId} traceId={activeTraceId} trace={trace} context={runContext} forwardSessionId={forwardSessionId} />}{content}</div></div>
+  return <div className="app-frame"><ProductNav activePage={page} onHistorical={() => navigate('historical', '/historical-market')} onFactors={() => navigate('factors', '/factor-lab')} onPortfolio={() => navigate('portfolio', '/portfolio-lab')} onWalkForward={() => navigate('walk-forward', '/walk-forward')} onRelationships={() => navigate('relationships', '/factor-relationships')} onDiscovery={() => navigate('discovery', '/discovery')} onWorkspace={() => navigate('workspace', activeIdeaId ? `/research-workspace/${activeIdeaId}` : '/research-workspace')} onLineage={() => navigate('lineage', '/research-lineage')} onSnapshots={() => navigate('snapshots', '/research-snapshots')} onIntegrity={() => navigate('integrity', '/research-integrity')} onStrategy={() => navigate('strategy')} onData={() => navigate('data')} onRuns={() => navigate('runs', activeRunId ? `/runs/${activeRunId}` : '/runs')} onReplay={navigateReplay} onDiagnose={() => setPage('diagnose')} onAutopsy={() => setPage('autopsy')} onForward={() => setPage('forward')} onPaper={() => navigate('paper', '/paper')} onProfile={() => navigate('profile', '/me')} /><div className="app-workspace">{!['profile', 'paper', 'historical', 'factors', 'portfolio', 'walk-forward', 'relationships', 'discovery', 'workspace', 'lineage', 'snapshots', 'integrity'].includes(page) && <RunContextBar runId={activeRunId} traceId={activeTraceId} trace={trace} context={runContext} forwardSessionId={forwardSessionId} />}{content}</div></div>
 }
 
 export default App

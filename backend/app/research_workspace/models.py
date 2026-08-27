@@ -17,6 +17,7 @@ WorkspaceStageKey = Literal[
     "RUN",
 ]
 WorkspaceStageStatus = Literal["COMPLETE", "CURRENT", "BLOCKED"]
+WorkspaceLineageStatus = Literal["AVAILABLE", "MISSING"]
 WorkspaceAction = Literal[
     "BUILD_CANDIDATE",
     "RUN_VALIDATION",
@@ -28,9 +29,9 @@ WorkspaceAction = Literal[
 
 WORKSPACE_DISCLOSURE = (
     "The unified Research Workspace is a read model over the existing Dataset, Factor, "
-    "Portfolio, Hypothesis, Native Strategy, Run, Trace, Snapshot, and Integrity records. "
-    "It does not duplicate quantitative engines, mutate evidence, reveal Holdout "
-    "automatically, optimize parameters, or select a winner."
+    "Factor Relationship, Walk-Forward, Portfolio, Hypothesis, Native Strategy, Run, Trace, "
+    "Snapshot, and Integrity records. It does not duplicate quantitative engines, mutate "
+    "evidence, reveal Holdout automatically, optimize parameters, or select a winner."
 )
 
 
@@ -63,6 +64,27 @@ class WorkspaceFactor(WorkspaceModel):
     name: str
     revealed_stage: str
     revision: str
+
+
+class WorkspaceFactorRelationship(WorkspaceModel):
+    relationship_id: str
+    status: WorkspaceLineageStatus
+    name: str | None = None
+    stage: str | None = None
+    factor_research_ids: tuple[str, ...] = ()
+    redundancy_count: int = Field(default=0, ge=0)
+    cluster_count: int = Field(default=0, ge=0)
+
+
+class WorkspaceWalkForward(WorkspaceModel):
+    walk_forward_id: str
+    status: WorkspaceLineageStatus
+    name: str | None = None
+    factor_research_id: str | None = None
+    factor_id: str | None = None
+    dataset_id: str | None = None
+    window_count: int = Field(default=0, ge=0)
+    positive_ic_window_ratio: float | None = None
 
 
 class WorkspacePortfolio(WorkspaceModel):
@@ -131,6 +153,8 @@ class ResearchWorkspace(WorkspaceModel):
     dataset_revision: str
     dataset_period: tuple[datetime, datetime] | None
     factors: tuple[WorkspaceFactor, ...]
+    relationships: tuple[WorkspaceFactorRelationship, ...]
+    walk_forward: tuple[WorkspaceWalkForward, ...]
     portfolio: WorkspacePortfolio | None
     strategy: WorkspaceStrategy | None
     runs: tuple[WorkspaceRun, ...]

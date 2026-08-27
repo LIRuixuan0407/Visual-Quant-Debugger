@@ -52,6 +52,12 @@ const secondSummary = {
   hypothesis_revision: 4,
   strategy_id: 'portfolio-strategy-b',
 }
+const secondSnapshot: ResearchSnapshot = {
+  ...snapshot,
+  snapshot_id: secondSummary.snapshot_id,
+  name: secondSummary.name,
+  content_fingerprint: secondSummary.content_fingerprint,
+}
 
 const comparison: ExperimentComparisonReport = {
   comparison_version: '1.0',
@@ -137,6 +143,25 @@ it('creates a Snapshot only from a completed research chain', async () => {
     '/api/research-snapshots',
     expect.objectContaining({ method: 'POST', body: expect.stringContaining(hypothesis.hypothesis_id) }),
   ))
+})
+
+it('opens the exact Snapshot requested by a Lineage deep link', async () => {
+  window.localStorage.setItem('vqd-language', 'en')
+  const fetchMock = vi.fn((input: string | URL | Request) => {
+    const url = String(input)
+    const body = url === '/api/research-snapshots'
+      ? [summary, secondSummary]
+      : url === '/api/hypotheses'
+        ? [hypothesis]
+        : secondSnapshot
+    return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+  })
+  vi.stubGlobal('fetch', fetchMock)
+
+  render(<I18nProvider><ResearchSnapshotsPage initialSnapshotId={secondSnapshotId} onOpenRuns={() => undefined} onOpenReplay={() => undefined} /></I18nProvider>)
+
+  expect(await screen.findByRole('heading', { name: secondSnapshot.name })).toBeInTheDocument()
+  expect(fetchMock).toHaveBeenCalledWith(`/api/research-snapshots/${secondSnapshotId}`)
 })
 
 it('compares frozen experiment context, treatment, results, and Run / Trace behavior without ranking experiments', async () => {

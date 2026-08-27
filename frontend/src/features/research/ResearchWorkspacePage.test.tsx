@@ -30,6 +30,14 @@ function makeWorkspace(action: WorkspaceAction = 'BUILD_CANDIDATE'): ResearchWor
     dataset_revision: 'dataset-revision-27',
     dataset_period: ['2022-01-01T00:00:00Z', '2025-12-31T00:00:00Z'],
     factors: [{ research_id: 'factor-research-27', factor_id: 'momentum', name: 'Momentum evidence', revealed_stage: 'RESEARCH', revision: 'factor-revision-27' }],
+    relationships: [
+      { relationship_id: 'relationship-linked-27', status: 'AVAILABLE', name: 'Momentum × Reversal', stage: 'RESEARCH', factor_research_ids: ['factor-research-27', 'factor-research-reversal'], redundancy_count: 1, cluster_count: 1 },
+      { relationship_id: 'relationship-explicitly-missing', status: 'MISSING', name: null, stage: null, factor_research_ids: [], redundancy_count: 0, cluster_count: 0 },
+    ],
+    walk_forward: [
+      { walk_forward_id: 'walk-forward-linked-27', status: 'AVAILABLE', name: 'Momentum stability', factor_research_id: 'factor-research-27', factor_id: 'momentum', dataset_id: 'dataset-daily', window_count: 4, positive_ic_window_ratio: 0.75 },
+      { walk_forward_id: 'walk-forward-explicitly-missing', status: 'MISSING', name: null, factor_research_id: null, factor_id: null, dataset_id: null, window_count: 0, positive_ic_window_ratio: null },
+    ],
     portfolio: action === 'BUILD_CANDIDATE' ? null : { portfolio_research_id: 'portfolio-27', name: 'Candidate portfolio', revealed_stage: 'VALIDATION', combination: 'WEIGHTED_SUM', rebalance: 'MONTHLY', net_return: 0.18, turnover: 0.24 },
     strategy: action === 'RUN_BACKTEST' ? { strategy_id: 'research-portfolio-27', source_fingerprint: 'strategy-revision-27' } : null,
     runs: [],
@@ -74,6 +82,9 @@ const handlers = {
   onIdeaChange: vi.fn(),
   onOpenData: vi.fn(),
   onOpenFactors: vi.fn(),
+  onOpenRelationships: vi.fn(),
+  onOpenWalkForward: vi.fn(),
+  onOpenLineage: vi.fn(),
   onOpenPortfolio: vi.fn(),
   onOpenHypothesis: vi.fn(),
   onOpenStrategy: vi.fn(),
@@ -113,6 +124,18 @@ it('renders one Idea as a continuous seven-stage workspace using backend evidenc
   expect(screen.getByRole('heading', { name: 'Create candidate Portfolio' })).toBeInTheDocument()
   expect(screen.getByText('Daily research sample')).toBeInTheDocument()
   expect(screen.getByText('Momentum evidence')).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Relationship & Walk-Forward evidence' })).toBeInTheDocument()
+  expect(screen.getByText('Momentum × Reversal')).toBeInTheDocument()
+  expect(screen.getByText('Momentum stability')).toBeInTheDocument()
+  expect(screen.getAllByText('MISSING')).toHaveLength(4)
+  expect(screen.getByTitle('relationship-explicitly-missing')).toBeInTheDocument()
+  expect(screen.getByTitle('walk-forward-explicitly-missing')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Open Relationships' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Open Walk-Forward' }))
+  expect(handlers.onOpenRelationships).toHaveBeenCalledOnce()
+  expect(handlers.onOpenWalkForward).toHaveBeenCalledOnce()
+  fireEvent.click(screen.getByRole('button', { name: 'Open in Lineage' }))
+  expect(handlers.onOpenLineage).toHaveBeenCalledWith('hypothesis-idea-27')
   expect(screen.queryByText(/winner selection/i)).not.toBeInTheDocument()
 })
 

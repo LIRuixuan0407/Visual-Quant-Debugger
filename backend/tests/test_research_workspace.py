@@ -4,14 +4,31 @@ from pathlib import Path
 
 from test_phase23_discovery import _assets, _request
 
+from app.datasets import DatasetRegistry
+from app.discovery import DiscoveryEngine, HypothesisRepository
+from app.factors import FactorResearchEngine
+from app.factors.repository import FactorResearchRepository
 from app.main import app
 from app.research_integrity import ResearchIntegrityEngine
+from app.research_ledger import ResearchLedgerRepository
 from app.research_snapshots import ResearchSnapshotRepository
 from app.research_workspace import ResearchWorkspaceEngine
 from app.runs import RunLedger, run_store
+from app.sdk.registry import StrategyRegistry
+
+type Phase23Assets = tuple[
+    DiscoveryEngine,
+    FactorResearchEngine,
+    FactorResearchRepository,
+    HypothesisRepository,
+    ResearchLedgerRepository,
+    DatasetRegistry,
+    StrategyRegistry,
+    tuple[str, ...],
+]
 
 
-def _engine(tmp_path: Path):  # type: ignore[no-untyped-def]
+def _engine(tmp_path: Path) -> tuple[ResearchWorkspaceEngine, Phase23Assets]:
     assets = _assets(tmp_path)
     discovery, _, factors, hypotheses, ledger, datasets, strategies, _ = assets
     integrity = ResearchIntegrityEngine(
@@ -28,6 +45,8 @@ def _engine(tmp_path: Path):  # type: ignore[no-untyped-def]
     workspace = ResearchWorkspaceEngine(
         datasets,
         factors,
+        discovery.relationships,
+        discovery.walk_forward,
         hypotheses,
         discovery.portfolios,
         strategies,
@@ -55,6 +74,17 @@ def test_workspace_projects_existing_research_without_new_persistence(tmp_path: 
     assert detail.idea_id == hypothesis.hypothesis_id
     assert detail.dataset_id == hypothesis.dataset_id
     assert len(detail.factors) == len(research_ids)
+    assert [item.relationship_id for item in detail.relationships] == list(
+        hypothesis.lineage.relationship_ids
+    )
+    assert all(item.status == "AVAILABLE" for item in detail.relationships)
+    assert detail.relationships[0].name == "Phase 23 source relationship"
+    assert [item.walk_forward_id for item in detail.walk_forward] == list(
+        hypothesis.lineage.walk_forward_ids
+    )
+    assert all(item.status == "AVAILABLE" for item in detail.walk_forward)
+    assert detail.walk_forward[0].name == "Phase 23 source walk-forward"
+    assert detail.walk_forward[0].window_count > 0
     assert detail.portfolio is None
     assert detail.next_action.action == "BUILD_CANDIDATE"
     assert [item.key for item in detail.stages] == [
@@ -76,6 +106,55 @@ def test_workspace_projects_existing_research_without_new_persistence(tmp_path: 
     summaries = workspace.list()
     assert summaries[0].idea_id == hypothesis.hypothesis_id
     assert summaries[0].completed_stage_count == 2
+
+
+def test_workspace_reads_only_explicit_lineage_ids_and_marks_missing_records(
+    tmp_path: Path,
+) -> None:
+    workspace, assets = _engine(tmp_path)
+    discovery, _, _, hypotheses, _, _, _, research_ids = assets
+    hypothesis = discovery.create(_request(research_ids))
+    relationship = discovery.relationships.list()[0]
+    walk_forward = discovery.walk_forward.list()[0]
+    discovery.relationships.save(
+        relationship.model_copy(update={"relationship_id": "relationship-not-linked"})
+    )
+    discovery.walk_forward.save(
+        walk_forward.model_copy(update={"walk_forward_id": "walk-forward-not-linked"})
+    )
+    hypothesis = hypotheses.save(
+        hypothesis.model_copy(
+            update={
+                "lineage": hypothesis.lineage.model_copy(
+                    update={
+                        "relationship_ids": (
+                            *hypothesis.lineage.relationship_ids,
+                            "relationship-explicitly-missing",
+                        ),
+                        "walk_forward_ids": (
+                            *hypothesis.lineage.walk_forward_ids,
+                            "walk-forward-explicitly-missing",
+                        ),
+                    }
+                )
+            }
+        )
+    )
+
+    detail = workspace.get(hypothesis.hypothesis_id)
+
+    assert [item.relationship_id for item in detail.relationships] == [
+        *hypothesis.lineage.relationship_ids
+    ]
+    assert "relationship-not-linked" not in {item.relationship_id for item in detail.relationships}
+    assert detail.relationships[-1].status == "MISSING"
+    assert detail.relationships[-1].name is None
+    assert [item.walk_forward_id for item in detail.walk_forward] == [
+        *hypothesis.lineage.walk_forward_ids
+    ]
+    assert "walk-forward-not-linked" not in {item.walk_forward_id for item in detail.walk_forward}
+    assert detail.walk_forward[-1].status == "MISSING"
+    assert detail.walk_forward[-1].name is None
 
 
 def test_workspace_continues_one_idea_through_existing_execution_chain(tmp_path: Path) -> None:
@@ -134,5 +213,6 @@ def test_workspace_continues_one_idea_through_existing_execution_chain(tmp_path:
     assert all(stage.status == "COMPLETE" for stage in completed.stages)
     assert completed.runs[0].run_id == result.manifest.run_id
     assert completed.runs[0].trace_id == result.manifest.trace_id
-    assert completed.runs[0].total_return == result.manifest.metrics.total_return  # type: ignore[union-attr]
+    assert result.manifest.metrics is not None
+    assert completed.runs[0].total_return == result.manifest.metrics.total_return
     assert completed.integrity_status == "PASS"

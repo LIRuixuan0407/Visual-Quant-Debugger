@@ -141,6 +141,9 @@ export type WorkspaceAction = 'BUILD_CANDIDATE' | 'RUN_VALIDATION' | 'REVEAL_HOL
 export interface WorkspaceNextAction { action: WorkspaceAction; label: string; requires_explicit_confirmation: boolean }
 export interface WorkspaceStage { key: WorkspaceStageKey; status: WorkspaceStageStatus; summary: string; artifact_ids: string[] }
 export interface WorkspaceFactor { research_id: string; factor_id: string; name: string; revealed_stage: string; revision: string }
+export type WorkspaceLineageStatus = 'AVAILABLE' | 'MISSING'
+export interface WorkspaceFactorRelationship { relationship_id: string; status: WorkspaceLineageStatus; name: string | null; stage: string | null; factor_research_ids: string[]; redundancy_count: number; cluster_count: number }
+export interface WorkspaceWalkForward { walk_forward_id: string; status: WorkspaceLineageStatus; name: string | null; factor_research_id: string | null; factor_id: string | null; dataset_id: string | null; window_count: number; positive_ic_window_ratio: number | null }
 export interface WorkspacePortfolio { portfolio_research_id: string; name: string; revealed_stage: string; combination: string; rebalance: string; net_return: number; turnover: number }
 export interface WorkspaceStrategy { strategy_id: string; source_fingerprint: string }
 export interface WorkspaceRun { run_id: string; trace_id: string | null; status: string; created_at: string; run_fingerprint: string; total_return: number | null; max_drawdown: number | null }
@@ -166,6 +169,8 @@ export interface ResearchWorkspace {
   dataset_revision: string
   dataset_period: [string, string] | null
   factors: WorkspaceFactor[]
+  relationships: WorkspaceFactorRelationship[]
+  walk_forward: WorkspaceWalkForward[]
   portfolio: WorkspacePortfolio | null
   strategy: WorkspaceStrategy | null
   runs: WorkspaceRun[]
