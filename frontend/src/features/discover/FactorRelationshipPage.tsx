@@ -146,7 +146,7 @@ export default function FactorRelationshipPage() {
         <div className="section-heading"><h2>{tr('Relationship research')}</h2><span>{records.length}</span></div>
         {records.length === 0 && <p className="empty-copy">{tr('No relationship research yet.')}</p>}
         {records.map((item) => <button key={item.relationship_id} className={record?.relationship_id === item.relationship_id ? 'selected' : ''} onClick={() => { setRecord(item); setRollingKey('') }}>
-          <strong>{item.name}</strong><span>{item.factor_ids.length} Factors · {item.stage}</span><small>{item.horizon}D · {item.rolling_window}D rolling</small>
+          <strong>{tr(item.name)}</strong><span>{item.factor_ids.length} Factors · {item.stage}</span><small>{item.horizon}D · {item.rolling_window}D rolling</small>
         </button>)}
       </aside>
 
@@ -156,7 +156,7 @@ export default function FactorRelationshipPage() {
           <div className="relationship-factor-picker">
             {factors.map((item) => <label key={item.research_id} className={selected.includes(item.research_id) ? 'selected' : ''}>
               <input type="checkbox" checked={selected.includes(item.research_id)} onChange={() => toggle(item.research_id)} />
-              <span><strong>{tr(item.factor_id)}</strong><small>{item.name}</small></span>
+              <span><strong>{tr(item.factor_id)}</strong><small>{tr(item.name)}</small></span>
               <code>{item.revealed_stage}</code>
             </label>)}
           </div>
@@ -174,7 +174,7 @@ export default function FactorRelationshipPage() {
 
         {record && <>
           <section className="workspace-panel relationship-summary">
-            <div className="section-heading"><div><span className="section-kicker">{record.stage} · {day(record.period.start)} → {day(record.period.end)}</span><h2>{record.name}</h2></div><code>{record.relationship_id}</code></div>
+            <div className="section-heading"><div><span className="section-kicker">{record.stage} · {day(record.period.start)} → {day(record.period.end)}</span><h2>{tr(record.name)}</h2></div><code>{record.relationship_id}</code></div>
             <div className="relationship-identity"><span>{record.factor_ids.join(' · ')}</span><code>{record.dataset_fingerprint}</code><b>{record.universe.length} securities</b></div>
             <p>{record.correlation_methodology}</p>
           </section>

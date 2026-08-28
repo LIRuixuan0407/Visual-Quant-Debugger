@@ -1,6 +1,7 @@
 from fastapi import APIRouter
 
 from app.api.autopsy import router as autopsy_router
+from app.api.data_audit import router as data_audit_router
 from app.api.datasets import router as datasets_router
 from app.api.diagnostics import router as diagnostics_router
 from app.api.discovery import router as discovery_router
@@ -23,6 +24,7 @@ from app.api.strategies import router as strategies_router
 from app.api.walk_forward import router as walk_forward_router
 
 router = APIRouter()
+router.include_router(data_audit_router)
 router.include_router(global_search_router)
 router.include_router(replay_router)
 router.include_router(research_snapshots_router)

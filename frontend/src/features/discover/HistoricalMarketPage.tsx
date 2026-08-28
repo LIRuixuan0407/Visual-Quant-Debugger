@@ -22,6 +22,7 @@ import { nearestChartIndex, pointerToViewBoxX } from './chartInteraction'
 interface Props {
   datasets: DatasetDefinition[]
   onImported: (dataset: DatasetDefinition) => void
+  onRunDataAudit?: (datasetId: string) => void
 }
 
 type MarketTab = 'UNIVERSE' | 'PRICE' | 'FUNDAMENTALS'
@@ -79,7 +80,7 @@ function fieldValue(item: FundamentalFieldSnapshot) {
   return item.unit === 'USD' ? `$${compact(item.value)}` : compact(item.value)
 }
 
-export default function HistoricalMarketPage({ datasets, onImported }: Props) {
+export default function HistoricalMarketPage({ datasets, onImported, onRunDataAudit }: Props) {
   const { tr } = useI18n()
   const providerDatasets = useMemo(() => datasets.filter((item) => item.source_type === 'PROVIDER' && item.frequency === '1Day'), [datasets])
   const [datasetId, setDatasetId] = useState(providerDatasets[0]?.dataset_id ?? '')
@@ -137,7 +138,7 @@ export default function HistoricalMarketPage({ datasets, onImported }: Props) {
     if (!dataset) return
     setBusy(true); setError(null)
     try {
-      const saved = await downloadSecFundamentals({ name: `${dataset.name} · SEC filings`, symbols: dataset.symbols, start: dataset.start_time, end: dataset.end_time })
+      const saved = await downloadSecFundamentals({ name: `${tr(dataset.name)} · SEC filings`, symbols: dataset.symbols, start: dataset.start_time, end: dataset.end_time })
       setFundamentalDatasets((current) => [saved, ...current.filter((item) => item.fundamental_dataset_id !== saved.fundamental_dataset_id)])
       setFundamentalId(saved.fundamental_dataset_id); setTab('FUNDAMENTALS')
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Fundamental download failed.') }
@@ -149,13 +150,13 @@ export default function HistoricalMarketPage({ datasets, onImported }: Props) {
   const matchingFundamentals = fundamentalDatasets.filter((item) => dataset?.symbols.every((stock) => item.symbols.includes(stock)))
 
   return <main className="discover-shell">
-    <header className="workspace-title discover-title"><div><span className="section-kicker">{tr('MARKET MEMORY')}</span><h1>{tr('Historical Market')}</h1><p>{tr('Reconstruct price, membership, and filings exactly as they were knowable on one date.')}</p></div><div className="title-actions">{dataset && <code>{dataset.content_fingerprint.slice(0, 22)}…</code>}<button className="secondary-button" onClick={() => setShowBuilder((value) => !value)}>{tr(showBuilder ? 'Close universe builder' : 'Create real universe')}</button></div></header>
+    <header className="workspace-title discover-title"><div><span className="section-kicker">{tr('MARKET MEMORY')}</span><h1>{tr('Historical Market')}</h1><p>{tr('Reconstruct price, membership, and filings exactly as they were knowable on one date.')}</p></div><div className="title-actions">{dataset && <code>{dataset.content_fingerprint.slice(0, 22)}…</code>}{dataset && onRunDataAudit && <button className="secondary-button" onClick={() => onRunDataAudit(dataset.dataset_id)}>{tr('Run Data Audit')}</button>}<button className="secondary-button" onClick={() => setShowBuilder((value) => !value)}>{tr(showBuilder ? 'Close universe builder' : 'Create real universe')}</button></div></header>
     {error && <div className="compact-error" role="alert"><strong>{tr('Historical market unavailable')}</strong><span>{tr(error)}</span></div>}
     <section className="research-command-bar historical-market-command">
-      <label><span>{tr('Saved real universe')}</span><select value={dataset?.dataset_id ?? ''} onChange={(event) => { const next = providerDatasets.find((item) => item.dataset_id === event.target.value); setDatasetId(event.target.value); setFundamentalId(''); if (next) { setAsOf(dateOnly(next.end_time)); setSymbol(next.symbols[0] ?? '') } }}><option value="">{tr('Select a provider dataset')}</option>{providerDatasets.map((item) => <option key={item.dataset_id} value={item.dataset_id}>{item.name} · {item.symbols.length}</option>)}</select></label>
+      <label><span>{tr('Saved real universe')}</span><select value={dataset?.dataset_id ?? ''} onChange={(event) => { const next = providerDatasets.find((item) => item.dataset_id === event.target.value); setDatasetId(event.target.value); setFundamentalId(''); if (next) { setAsOf(dateOnly(next.end_time)); setSymbol(next.symbols[0] ?? '') } }}><option value="">{tr('Select a provider dataset')}</option>{providerDatasets.map((item) => <option key={item.dataset_id} value={item.dataset_id}>{tr(item.name)} · {item.symbols.length}</option>)}</select></label>
       <label><span>{tr('Market date')}</span><input type="date" min={dataset ? dateOnly(dataset.start_time) : undefined} max={dataset ? dateOnly(dataset.end_time) : undefined} value={asOf} onChange={(event) => setAsOf(event.target.value)} /></label>
       <label><span>{tr('Inspect stock')}</span><select value={symbol} onChange={(event) => setSymbol(event.target.value)}>{dataset?.symbols.map((item) => <option key={item}>{item}</option>)}</select></label>
-      <label><span>{tr('Fundamental record')}</span><select value={fundamentalId} onChange={(event) => setFundamentalId(event.target.value)}><option value="">{tr('Price only')}</option>{matchingFundamentals.map((item) => <option key={item.fundamental_dataset_id} value={item.fundamental_dataset_id}>{item.name}</option>)}</select></label>
+      <label><span>{tr('Fundamental record')}</span><select value={fundamentalId} onChange={(event) => setFundamentalId(event.target.value)}><option value="">{tr('Price only')}</option>{matchingFundamentals.map((item) => <option key={item.fundamental_dataset_id} value={item.fundamental_dataset_id}>{tr(item.name)}</option>)}</select></label>
       <span className="command-status">{busy ? tr('Loading point-in-time record…') : view ? `${view.cross_section.length} ${tr('stocks at')} ${dateOnly(view.as_of)}` : tr('No market selected')}</span>
     </section>
     {showBuilder && <section className="workspace-panel universe-builder always"><div className="section-heading"><div><span className="section-kicker">{tr('CREATE A REAL UNIVERSE')}</span><h2>{tr('Download a research-ready stock pool')}</h2></div><span className="bias-tag">ALPACA · IEX</span></div><p>{tr('Choose at least five stocks. Membership is stored as a static universe and disclosed as survivorship-biased.')}</p><div className="universe-form"><label className="wide"><span>{tr('Symbols')}</span><input value={symbols} onChange={(event) => setSymbols(event.target.value)} /></label><label><span>{tr('Start date')}</span><input type="date" value={start} onChange={(event) => setStart(event.target.value)} /></label><label><span>{tr('End date')}</span><input type="date" value={end} onChange={(event) => setEnd(event.target.value)} /></label><button className="primary-button" disabled={busy || start >= end} onClick={() => void downloadUniverse()}>{tr(busy ? 'Downloading…' : 'Download universe')}</button></div></section>}

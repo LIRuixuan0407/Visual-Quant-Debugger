@@ -19,7 +19,7 @@ function ResultRow({ item, active, onSelect, onHover }: { item: SearchResult; ac
   const { tr } = useI18n()
   return <button type="button" role="option" aria-selected={active} className="global-search-result" onMouseEnter={onHover} onClick={onSelect}>
     <span className="search-result-type">{tr(typeLabel(item.entity_type))}</span>
-    <span className="search-result-copy"><strong>{item.title}</strong><small>{item.subtitle}</small><code>{item.entity_id}</code></span>
+    <span className="search-result-copy"><strong>{tr(item.title)}</strong><small>{tr(item.subtitle)}</small><code>{item.entity_id}</code></span>
     <span className="search-result-match">{item.highlights.map((field) => tr(field)).join(' · ')}</span>
   </button>
 }
@@ -28,7 +28,7 @@ function RecentRow({ item, active, onSelect, onHover }: { item: RecentSearchItem
   const { tr } = useI18n()
   return <button type="button" role="option" aria-selected={active} className="global-search-result recent" onMouseEnter={onHover} onClick={onSelect}>
     <span className="search-result-type">{tr(typeLabel(item.entity_type))}</span>
-    <span className="search-result-copy"><strong>{item.title}</strong><code>{item.entity_id}</code></span>
+    <span className="search-result-copy"><strong>{tr(item.title)}</strong><code>{item.entity_id}</code></span>
     <time dateTime={item.last_opened_at}>{tr('Recent')}</time>
   </button>
 }

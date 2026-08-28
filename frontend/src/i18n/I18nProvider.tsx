@@ -5,6 +5,78 @@ export type Language = 'zh' | 'en'
 
 const zh: Record<string, string> = {
   'Visual Quant Debugger': '可视化量化调试器',
+  'Data Quality & PIT Audit': '数据质量与时点审计',
+  'Inspect data quality, point-in-time dependencies, future-return boundaries, fundamentals, universe construction, and source provenance from backend evidence.': '基于后端证据检查数据质量、时点依赖、未来收益边界、基本面、股票池构建与来源追溯。',
+  'IMMUTABLE EVIDENCE': '不可变证据', 'APPEND-ONLY': '只追加', 'AUDIT RECORD': '审计记录',
+  'Run Data Audit': '运行数据审计', 'Data Audit failed': '数据审计失败', 'Audit Ledger': '审计台账',
+  'Root type': '根对象类型', 'Root ID': '根对象 ID', 'Auditing…': '审计中…',
+  'Loading Data Audits…': '正在加载数据审计…', 'No Data Audits yet.': '还没有数据审计。',
+  'Choose a recorded dataset, factor study, or run to create an immutable audit.': '选择已记录的数据集、因子研究或运行，创建一份不可变审计。',
+  'Select an audit record to inspect its evidence.': '选择一条审计记录以检查证据。',
+  'Verify current source': '校验当前来源', 'Verifying…': '校验中…', 'Audit ID': '审计 ID',
+  Recorded: '已记录', Current: '当前',
+  'Data Quality': '数据质量', 'PIT Dependencies': '时点依赖', 'Future Return': '未来收益', Fundamentals: '基本面', Universe: '股票池', Provenance: '来源追溯',
+  Dependencies: '依赖项', 'Future returns': '未来收益', 'Fundamental inputs': '基本面输入',
+  findings: '项发现', checks: '项检查', checked: '已检查', affected: '受影响', Disclosures: '披露说明',
+  INFO: '信息', INCOMPLETE: '不完整', MATCHES: '一致', CHANGED: '已变化',
+  'Audit Dataset': '审计数据集', Audit: '审计',
+  'DATASET DUPLICATES': '数据集重复记录', 'DATASET MISSING REQUIRED VALUES': '数据集必填值缺失',
+  'DATASET ROWS REORDERED': '数据集行已重排', 'DATASET ALIGNMENT GAPS': '数据集对齐缺口',
+  'DATASET TIMEZONE': '数据集时区', 'DATASET PROVENANCE': '数据集来源追溯',
+  'DATASET FINGERPRINT': '数据集指纹', 'DATASET COVERAGE': '数据集覆盖范围',
+  'DATASET REVISION DRIFT': '数据集修订漂移', 'FACTOR AVAILABLE AFTER SIGNAL': '因子可用时间晚于信号',
+  'FACTOR SOURCE REVISION DRIFT': '因子源码修订漂移',
+  'FACTOR WINDOW INVALID': '因子窗口无效', 'DEPENDENCY LOOK AHEAD': '依赖项前视',
+  'AVAILABLE FUTURE TARGET OUTSIDE STAGE': '阶段外存在未来目标', 'TARGET USED OUTSIDE STAGE': '使用了阶段外目标',
+  'FUNDAMENTAL AVAILABILITY VIOLATION': '基本面可用时间违规', 'FUNDAMENTAL RESTATEMENT SAFETY': '基本面重述安全性',
+  'UNIVERSE SURVIVORSHIP DISCLOSURE': '股票池幸存者偏差披露', 'CANONICAL FACTOR EVIDENCE': '标准因子证据',
+  'TRACE DEPENDENCY EVIDENCE': '追踪依赖证据', 'RUN PERIOD COVERAGE': '运行区间覆盖',
+  'Duplicate symbol/timestamp rows were found.': '发现重复的标的与时间戳记录。',
+  'No duplicate symbol/timestamp rows were reported by Dataset validation.': '数据集校验未报告重复的标的与时间戳记录。',
+  'Required values are missing from validated rows.': '已校验记录中缺少必填值。',
+  'Dataset validation reported no missing required values.': '数据集校验未报告必填值缺失。',
+  'Rows required chronological reordering during validation.': '校验时需要按时间顺序重新排列记录。',
+  'Dataset rows were already in canonical chronological order.': '数据集记录已按标准时间顺序排列。',
+  'The validated cross-section contains symbol/timestamp alignment gaps.': '已校验的横截面存在标的与时间戳对齐缺口。',
+  'No symbol/timestamp alignment gaps were reported.': '未报告标的与时间戳对齐缺口。',
+  'Dataset and validation timezone metadata are present.': '数据集与校验时区元数据均已记录。',
+  'Timezone metadata is incomplete.': '时区元数据不完整。',
+  'Provider provenance records the request, retrieval, and market timestamps.': '供应商来源记录包含请求、获取与市场时间戳。',
+  'Provider-backed data has no saved provider provenance.': '供应商数据缺少已保存的来源记录。',
+  'Provider provenance is not applicable to this dataset source type.': '此数据集来源类型不适用供应商来源记录。',
+  'A SHA-256 content fingerprint identifies the validated dataset revision.': 'SHA-256 内容指纹标识了已校验的数据集修订。',
+  'The dataset does not have a complete SHA-256 content fingerprint.': '数据集没有完整的 SHA-256 内容指纹。',
+  'Dataset and quality-report coverage boundaries are chronological and aligned.': '数据集与质量报告的覆盖边界按时间排列且一致。',
+  'Dataset coverage conflicts with its saved quality report.': '数据集覆盖范围与已保存的质量报告冲突。',
+  'Some Factor values became available after their signal timestamp.': '部分因子值在信号时间之后才可用。',
+  'Every Factor value was available no later than its signal timestamp.': '所有因子值均不晚于信号时间可用。',
+  'Some Factor windows extend beyond their signal timestamp or are reversed.': '部分因子窗口越过信号时间或时间顺序颠倒。',
+  'Every Factor window ends no later than its signal timestamp.': '所有因子窗口均不晚于信号时间结束。',
+  'Some dependencies were used before they became available.': '部分依赖项在可用之前被使用。',
+  'Every Factor dependency was available when it was used.': '所有因子依赖项在使用时均已可用。',
+  'All available future targets remain inside their signal\'s evaluation stage.': '所有可用的未来目标均位于对应信号的评估阶段内。',
+  'Some future targets exist beyond their signal\'s evaluation stage and are available for later stages; this is not a leak when the canonical evaluator excludes them.': '部分未来目标位于其信号的评估阶段之外，可供后续阶段使用；只要标准评估器将其排除，就不构成泄漏。',
+  'Canonical evaluation counts match the targets eligible inside every stage.': '标准评估计数与各阶段内符合条件的目标一致。',
+  'Evaluation counts prove that boundary-ineligible future targets entered a stage.': '评估计数表明不符合边界条件的未来目标进入了阶段。',
+  'Every populated Fundamental input satisfies filed_at <= available_at <= used_at.': '所有有值的基本面输入均满足申报时间 ≤ 可用时间 ≤ 使用时间。',
+  'Some Fundamental inputs violate filed-at, available-at, and used-at ordering.': '部分基本面输入违反申报、可用与使用时间顺序。',
+  'The Fundamental dataset is restatement-safe.': '基本面数据集具备重述安全性。',
+  'The Fundamental dataset is not restatement-safe; this is a revision risk, not proof of future-data leakage.': '基本面数据集不具备重述安全性；这是修订风险，并非使用未来数据的证据。',
+  'The selected Universe records verifiable point-in-time membership.': '所选股票池记录了可验证的时点成员信息。',
+  'The selected Universe is not survivorship-bias free; this is a disclosed research limitation, not a point-in-time violation.': '所选股票池并非无幸存者偏差；这是已披露的研究限制，不属于时点违规。',
+  'Every Trace dependency was available when it was used.': '所有追踪依赖项在使用时均已可用。',
+  'Some Trace dependencies were used before they became available.': '部分追踪依赖项在可用之前被使用。',
+  'The current Dataset revision matches the Run manifest.': '当前数据集修订与运行清单一致。',
+  'The current Dataset revision differs from the immutable Run manifest.': '当前数据集修订与不可变运行清单不同。',
+  'The current Dataset revision matches the Factor research revision.': '当前数据集修订与因子研究记录的修订一致。',
+  'The current Dataset revision differs from the revision recorded by this Factor research.': '当前数据集修订与该因子研究记录的修订不同。',
+  'The current Factor source matches the revision recorded by this research.': '当前因子源码与该研究记录的修订一致。',
+  'The recorded Factor source is no longer available.': '该研究记录的因子源码已不可用。',
+  'The current Factor source differs from the revision recorded by this research; the changed source will not be used to reconstruct old evidence.': '当前因子源码与该研究记录的修订不同；不会使用已变化的源码重建旧证据。',
+  'The Run period is covered by its Trace and current Dataset boundaries.': '运行区间位于追踪记录与当前数据集边界之内。',
+  'Factor observations and stage evaluations are obtained from the canonical Factor Engine. This audit checks time boundaries and evidence counts; it does not calculate or judge investment performance.': '因子观测与阶段评估来自标准因子引擎。本审计检查时间边界与证据计数，不计算或判断投资表现。',
+  'Dataset checks describe structure, provenance, coverage, timezone, and revision. A valid dataset alone does not certify Factor, Fundamental, or Run point-in-time safety.': '数据集检查描述结构、来源、覆盖范围、时区与修订。数据集有效本身并不能证明因子、基本面或运行具备时点安全性。',
+  'Run checks audit the immutable manifest, Trace dependencies, recorded period, and Dataset revision. They do not evaluate profitability or certify research outside this Run.': '运行检查审计不可变清单、追踪依赖、记录区间与数据集修订；不评价盈利能力，也不证明本次运行之外的研究。',
   'Global Search': '全局搜索', 'Open Global Search': '打开全局搜索',
   'Search research workspace': '搜索研究工作区', 'Search IDs, names, symbols, and tags…': '搜索 ID、名称、标的与标签…',
   'Search type': '搜索类型', 'All types': '全部类型', Results: '结果', Recent: '最近打开',
@@ -810,7 +882,16 @@ function translateIntegrityEvidence(text: string): string | null {
   return null
 }
 
-function translateDynamic(text: string): string {
+function productText(text: string): string {
+  return text
+    .replace(/\bPhase\s+\d+\b\s*/gi, '')
+    .replace(/[ \t]{2,}/g, ' ')
+    .replace(/·\s*·/g, '·')
+    .trim()
+}
+
+function translateDynamic(rawText: string): string {
+  const text = productText(rawText)
   const exact = zh[text]
   if (exact) return exact
   const workspaceFactors = text.match(/^(\d+) Factor research revisions are linked\.$/)
@@ -919,7 +1000,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
       setLanguageState(next)
       try { window.localStorage.setItem('vqd-language', next) } catch { /* Storage may be unavailable. */ }
     },
-    tr: language === 'zh' ? translateDynamic : (text) => text,
+    tr: language === 'zh' ? translateDynamic : productText,
   }), [language])
   return <I18nContext.Provider value={value}>{children}</I18nContext.Provider>
 }

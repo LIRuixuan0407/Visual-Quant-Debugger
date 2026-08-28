@@ -93,6 +93,7 @@ const handlers = {
   onOpenIntegrity: vi.fn(),
   onOpenSnapshots: vi.fn(),
   onRunComplete: vi.fn(),
+  onRunDataAudit: vi.fn(),
 }
 
 function renderWorkspace(workspace: ResearchWorkspace) {
@@ -124,6 +125,10 @@ it('renders one Idea as a continuous seven-stage workspace using backend evidenc
   expect(screen.getByRole('heading', { name: 'Create candidate Portfolio' })).toBeInTheDocument()
   expect(screen.getByText('Daily research sample')).toBeInTheDocument()
   expect(screen.getByText('Momentum evidence')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Audit Dataset' }))
+  expect(handlers.onRunDataAudit).toHaveBeenCalledWith('DATASET', 'dataset-daily')
+  fireEvent.click(screen.getByRole('button', { name: 'Audit · momentum' }))
+  expect(handlers.onRunDataAudit).toHaveBeenCalledWith('FACTOR_RESEARCH', 'factor-research-27')
   expect(screen.getByRole('heading', { name: 'Relationship & Walk-Forward evidence' })).toBeInTheDocument()
   expect(screen.getByText('Momentum × Reversal')).toBeInTheDocument()
   expect(screen.getByText('Momentum stability')).toBeInTheDocument()

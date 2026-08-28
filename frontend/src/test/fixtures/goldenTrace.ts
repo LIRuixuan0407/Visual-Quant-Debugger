@@ -1,4 +1,4 @@
-/* eslint-disable no-loss-of-precision -- Values mirror the serialized Phase 2 golden trace. */
+/* eslint-disable no-loss-of-precision -- Values mirror the serialized golden trace. */
 import type {
   BacktestTrace,
   DataDependency,

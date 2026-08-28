@@ -74,7 +74,7 @@ function ExperimentComparison({
     <div className="experiment-identities">
       {report.snapshots.map((item, index) => <article key={item.snapshot_id}>
         <span>{index === 0 ? tr('Baseline') : `${tr('Experiment')} ${String.fromCharCode(65 + index)}`}</span>
-        <strong>{item.name}</strong>
+        <strong>{tr(item.name)}</strong>
         <code title={item.content_fingerprint}>{shortHash(item.content_fingerprint)}</code>
         <small>{tr('Hypothesis')} r{item.hypothesis_revision}</small>
       </article>)}
@@ -154,7 +154,7 @@ export default function ResearchSnapshotsPage({
         const ready = hypothesisRows.find((item) => item.lineage.portfolio_research_id != null && item.lineage.strategy_id != null && item.lineage.run_ids.length > 0 && item.lineage.run_ids.length === item.lineage.trace_ids.length)
         if (ready) {
           setSelectedHypothesisId(ready.hypothesis_id)
-          setName(`${ready.title} · ${tr('frozen research')}`)
+          setName(`${tr(ready.title)} · ${tr('frozen research')}`)
         }
         const detailId = initialSnapshotId ?? snapshotRows[0]?.snapshot_id
         if (detailId) {
@@ -174,7 +174,7 @@ export default function ResearchSnapshotsPage({
   function selectHypothesis(id: string) {
     setSelectedHypothesisId(id)
     const record = eligible.find((item) => item.hypothesis_id === id)
-    if (record) setName(`${record.title} · ${tr('frozen research')}`)
+    if (record) setName(`${tr(record.title)} · ${tr('frozen research')}`)
   }
 
   async function selectSnapshot(id: string) {
@@ -253,9 +253,9 @@ export default function ResearchSnapshotsPage({
         {summaries.length === 0 && <p className="empty-copy">{tr('No Research Snapshots yet.')}</p>}
         {summaries.map((item) => <article key={item.snapshot_id} className="snapshot-ledger-item">
           <button className={`snapshot-detail-button ${snapshot?.snapshot_id === item.snapshot_id ? 'selected' : ''}`} onClick={() => void selectSnapshot(item.snapshot_id)}>
-            <strong>{item.name}</strong><span>{tr('Hypothesis')} r{item.hypothesis_revision} · {item.factor_count} {tr('Factors')}</span><code>{shortHash(item.content_fingerprint)}</code>
+            <strong>{tr(item.name)}</strong><span>{tr('Hypothesis')} r{item.hypothesis_revision} · {item.factor_count} {tr('Factors')}</span><code>{shortHash(item.content_fingerprint)}</code>
           </button>
-          <label className="snapshot-compare-toggle"><input type="checkbox" aria-label={`${tr('Select')} ${item.name} ${tr('for comparison')}`} checked={compareIds.includes(item.snapshot_id)} disabled={!compareIds.includes(item.snapshot_id) && compareIds.length >= 4} onChange={() => toggleCompare(item.snapshot_id)} /><span>{tr('Select for comparison')}</span></label>
+          <label className="snapshot-compare-toggle"><input type="checkbox" aria-label={`${tr('Select')} ${tr(item.name)} ${tr('for comparison')}`} checked={compareIds.includes(item.snapshot_id)} disabled={!compareIds.includes(item.snapshot_id) && compareIds.length >= 4} onChange={() => toggleCompare(item.snapshot_id)} /><span>{tr('Select for comparison')}</span></label>
         </article>)}
         {summaries.length > 1 && <div className="snapshot-compare-actions"><span>{compareIds.length}/4 {tr('selected')}</span><button disabled={compareBusy || compareIds.length < 2} onClick={() => void compareExperiments()}>{tr(compareBusy ? 'Comparing…' : 'Compare Experiments')}</button>{compareIds.length > 0 && <button onClick={() => { setCompareIds([]); setComparison(null) }}>{tr('Clear')}</button>}</div>}
       </aside>
@@ -265,7 +265,7 @@ export default function ResearchSnapshotsPage({
           <div className="section-heading"><div><span className="section-kicker">{tr('Freeze completed research')}</span><h2>{tr('Create immutable Snapshot')}</h2></div><span>{tr('Backend verified')}</span></div>
           <p>{tr('Only hypotheses with a Portfolio, Native Strategy, and matched Run / Trace can be frozen.')}</p>
           <div className="snapshot-builder-fields">
-            <label><span>{tr('Completed hypothesis')}</span><select value={selectedHypothesisId} onChange={(event) => selectHypothesis(event.target.value)}><option value="">{tr('Choose a completed hypothesis')}</option>{eligible.map((item) => <option key={item.hypothesis_id} value={item.hypothesis_id}>{item.title} · r{item.revision}</option>)}</select></label>
+            <label><span>{tr('Completed hypothesis')}</span><select value={selectedHypothesisId} onChange={(event) => selectHypothesis(event.target.value)}><option value="">{tr('Choose a completed hypothesis')}</option>{eligible.map((item) => <option key={item.hypothesis_id} value={item.hypothesis_id}>{tr(item.title)} · r{item.revision}</option>)}</select></label>
             <label><span>{tr('Snapshot name')}</span><input value={name} onChange={(event) => setName(event.target.value)} /></label>
             <button className="primary-button" disabled={busy || !selectedHypothesisId || !name.trim()} onClick={() => void freezeResearch()}>{tr(busy ? 'Working…' : 'Freeze Research')}</button>
           </div>
@@ -276,7 +276,7 @@ export default function ResearchSnapshotsPage({
 
         {snapshot && <>
           <section className="workspace-panel snapshot-identity">
-            <div className="section-heading"><div><span className="section-kicker">{tr('Immutable identity')}</span><h2>{snapshot.name}</h2></div><b>{tr('VERIFIED')}</b></div>
+            <div className="section-heading"><div><span className="section-kicker">{tr('Immutable identity')}</span><h2>{tr(snapshot.name)}</h2></div><b>{tr('VERIFIED')}</b></div>
             <div className="snapshot-hashes"><span><small>{tr('Snapshot ID')}</small><code>{snapshot.snapshot_id}</code></span><span><small>{tr('Content fingerprint')}</small><code>{snapshot.content_fingerprint}</code></span><span><small>{tr('Created')}</small><strong>{dateTime(snapshot.created_at)}</strong></span></div>
             <p>{tr(snapshot.immutability_disclosure)}</p>
           </section>

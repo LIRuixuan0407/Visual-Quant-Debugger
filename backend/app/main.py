@@ -21,7 +21,7 @@ async def lifespan(_: FastAPI) -> AsyncIterator[None]:
 
 app = FastAPI(
     title="Visual Quant Debugger API",
-    version="0.29.0",
+    version="0.30.0",
     description=(
         "Native and framework-backed Python strategies, real "
         "US-equity market data, Alpaca Paper Broker execution, recorded-feed validation, and "
@@ -39,7 +39,8 @@ app = FastAPI(
         "Portfolio, Validation, Hypothesis, Native Strategy, and Run records, plus a "
         "revision-aware Global Research Lineage Explorer built only from explicit stored "
         "identifiers, plus deterministic local Global Search over existing lightweight "
-        "research records."
+        "research records, and immutable Data Quality and point-in-time audits over canonical "
+        "Dataset, Factor, Fundamental, Universe, Run, and Trace evidence."
     ),
     lifespan=lifespan,
 )

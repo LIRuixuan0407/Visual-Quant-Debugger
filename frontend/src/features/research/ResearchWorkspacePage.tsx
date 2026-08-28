@@ -43,6 +43,7 @@ interface ResearchWorkspacePageProps {
   onOpenIntegrity: (ideaId: string) => void
   onOpenSnapshots: () => void
   onRunComplete: (traceId: string, runId: string) => void
+  onRunDataAudit?: (rootType: 'DATASET' | 'FACTOR_RESEARCH' | 'RUN', rootId: string) => void
 }
 
 export default function ResearchWorkspacePage({
@@ -61,6 +62,7 @@ export default function ResearchWorkspacePage({
   onOpenIntegrity,
   onOpenSnapshots,
   onRunComplete,
+  onRunDataAudit,
 }: ResearchWorkspacePageProps) {
   const { tr } = useI18n()
   const selectedIdeaRef = useRef<string | null>(null)
@@ -185,7 +187,7 @@ export default function ResearchWorkspacePage({
         <div className="section-heading"><h2>{tr('Research Ideas')}</h2><span>{summaries.length}</span></div>
         {!loading && summaries.length === 0 && <><p className="empty-copy">{tr('No Research Ideas yet.')}</p><button className="primary-button" onClick={() => onOpenHypothesis('')}>{tr('Create Research Idea')}</button></>}
         {summaries.map((item) => <button key={item.idea_id} className={workspace?.idea_id === item.idea_id ? 'selected' : ''} disabled={busy} onClick={() => void selectIdea(item.idea_id)}>
-          <span className="workspace-idea-title"><strong>{item.title}</strong><b className={`integrity-severity ${item.integrity_status.toLowerCase()}`}>{tr(item.integrity_status)}</b></span>
+          <span className="workspace-idea-title"><strong>{tr(item.title)}</strong><b className={`integrity-severity ${item.integrity_status.toLowerCase()}`}>{tr(item.integrity_status)}</b></span>
           <small>{tr('Revision')} {item.revision} · {tr(item.lifecycle_status)}</small>
           <span className="workspace-progress"><i style={{ width: `${(item.completed_stage_count / item.total_stage_count) * 100}%` }} /><em>{item.completed_stage_count}/{item.total_stage_count}</em></span>
           <code>{tr(item.next_action.label)}</code>
@@ -198,7 +200,7 @@ export default function ResearchWorkspacePage({
 
         {!loading && workspace && <>
           <section className="workspace-panel workspace-idea-header">
-            <div className="section-heading"><div><span className="section-kicker">{tr(workspace.lifecycle_status)} · {tr('Revision')} {workspace.revision}</span><h2>{workspace.title}</h2></div><span className={`integrity-severity ${workspace.integrity_status.toLowerCase()}`}>{tr('Integrity')} · {tr(workspace.integrity_status)}</span></div>
+            <div className="section-heading"><div><span className="section-kicker">{tr(workspace.lifecycle_status)} · {tr('Revision')} {workspace.revision}</span><h2>{tr(workspace.title)}</h2></div><span className={`integrity-severity ${workspace.integrity_status.toLowerCase()}`}>{tr('Integrity')} · {tr(workspace.integrity_status)}</span></div>
             <p>{workspace.description}</p>
             <div className="workspace-idea-meta"><code>{workspace.idea_id}</code><span>{tr(workspace.outcome)}</span><span>{tr('Updated')} · {dateTime(workspace.updated_at)}</span></div>
           </section>
@@ -218,7 +220,7 @@ export default function ResearchWorkspacePage({
                 <header><div><span>{tr('Association evidence')}</span><h3>{tr('Factor Relationships')}</h3></div><button onClick={onOpenRelationships}>{tr('Open Relationships')}</button></header>
                 {workspace.relationships.length === 0 && <p className="empty-copy">{tr('No Factor Relationship is linked to this Idea.')}</p>}
                 <div className="workspace-lineage-records">{workspace.relationships.map((relationship) => <div key={relationship.relationship_id} className={relationship.status.toLowerCase()}>
-                  <span><strong>{relationship.name ?? tr('MISSING')}</strong><code title={relationship.relationship_id}>{shortId(relationship.relationship_id)}</code></span>
+                  <span><strong>{relationship.name == null ? tr('MISSING') : tr(relationship.name)}</strong><code title={relationship.relationship_id}>{shortId(relationship.relationship_id)}</code></span>
                   <b>{tr(relationship.status)}</b>
                   {relationship.status === 'AVAILABLE' && <small>{tr(relationship.stage ?? '')} · {relationship.factor_research_ids.length} {tr('Factors')} · {relationship.redundancy_count} {tr('redundancy checks')}</small>}
                 </div>)}</div>
@@ -227,7 +229,7 @@ export default function ResearchWorkspacePage({
                 <header><div><span>{tr('Stability evidence')}</span><h3>{tr('Walk-Forward')}</h3></div><button onClick={onOpenWalkForward}>{tr('Open Walk-Forward')}</button></header>
                 {workspace.walk_forward.length === 0 && <p className="empty-copy">{tr('No Walk-Forward research is linked to this Idea.')}</p>}
                 <div className="workspace-lineage-records">{workspace.walk_forward.map((walkForward) => <div key={walkForward.walk_forward_id} className={walkForward.status.toLowerCase()}>
-                  <span><strong>{walkForward.name ?? tr('MISSING')}</strong><code title={walkForward.walk_forward_id}>{shortId(walkForward.walk_forward_id)}</code></span>
+                  <span><strong>{walkForward.name == null ? tr('MISSING') : tr(walkForward.name)}</strong><code title={walkForward.walk_forward_id}>{shortId(walkForward.walk_forward_id)}</code></span>
                   <b>{tr(walkForward.status)}</b>
                   {walkForward.status === 'AVAILABLE' && <small>{tr(walkForward.factor_id ?? '')} · {walkForward.window_count} {tr('forward windows')} · {tr('Positive IC windows')} {number(walkForward.positive_ic_window_ratio)}</small>}
                 </div>)}</div>
@@ -242,9 +244,10 @@ export default function ResearchWorkspacePage({
 
           <section className="workspace-overview-grid">
             <article className="workspace-panel workspace-context-card">
-              <div className="section-heading"><div><span className="section-kicker">{tr('Research context')}</span><h2>{tr('Data & Factors')}</h2></div><button onClick={onOpenData}>{tr('Open Data')}</button></div>
-              <dl><div><dt>{tr('Dataset')}</dt><dd>{workspace.dataset_name ?? tr('Missing')}</dd></div><div><dt>{tr('Dataset revision')}</dt><dd><code>{shortId(workspace.dataset_revision)}</code></dd></div><div><dt>{tr('Coverage')}</dt><dd>{workspace.dataset_period ? `${dateTime(workspace.dataset_period[0])} → ${dateTime(workspace.dataset_period[1])}` : '—'}</dd></div></dl>
-              <div className="workspace-factor-list">{workspace.factors.map((factor) => <button key={factor.research_id} onClick={onOpenFactors}><span><strong>{tr(factor.factor_id)}</strong><small>{factor.name}</small></span><code>{tr(factor.revealed_stage)}</code></button>)}</div>
+              <div className="section-heading"><div><span className="section-kicker">{tr('Research context')}</span><h2>{tr('Data & Factors')}</h2></div><div className="workspace-card-actions"><button onClick={onOpenData}>{tr('Open Data')}</button>{onRunDataAudit && <button onClick={() => onRunDataAudit('DATASET', workspace.dataset_id)}>{tr('Audit Dataset')}</button>}</div></div>
+              <dl><div><dt>{tr('Dataset')}</dt><dd>{workspace.dataset_name == null ? tr('Missing') : tr(workspace.dataset_name)}</dd></div><div><dt>{tr('Dataset revision')}</dt><dd><code>{shortId(workspace.dataset_revision)}</code></dd></div><div><dt>{tr('Coverage')}</dt><dd>{workspace.dataset_period ? `${dateTime(workspace.dataset_period[0])} → ${dateTime(workspace.dataset_period[1])}` : '—'}</dd></div></dl>
+              <div className="workspace-factor-list">{workspace.factors.map((factor) => <button key={factor.research_id} onClick={onOpenFactors}><span><strong>{tr(factor.factor_id)}</strong><small>{tr(factor.name)}</small></span><code>{tr(factor.revealed_stage)}</code></button>)}</div>
+              {onRunDataAudit && workspace.factors.length > 0 && <div className="workspace-card-actions audit-actions">{workspace.factors.map((factor) => <button key={factor.research_id} onClick={() => onRunDataAudit('FACTOR_RESEARCH', factor.research_id)}>{tr('Audit')} · {tr(factor.factor_id)}</button>)}</div>}
             </article>
 
             <article className="workspace-panel workspace-context-card">
@@ -255,7 +258,7 @@ export default function ResearchWorkspacePage({
 
             <article className="workspace-panel workspace-context-card">
               <div className="section-heading"><div><span className="section-kicker">{tr('Constructed research')}</span><h2>{tr('Portfolio & Strategy')}</h2></div>{workspace.portfolio && <button onClick={onOpenPortfolio}>{tr('Open Portfolio')}</button>}</div>
-              {workspace.portfolio ? <dl><div><dt>{tr('Portfolio')}</dt><dd>{workspace.portfolio.name}</dd></div><div><dt>{tr('Combination')}</dt><dd>{tr(workspace.portfolio.combination)}</dd></div><div><dt>{tr('Rebalance')}</dt><dd>{tr(workspace.portfolio.rebalance)}</dd></div><div><dt>{tr('Net return')}</dt><dd>{number(workspace.portfolio.net_return)}</dd></div><div><dt>{tr('Turnover')}</dt><dd>{number(workspace.portfolio.turnover)}</dd></div></dl> : <p className="empty-copy">{tr('Candidate Portfolio has not been created.')}</p>}
+              {workspace.portfolio ? <dl><div><dt>{tr('Portfolio')}</dt><dd>{tr(workspace.portfolio.name)}</dd></div><div><dt>{tr('Combination')}</dt><dd>{tr(workspace.portfolio.combination)}</dd></div><div><dt>{tr('Rebalance')}</dt><dd>{tr(workspace.portfolio.rebalance)}</dd></div><div><dt>{tr('Net return')}</dt><dd>{number(workspace.portfolio.net_return)}</dd></div><div><dt>{tr('Turnover')}</dt><dd>{number(workspace.portfolio.turnover)}</dd></div></dl> : <p className="empty-copy">{tr('Candidate Portfolio has not been created.')}</p>}
               {workspace.strategy && <button className="workspace-strategy-link" onClick={() => onOpenStrategy(workspace.strategy!.strategy_id, workspace.dataset_id)}><span>{tr('Native Strategy')}</span><code>{shortId(workspace.strategy.strategy_id)}</code></button>}
             </article>
 

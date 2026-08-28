@@ -53,6 +53,7 @@ interface RunsPageProps {
   onOpenDiagnose: (runId: string, traceId: string) => void
   onOpenAutopsy: (runId: string, traceId: string) => void
   onLoadConfiguration: (configuration: LoadedRunConfiguration) => void
+  onRunDataAudit?: (runId: string) => void
   services?: Partial<RunsPageServices>
 }
 
@@ -218,7 +219,7 @@ function ValidationWorkspace({ report, onBack, onOpenReplay }: {
   </main>
 }
 
-function RunInspector({ detail, source, annotationDraft, busy, onAnnotationChange, onSave, onLoadSource, onReplay, onDiagnose, onAutopsy, onLoadConfiguration, onRerun, onDelete }: {
+function RunInspector({ detail, source, annotationDraft, busy, onAnnotationChange, onSave, onLoadSource, onReplay, onDiagnose, onAutopsy, onAudit, onLoadConfiguration, onRerun, onDelete }: {
   detail: RunDetail
   source: StrategySourceArtifact | null
   annotationDraft: RunAnnotations
@@ -229,6 +230,7 @@ function RunInspector({ detail, source, annotationDraft, busy, onAnnotationChang
   onReplay: () => void
   onDiagnose: () => void
   onAutopsy: () => void
+  onAudit?: () => void
   onLoadConfiguration: () => void
   onRerun: () => void
   onDelete: () => void
@@ -236,10 +238,10 @@ function RunInspector({ detail, source, annotationDraft, busy, onAnnotationChang
   const { tr } = useI18n()
   const manifest = detail.manifest
   return <aside className="run-inspector workspace-panel" aria-label={tr('Run Inspector')}>
-    <div className="run-inspector-head"><div><small><span>{tr('RUN INSPECTOR')}</span> · {tr(manifest.run_type)}</small><h2>{detail.annotations.display_name || tr(manifest.strategy.name)}</h2><code>{manifest.run_id}</code></div><StatusBadge status={manifest.status} /></div>
+    <div className="run-inspector-head"><div><small><span>{tr('RUN INSPECTOR')}</span> · {tr(manifest.run_type)}</small><h2>{tr(detail.annotations.display_name || manifest.strategy.name)}</h2><code>{manifest.run_id}</code></div><StatusBadge status={manifest.status} /></div>
     {manifest.status === 'PARTIAL' && <div className="partial-trace-banner"><strong>{tr('PARTIAL TRACE')}</strong><span>{tr('The strategy failed after')} {manifest.failure?.event_index ?? tr('an unknown number of')} {tr('bars. Historical events remain inspectable.')}</span></div>}
     {detail.current_source_matches === false && <div className="source-mismatch"><strong>{tr('Current registered source differs from run revision.')}</strong><span>{tr('Replay still uses the immutable saved artifacts.')}</span></div>}
-    <div className="inspector-actions"><button type="button" disabled={!manifest.trace_id} onClick={onReplay}>{tr('Open Replay')}</button>{manifest.run_type === 'BACKTEST' && <button type="button" disabled={!manifest.trace_id} onClick={onDiagnose}>{tr('Diagnose')}</button>}<button type="button" disabled={!manifest.trace_id} onClick={onAutopsy}>{tr('P&L Autopsy')}</button></div>
+    <div className="inspector-actions"><button type="button" disabled={!manifest.trace_id} onClick={onReplay}>{tr('Open Replay')}</button>{manifest.run_type === 'BACKTEST' && <button type="button" disabled={!manifest.trace_id} onClick={onDiagnose}>{tr('Diagnose')}</button>}<button type="button" disabled={!manifest.trace_id} onClick={onAutopsy}>{tr('P&L Autopsy')}</button>{onAudit && <button type="button" onClick={onAudit}>{tr('Run Data Audit')}</button>}</div>
 
     <dl className="run-facts">
       <div><dt>{tr('Created')}</dt><dd><RunTime value={manifest.created_at} /></dd></div><div><dt>{tr('Integrity')}</dt><dd>{tr(detail.integrity)}</dd></div>
@@ -257,7 +259,7 @@ function RunInspector({ detail, source, annotationDraft, busy, onAnnotationChang
   </aside>
 }
 
-function RunsPage({ strategies, datasets, initialRunId = null, onRunSelection, onOpenReplay, onOpenDiagnose, onOpenAutopsy, onLoadConfiguration, services }: RunsPageProps) {
+function RunsPage({ strategies, datasets, initialRunId = null, onRunSelection, onOpenReplay, onOpenDiagnose, onOpenAutopsy, onLoadConfiguration, onRunDataAudit, services }: RunsPageProps) {
   const { tr } = useI18n()
   const loadRuns = services?.getRuns ?? getRuns
   const loadRun = services?.getRun ?? getRun
@@ -396,11 +398,11 @@ function RunsPage({ strategies, datasets, initialRunId = null, onRunSelection, o
     {ledger?.items.length === 0 && <section className="workspace-panel run-empty"><h2>{tr('No research runs yet.')}</h2><p>{tr('Run a strategy to create the first record.')}</p></section>}
     {ledger && ledger.items.length > 0 && <div className="run-ledger-layout">
       <section className="workspace-panel run-table-panel" aria-label={tr('Research Ledger')}>
-        <div className="run-table-scroll"><table className="run-table"><thead><tr><th aria-label={tr('Compare selection')} /><th>{tr('Time')}</th><th>{tr('Run')}</th><th>{tr('Strategy')}</th><th>{tr('Dataset')}</th><th>{tr('Parameters')}</th><th>{tr('Return')}</th><th>{tr('Sharpe')}</th><th>{tr('Max DD')}</th><th>{tr('Trades')}</th><th>{tr('Status')}</th><th>{tr('Actions')}</th></tr></thead><tbody>{ledger.items.map((run) => <tr key={run.run_id} className={selectedRunId === run.run_id ? 'selected' : ''} onClick={() => selectRun(run.run_id)}><td><input aria-label={`${tr('Select')} ${run.run_id} ${tr('for comparison')}`} type="checkbox" checked={comparisonSelection.includes(run.run_id)} disabled={!comparisonSelection.includes(run.run_id) && comparisonSelection.length >= 4} onClick={(event) => event.stopPropagation()} onChange={() => toggleComparison(run.run_id)} /></td><td><RunTime value={run.created_at} /></td><td><button className="run-id-button" type="button" onClick={() => selectRun(run.run_id)}>{run.annotations.display_name || run.run_id}</button><code>{run.run_id}</code><small>{tr(run.run_type)}</small></td><td>{tr(run.strategy_name)}<small>{runtimeLabel(run.runtime)} · {tr(run.runtime?.trace_fidelity ?? 'FULL')}</small><small>{shortHash(run.strategy_fingerprint)}</small></td><td>{tr(run.dataset_name)}<small>{shortHash(run.dataset_fingerprint)}</small></td><td><code>{parameterSummary(run.parameters)}</code></td><td><code>{formatPercent(run.metrics?.total_return)}</code></td><td><code>{formatNumber(run.metrics?.sharpe)}</code></td><td><code>{formatPercent(run.metrics?.max_drawdown)}</code></td><td><code>{run.metrics?.trades ?? '—'}</code></td><td><StatusBadge status={run.status} /></td><td><RunActions run={run} onReplay={() => run.trace_id && onOpenReplay(run.run_id, run.trace_id)} onDiagnose={() => run.trace_id && onOpenDiagnose(run.run_id, run.trace_id)} onAutopsy={() => run.trace_id && onOpenAutopsy(run.run_id, run.trace_id)} /></td></tr>)}</tbody></table></div>
+        <div className="run-table-scroll"><table className="run-table"><thead><tr><th aria-label={tr('Compare selection')} /><th>{tr('Time')}</th><th>{tr('Run')}</th><th>{tr('Strategy')}</th><th>{tr('Dataset')}</th><th>{tr('Parameters')}</th><th>{tr('Return')}</th><th>{tr('Sharpe')}</th><th>{tr('Max DD')}</th><th>{tr('Trades')}</th><th>{tr('Status')}</th><th>{tr('Actions')}</th></tr></thead><tbody>{ledger.items.map((run) => <tr key={run.run_id} className={selectedRunId === run.run_id ? 'selected' : ''} onClick={() => selectRun(run.run_id)}><td><input aria-label={`${tr('Select')} ${run.run_id} ${tr('for comparison')}`} type="checkbox" checked={comparisonSelection.includes(run.run_id)} disabled={!comparisonSelection.includes(run.run_id) && comparisonSelection.length >= 4} onClick={(event) => event.stopPropagation()} onChange={() => toggleComparison(run.run_id)} /></td><td><RunTime value={run.created_at} /></td><td><button className="run-id-button" type="button" onClick={() => selectRun(run.run_id)}>{tr(run.annotations.display_name || run.run_id)}</button><code>{run.run_id}</code><small>{tr(run.run_type)}</small></td><td>{tr(run.strategy_name)}<small>{runtimeLabel(run.runtime)} · {tr(run.runtime?.trace_fidelity ?? 'FULL')}</small><small>{shortHash(run.strategy_fingerprint)}</small></td><td>{tr(run.dataset_name)}<small>{shortHash(run.dataset_fingerprint)}</small></td><td><code>{parameterSummary(run.parameters)}</code></td><td><code>{formatPercent(run.metrics?.total_return)}</code></td><td><code>{formatNumber(run.metrics?.sharpe)}</code></td><td><code>{formatPercent(run.metrics?.max_drawdown)}</code></td><td><code>{run.metrics?.trades ?? '—'}</code></td><td><StatusBadge status={run.status} /></td><td><RunActions run={run} onReplay={() => run.trace_id && onOpenReplay(run.run_id, run.trace_id)} onDiagnose={() => run.trace_id && onOpenDiagnose(run.run_id, run.trace_id)} onAutopsy={() => run.trace_id && onOpenAutopsy(run.run_id, run.trace_id)} /></td></tr>)}</tbody></table></div>
         <footer className="run-table-footer"><span>{ledger.total} {tr('research records · newest first')}</span><span>{tr('Select 2–4 runs to compare')}</span></footer>
       </section>
       {selectedRunId && !detail && <aside className="run-inspector workspace-panel"><p className="loading-line">{tr('Loading Run Inspector…')}</p></aside>}
-      {detail && <RunInspector detail={detail} source={source} annotationDraft={annotationDraft} busy={busy} onAnnotationChange={setAnnotationDraft} onSave={() => void saveAnnotations()} onLoadSource={() => void loadSource(detail.manifest.run_id).then(setSource).catch((reason) => setError(reason instanceof Error ? reason.message : tr('Could not load source snapshot.')))} onReplay={() => detail.manifest.trace_id && onOpenReplay(detail.manifest.run_id, detail.manifest.trace_id)} onDiagnose={() => detail.manifest.trace_id && onOpenDiagnose(detail.manifest.run_id, detail.manifest.trace_id)} onAutopsy={() => detail.manifest.trace_id && onOpenAutopsy(detail.manifest.run_id, detail.manifest.trace_id)} onLoadConfiguration={() => onLoadConfiguration({ strategy_id: detail.manifest.strategy.strategy_id, dataset_id: detail.manifest.dataset.dataset_id, parameters: detail.manifest.parameters, research_cutoff: detail.manifest.period.cutoff })} onRerun={() => void exactRerun()} onDelete={() => void confirmDelete()} />}
+      {detail && <RunInspector detail={detail} source={source} annotationDraft={annotationDraft} busy={busy} onAnnotationChange={setAnnotationDraft} onSave={() => void saveAnnotations()} onLoadSource={() => void loadSource(detail.manifest.run_id).then(setSource).catch((reason) => setError(reason instanceof Error ? reason.message : tr('Could not load source snapshot.')))} onReplay={() => detail.manifest.trace_id && onOpenReplay(detail.manifest.run_id, detail.manifest.trace_id)} onDiagnose={() => detail.manifest.trace_id && onOpenDiagnose(detail.manifest.run_id, detail.manifest.trace_id)} onAutopsy={() => detail.manifest.trace_id && onOpenAutopsy(detail.manifest.run_id, detail.manifest.trace_id)} onAudit={onRunDataAudit ? () => onRunDataAudit(detail.manifest.run_id) : undefined} onLoadConfiguration={() => onLoadConfiguration({ strategy_id: detail.manifest.strategy.strategy_id, dataset_id: detail.manifest.dataset.dataset_id, parameters: detail.manifest.parameters, research_cutoff: detail.manifest.period.cutoff })} onRerun={() => void exactRerun()} onDelete={() => void confirmDelete()} />}
     </div>}
   </main>
 }

@@ -218,7 +218,7 @@ export default function DiscoveryWorkspacePage({
         <div className="section-heading"><h2>{tr('Hypotheses')}</h2><span>{records.length}</span></div>
         {records.length === 0 && <p className="empty-copy">{tr('No hypotheses yet.')}</p>}
         {records.map((item) => <button key={item.hypothesis_id} className={record?.hypothesis_id === item.hypothesis_id ? 'selected' : ''} onClick={() => selectRecord(item)}>
-          <strong>{item.title}</strong><span>{tr('Revision')} {item.revision} · {tr(item.status)}</span><small>{tr(item.outcome).replaceAll('_', ' ')}</small>
+          <strong>{tr(item.title)}</strong><span>{tr('Revision')} {item.revision} · {tr(item.status)}</span><small>{tr(item.outcome).replaceAll('_', ' ')}</small>
         </button>)}
       </aside>
 
@@ -226,7 +226,7 @@ export default function DiscoveryWorkspacePage({
         <section className="workspace-panel discovery-builder">
           <div className="section-heading"><div><span className="section-kicker">{tr('Research hypothesis')}</span><h2>{tr('Create from existing Factor evidence')}</h2></div><span>{tr('No mass search')}</span></div>
           {suggestions.length > 0 && <div className="discovery-suggestions"><strong>{tr('Research Ideas')}</strong>{suggestions.map((item) => <button key={`${item.source_relationship_id}:${item.factor_research_ids.join(':')}`} onClick={() => applySuggestion(item)}><span>{tr(item.label)}</span><p>{tr(item.rationale)}</p><code>{shortId(item.source_relationship_id)}</code></button>)}</div>}
-          <div className="discovery-factor-picker">{factors.map((item) => <label key={item.research_id} className={selected.includes(item.research_id) ? 'selected' : ''}><input type="checkbox" checked={selected.includes(item.research_id)} onChange={() => toggleFactor(item.research_id)} /><span><strong>{tr(item.factor_id)}</strong><small>{item.name}</small></span><code>{tr(item.revealed_stage)}</code></label>)}</div>
+          <div className="discovery-factor-picker">{factors.map((item) => <label key={item.research_id} className={selected.includes(item.research_id) ? 'selected' : ''}><input type="checkbox" checked={selected.includes(item.research_id)} onChange={() => toggleFactor(item.research_id)} /><span><strong>{tr(item.factor_id)}</strong><small>{tr(item.name)}</small></span><code>{tr(item.revealed_stage)}</code></label>)}</div>
           <div className="discovery-form-grid">
             <label><span>{tr('Title')}</span><input value={title} onChange={(event) => setTitle(event.target.value)} /></label>
             <label><span>{tr('Holding horizon')}</span><input value={holdingHorizon} onChange={(event) => setHoldingHorizon(event.target.value)} /></label>
@@ -241,7 +241,7 @@ export default function DiscoveryWorkspacePage({
 
         {record && <>
           <section className="workspace-panel discovery-summary">
-            <div className="section-heading"><div><span className="section-kicker">{tr(record.status)} · {tr('Revision')} {record.revision}</span><h2>{record.title}</h2></div><span className={`discovery-outcome ${record.outcome.toLowerCase()}`}>{tr(record.outcome).replaceAll('_', ' ')}</span></div>
+            <div className="section-heading"><div><span className="section-kicker">{tr(record.status)} · {tr('Revision')} {record.revision}</span><h2>{tr(record.title)}</h2></div><span className={`discovery-outcome ${record.outcome.toLowerCase()}`}>{tr(record.outcome).replaceAll('_', ' ')}</span></div>
             <p>{record.description}</p>
             <div className="discovery-identity"><code>{record.hypothesis_id}</code><span>{record.lineage.factor_ids.join(' · ')}</span><b>{tr(record.created_with_known_stage)} · {tr('known at creation')}</b></div>
             <blockquote>{record.expected_relationship}</blockquote>

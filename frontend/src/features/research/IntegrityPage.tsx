@@ -85,7 +85,7 @@ export default function IntegrityPage({ initialHypothesisId }: { initialHypothes
             disabled={busy}
             onClick={() => void selectHypothesis(item.hypothesis_id)}
           >
-            <strong>{item.title}</strong>
+            <strong>{tr(item.title)}</strong>
             <span>{tr('Hypothesis')} r{item.revision} · {tr(item.lifecycle_status)}</span>
             <span className={`integrity-severity ${item.overall_status.toLowerCase()}`}>{tr(item.overall_status)} · {item.violation_count}/{item.warning_count}</span>
           </button>
@@ -100,7 +100,7 @@ export default function IntegrityPage({ initialHypothesisId }: { initialHypothes
         {report && <>
           <section className="workspace-panel snapshot-identity">
             <div className="section-heading">
-              <div><span className="section-kicker">{tr('Audited experiment')}</span><h2>{report.title}</h2></div>
+              <div><span className="section-kicker">{tr('Audited experiment')}</span><h2>{tr(report.title)}</h2></div>
               <b className={`integrity-severity ${report.overall_status.toLowerCase()}`}>{tr(report.overall_status)}</b>
             </div>
             <div className="snapshot-hashes">

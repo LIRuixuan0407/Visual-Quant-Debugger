@@ -124,7 +124,7 @@ export default function WalkForwardPage({
         <div className="section-heading"><h2>{tr('Walk-Forward research')}</h2><span>{records.length}</span></div>
         {records.length === 0 && <p className="empty-copy">{tr('No Walk-Forward research yet.')}</p>}
         {records.map((item) => <button key={item.walk_forward_id} className={record?.walk_forward_id === item.walk_forward_id ? 'selected' : ''} onClick={() => setRecord(item)}>
-          <strong>{item.name}</strong><span>{item.windows.length} {tr('forward windows')} · {item.horizon}D</span><small>{item.factor_id} · {item.strategy_id ?? tr('Factor only')}</small>
+          <strong>{tr(item.name)}</strong><span>{item.windows.length} {tr('forward windows')} · {item.horizon}D</span><small>{item.factor_id} · {item.strategy_id ?? tr('Factor only')}</small>
         </button>)}
       </aside>
 
@@ -133,8 +133,8 @@ export default function WalkForwardPage({
           <div className="section-heading"><div><span className="section-kicker">HISTORICAL DATA → REPEAT → STABILITY REPORT</span><h2>{tr('Configure rolling windows')}</h2></div><span className="long-only-badge">BACKEND GENERATED</span></div>
           <div className="wf-chain" aria-label={tr('Walk-Forward evaluation chain')}><span>{tr('Historical Data')}</span><i>→</i><span>{tr('Research Window')}</span><i>→</i><span>{tr('Validation Window')}</span><i>→</i><span>{tr('Forward Window')}</span><i>→</i><span>{tr('Advance & Repeat')}</span></div>
           <div className="wf-form-grid">
-            <label><span>{tr('Factor research')}</span><select aria-label={tr('Factor research')} value={factorId} onChange={(event) => setFactorId(event.target.value)}><option value="">—</option>{factors.map((item) => <option key={item.research_id} value={item.research_id}>{item.name} · {item.factor_id}</option>)}</select></label>
-            <label><span>{tr('Native strategy (optional)')}</span><select aria-label={tr('Native strategy (optional)')} value={strategyId} onChange={(event) => setStrategyId(event.target.value)}><option value="">{tr('Factor only')}</option>{nativeStrategies.map((item) => <option key={item.strategy_id} value={item.strategy_id}>{item.name}</option>)}</select></label>
+            <label><span>{tr('Factor research')}</span><select aria-label={tr('Factor research')} value={factorId} onChange={(event) => setFactorId(event.target.value)}><option value="">—</option>{factors.map((item) => <option key={item.research_id} value={item.research_id}>{tr(item.name)} · {item.factor_id}</option>)}</select></label>
+            <label><span>{tr('Native strategy (optional)')}</span><select aria-label={tr('Native strategy (optional)')} value={strategyId} onChange={(event) => setStrategyId(event.target.value)}><option value="">{tr('Factor only')}</option>{nativeStrategies.map((item) => <option key={item.strategy_id} value={item.strategy_id}>{tr(item.name)}</option>)}</select></label>
             <label><span>{tr('Forward horizon')}</span><select value={horizon} onChange={(event) => setHorizon(Number(event.target.value) as 1 | 5 | 20)}><option value={1}>1D</option><option value={5}>5D</option><option value={20}>20D</option></select></label>
             <label><span>{tr('Research months')}</span><input aria-label={tr('Research months')} type="number" min="1" value={researchMonths} onChange={(event) => setResearchMonths(Number(event.target.value))} /></label>
             <label><span>{tr('Validation months')}</span><input aria-label={tr('Validation months')} type="number" min="1" value={validationMonths} onChange={(event) => setValidationMonths(Number(event.target.value))} /></label>
@@ -148,7 +148,7 @@ export default function WalkForwardPage({
 
         {record && <>
           <section className="workspace-panel wf-stability">
-            <div className="section-heading"><div><span className="section-kicker">STABILITY REPORT · {record.windows.length} WINDOWS</span><h2>{record.name}</h2></div><code>{record.walk_forward_id}</code></div>
+            <div className="section-heading"><div><span className="section-kicker">STABILITY REPORT · {record.windows.length} WINDOWS</span><h2>{tr(record.name)}</h2></div><code>{record.walk_forward_id}</code></div>
             <div className="wf-identity"><span>{record.factor_id}</span><code>{record.factor_revision}</code>{record.strategy_id && <><span>{record.strategy_id}</span><code>{record.strategy_revision}</code></>}</div>
             <div className="metric-strip wf-stability-metrics">
               <div><span>{tr('Positive IC windows')}</span><strong>{pct(record.stability.positive_ic_window_ratio)}</strong></div>

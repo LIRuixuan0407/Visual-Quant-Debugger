@@ -18,7 +18,7 @@ const dataset: DatasetDefinition = {
 
 afterEach(() => vi.unstubAllGlobals())
 
-describe('Phase 17 Discover workspaces', () => {
+describe('Discover workspaces', () => {
   it('renders the real historical cross-section with a clear survivorship warning', async () => {
     const view = {
       dataset_id: dataset.dataset_id, dataset_revision: dataset.content_fingerprint, source: 'alpaca:iex',
@@ -33,13 +33,16 @@ describe('Phase 17 Discover workspaces', () => {
       const body = url.includes('/api/historical-market') ? view : []
       return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }))
     }))
-    render(<I18nProvider><HistoricalMarketPage datasets={[dataset]} onImported={() => undefined} /></I18nProvider>)
+    const onRunDataAudit = vi.fn()
+    render(<I18nProvider><HistoricalMarketPage datasets={[dataset]} onImported={() => undefined} onRunDataAudit={onRunDataAudit} /></I18nProvider>)
     expect(await screen.findByText('Apple Inc.')).toBeInTheDocument()
     expect(screen.getByText('不具备无幸存者偏差保证')).toBeInTheDocument()
     expect(screen.getByText('市场状态 · 2024-12-31')).toBeInTheDocument()
     const chart = screen.getByRole('img', { name: 'AAPL · 价格与成交量历史' })
     fireEvent.keyDown(chart, { key: 'ArrowLeft' })
     expect(screen.getByText('$99.00')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '运行数据审计' }))
+    expect(onRunDataAudit).toHaveBeenCalledWith('dataset-real')
   })
 
   it('starts factor research with backend catalog and three sealed periods', async () => {

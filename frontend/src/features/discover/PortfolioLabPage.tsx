@@ -264,7 +264,7 @@ export default function PortfolioLabPage({
               .finally(() => setBusy(false))
           }}
         >
-          <strong>{item.name}</strong>
+          <strong>{tr(item.name)}</strong>
           <span>{item.factor_count} Factors · {item.combination}</span>
           <small>{tr(item.revealed_stage)} · {pct(item.net_return)} · {item.turnover.toFixed(2)}×</small>
         </button>)}
@@ -286,7 +286,7 @@ export default function PortfolioLabPage({
                   <input type="checkbox" checked={active} onChange={() => toggle(item.research_id)} />
                   <span>
                     <strong>{tr(item.factor_id)}</strong>
-                    <small>{item.name}</small>
+                    <small>{tr(item.name)}</small>
                   </span>
                 </label>
                 <div className="factor-badges">
@@ -316,7 +316,7 @@ export default function PortfolioLabPage({
           {redundancyWarnings.length > 0 && <div className="portfolio-redundancy-warning" role="status">
             <strong>{tr('High-redundancy warning')}</strong>
             <span>{tr('Portfolio Lab does not remove, reweight, or optimize these factors.')}</span>
-            {redundancyWarnings.map(({ relationship, item }) => <small key={`${relationship.relationship_id}:${item.left_research_id}:${item.right_research_id}`}>{relationship.name} · {item.reason}</small>)}
+            {redundancyWarnings.map(({ relationship, item }) => <small key={`${relationship.relationship_id}:${item.left_research_id}:${item.right_research_id}`}>{tr(relationship.name)} · {tr(item.reason)}</small>)}
           </div>}
 
           <div className="portfolio-config-section">
@@ -360,7 +360,7 @@ export default function PortfolioLabPage({
         {record && latest && <>
           <section className="workspace-panel evidence-summary">
             <div className="section-heading">
-              <div><span className="section-kicker">TRANSACTION COST PREVIEW · {latest.stage}</span><h2>{record.name}</h2></div>
+              <div><span className="section-kicker">TRANSACTION COST PREVIEW · {latest.stage}</span><h2>{tr(record.name)}</h2></div>
               <code>{record.portfolio_research_id}</code>
             </div>
             <div className="portfolio-definition-strip">
