@@ -11,6 +11,7 @@ from typing import Protocol
 
 from pydantic import BaseModel
 
+from app.corporate_actions import CorporateActionRepository
 from app.datasets import DatasetRegistry
 from app.datasets.models import DatasetDefinition
 from app.factors import FactorResearchRepository
@@ -26,7 +27,7 @@ from app.runs import ArtifactIntegrityError, RunNotFoundError
 from app.runs.models import RunManifest
 from app.trace.models import BacktestTrace, DataDependency
 from app.trace.validation import collect_look_ahead_diagnostics
-from app.universes import UniverseRepository
+from app.universes import UniverseRepository, membership_provenance_issues
 
 from .models import (
     AuditSeverity,
@@ -120,6 +121,7 @@ class DataAuditEngine:
         universes: UniverseRepository,
         runs: RunAuditStore,
         audits: DataAuditRepository,
+        corporate_actions: CorporateActionRepository | None = None,
     ) -> None:
         self.datasets = datasets
         self.factor_research = factor_research
@@ -128,6 +130,9 @@ class DataAuditEngine:
         self.universes = universes
         self.runs = runs
         self.audits = audits
+        self.corporate_actions = corporate_actions or CorporateActionRepository(
+            datasets.workspace_root
+        )
 
     @staticmethod
     def _source_file_fingerprint(source_path: str | None) -> str | None:
@@ -626,6 +631,10 @@ class DataAuditEngine:
             parts.source_fingerprints[f"universe:{record.universe_id}"] = (
                 "missing" if universe is None else _model_fingerprint(universe)
             )
+        else:
+            universe = None
+        parts.findings.extend(self._universe_findings(record, dataset, universe))
+        parts.findings.extend(self._corporate_action_findings(record, parts))
         if record.fundamental_dataset_id is not None:
             fundamental = self.fundamentals.get(record.fundamental_dataset_id)
             parts.source_fingerprints[f"fundamental_dataset:{record.fundamental_dataset_id}"] = (
@@ -664,21 +673,325 @@ class DataAuditEngine:
                     affected_count=1,
                 )
             )
-        parts.findings.append(
+        return parts
+
+    def _universe_findings(
+        self,
+        record: FactorResearchRecord,
+        dataset: DatasetDefinition,
+        universe: object,
+    ) -> list[DataAuditFinding]:
+        from app.universes import HistoricalUniverse
+
+        resolved = universe if isinstance(universe, HistoricalUniverse) else None
+        static_risk = resolved is None or resolved.mode == "STATIC"
+        provenance_issues = (
+            ("The referenced Universe is missing.",)
+            if resolved is None
+            else membership_provenance_issues(resolved.snapshots)
+        )
+        referenced_symbols = (
+            set(record.universe)
+            if resolved is None
+            else {symbol for snapshot in resolved.snapshots for symbol in snapshot.symbols}
+        )
+        missing_market = tuple(sorted(referenced_symbols - set(dataset.symbols)))
+        return [
             _finding(
-                "UNIVERSE_SURVIVORSHIP_DISCLOSURE",
-                "PASS" if record.survivorship_bias_free else "WARNING",
+                "STATIC_UNIVERSE_SURVIVORSHIP_RISK",
+                "WARNING" if static_risk else "PASS",
                 record.universe_id or record.research_id,
-                "The selected Universe records verifiable point-in-time membership."
-                if record.survivorship_bias_free
-                else "The selected Universe is not survivorship-bias free; this is a disclosed "
-                "research limitation, not a point-in-time violation.",
+                "A STATIC Universe carries current constituents through history and remains "
+                "exposed to survivorship bias."
+                if static_risk
+                else "The selected Universe uses explicit point-in-time snapshots.",
                 evidence=(record.survivorship_warning,),
                 checked_count=1,
-                affected_count=0 if record.survivorship_bias_free else 1,
+                affected_count=1 if static_risk else 0,
+            ),
+            _finding(
+                "UNIVERSE_MEMBERSHIP_PROVENANCE_MISSING",
+                "INSUFFICIENT_EVIDENCE" if provenance_issues else "PASS",
+                record.universe_id or record.research_id,
+                "Some historical Universe members lack verifiable membership provenance."
+                if provenance_issues
+                else "Every historical Universe member has effective membership provenance.",
+                evidence=tuple(provenance_issues),
+                checked_count=sum(len(item.symbols) for item in resolved.snapshots)
+                if resolved is not None
+                else len(record.universe),
+                affected_count=len(provenance_issues),
+            ),
+            _finding(
+                "UNIVERSE_MEMBER_WITHOUT_MARKET_DATA",
+                "INSUFFICIENT_EVIDENCE" if missing_market else "PASS",
+                record.universe_id or record.research_id,
+                "Historical Universe members are absent from the immutable Market Dataset."
+                if missing_market
+                else "Every referenced historical Universe member exists in the Market Dataset.",
+                evidence=missing_market,
+                checked_count=len(referenced_symbols),
+                affected_count=len(missing_market),
+            ),
+        ]
+
+    def _run_universe_findings(
+        self,
+        manifest: RunManifest,
+        dataset: DatasetDefinition | None,
+        parts: _AuditParts,
+    ) -> list[DataAuditFinding]:
+        universe_id = manifest.universe_id
+        universe = None if universe_id is None else self.universes.get(universe_id)
+        if universe_id is not None:
+            parts.source_fingerprints[f"universe:{universe_id}"] = (
+                "missing" if universe is None else _model_fingerprint(universe)
+            )
+        static_risk = universe is None or universe.mode == "STATIC"
+        provenance_issues = (
+            ("The referenced Universe is missing.",)
+            if universe_id is not None and universe is None
+            else (
+                ("No explicit Historical Universe is linked to this Run.",)
+                if universe is None
+                else membership_provenance_issues(universe.snapshots)
             )
         )
-        return parts
+        referenced_symbols = (
+            set(manifest.dataset.symbols)
+            if universe is None
+            else {symbol for snapshot in universe.snapshots for symbol in snapshot.symbols}
+        )
+        market_symbols = set() if dataset is None else set(dataset.symbols)
+        missing_market = tuple(sorted(referenced_symbols - market_symbols)) if dataset else ()
+        subject = universe_id or manifest.run_id
+        return [
+            _finding(
+                "STATIC_UNIVERSE_SURVIVORSHIP_RISK",
+                "WARNING" if static_risk else "PASS",
+                subject,
+                "This Run has no point-in-time Universe evidence and remains exposed to "
+                "survivorship bias."
+                if static_risk
+                else "The Run references an explicit point-in-time Universe.",
+                evidence=(
+                    "No explicit Historical Universe is linked to this Run."
+                    if universe is None
+                    else universe.disclosure,
+                ),
+                checked_count=1,
+                affected_count=1 if static_risk else 0,
+            ),
+            _finding(
+                "UNIVERSE_MEMBERSHIP_PROVENANCE_MISSING",
+                "INSUFFICIENT_EVIDENCE" if provenance_issues else "PASS",
+                subject,
+                "Some Run Universe members lack verifiable membership provenance."
+                if provenance_issues
+                else "Every Run Universe member has effective membership provenance.",
+                evidence=tuple(provenance_issues),
+                checked_count=(
+                    len(referenced_symbols)
+                    if universe is None
+                    else sum(len(item.symbols) for item in universe.snapshots)
+                ),
+                affected_count=len(provenance_issues),
+            ),
+            _finding(
+                "UNIVERSE_MEMBER_WITHOUT_MARKET_DATA",
+                "INSUFFICIENT_EVIDENCE" if missing_market else "PASS",
+                subject,
+                "Historical Run Universe members are absent from the immutable Market Dataset."
+                if missing_market
+                else "Every referenced Run Universe member exists in the Market Dataset.",
+                evidence=missing_market,
+                checked_count=len(referenced_symbols),
+                affected_count=len(missing_market),
+            ),
+        ]
+
+    def _run_corporate_action_findings(
+        self,
+        manifest: RunManifest,
+        trace: BacktestTrace | None,
+        parts: _AuditParts,
+    ) -> list[DataAuditFinding]:
+        dataset_id = manifest.corporate_action_dataset_id
+        if dataset_id is None:
+            return [
+                _finding(
+                    "CORPORATE_ACTION_DATASET_MISSING",
+                    "WARNING",
+                    manifest.run_id,
+                    "No Corporate Action dataset is explicitly linked to this Run.",
+                    evidence=(f"price_adjustment_policy={manifest.price_adjustment_policy}",),
+                    checked_count=1,
+                    affected_count=1,
+                )
+            ]
+        dataset = self.corporate_actions.get(dataset_id)
+        if dataset is None:
+            parts.source_fingerprints[f"corporate_action_dataset:{dataset_id}"] = "missing"
+            return [
+                _finding(
+                    "CORPORATE_ACTION_DATASET_MISSING",
+                    "INSUFFICIENT_EVIDENCE",
+                    dataset_id,
+                    "The Corporate Action dataset linked by this Run is missing.",
+                    checked_count=1,
+                    affected_count=1,
+                )
+            ]
+        parts.source_fingerprints[f"corporate_action_dataset:{dataset_id}"] = (
+            dataset.content_fingerprint
+        )
+        late = tuple(
+            item.action_id for item in dataset.actions if item.available_at > item.effective_at
+        )
+        unresolved_dataset = tuple(
+            item.action_id
+            for item in dataset.actions
+            if item.action_type == "DELISTING" and item.settlement_price is None
+        )
+        unresolved_trace = (
+            ()
+            if trace is None
+            else tuple(
+                item.action_id
+                for item in trace.corporate_action_events
+                if item.status == "UNRESOLVED"
+            )
+        )
+        unresolved_manifest = manifest.unresolved_corporate_action_ids
+        unresolved_consistent = trace is None or (
+            unresolved_trace == unresolved_manifest
+            and set(unresolved_trace) <= set(unresolved_dataset)
+        )
+        findings = [
+            _finding(
+                "CORPORATE_ACTION_DATASET_MISSING",
+                "PASS",
+                dataset_id,
+                "An immutable Corporate Action dataset is explicitly linked to this Run.",
+                evidence=(dataset.content_fingerprint,),
+                checked_count=1,
+            ),
+            _finding(
+                "CORPORATE_ACTION_PIT_WARNING",
+                "WARNING" if late else "PASS",
+                dataset_id,
+                "Some Corporate Actions became available after their effective time."
+                if late
+                else "Every Corporate Action was available no later than its effective time.",
+                evidence=late,
+                checked_count=len(dataset.actions),
+                affected_count=len(late),
+            ),
+            _finding(
+                "UNRESOLVED_DELISTING",
+                "INSUFFICIENT_EVIDENCE" if unresolved_dataset else "PASS",
+                dataset_id,
+                "Some Delisting events have no reliable settlement price; no price is guessed."
+                if unresolved_dataset
+                else "Every recorded Delisting has explicit settlement evidence.",
+                evidence=unresolved_dataset,
+                checked_count=sum(item.action_type == "DELISTING" for item in dataset.actions),
+                affected_count=len(unresolved_dataset),
+            ),
+        ]
+        if trace is not None:
+            findings.append(
+                _finding(
+                    "CORPORATE_ACTION_TRACE_CONSISTENCY",
+                    "PASS" if unresolved_consistent else "INSUFFICIENT_EVIDENCE",
+                    manifest.run_id,
+                    "Run manifest and Trace preserve the same unresolved Corporate Action state."
+                    if unresolved_consistent
+                    else "Run manifest and Trace disagree about unresolved Corporate Actions.",
+                    evidence=(
+                        f"manifest={','.join(unresolved_manifest) or '-'}",
+                        f"trace={','.join(unresolved_trace) or '-'}",
+                    ),
+                    checked_count=1,
+                    affected_count=0 if unresolved_consistent else 1,
+                )
+            )
+        return findings
+
+    def _corporate_action_findings(
+        self,
+        record: FactorResearchRecord,
+        parts: _AuditParts,
+    ) -> list[DataAuditFinding]:
+        dataset_id = record.corporate_action_dataset_id
+        if dataset_id is None:
+            return [
+                _finding(
+                    "CORPORATE_ACTION_DATASET_MISSING",
+                    "WARNING",
+                    record.research_id,
+                    "No Corporate Action dataset is explicitly linked to this Factor research.",
+                    evidence=(f"price_adjustment_policy={record.price_adjustment_policy}",),
+                    checked_count=1,
+                    affected_count=1,
+                )
+            ]
+        dataset = self.corporate_actions.get(dataset_id)
+        if dataset is None:
+            parts.source_fingerprints[f"corporate_action_dataset:{dataset_id}"] = "missing"
+            return [
+                _finding(
+                    "CORPORATE_ACTION_DATASET_MISSING",
+                    "INSUFFICIENT_EVIDENCE",
+                    dataset_id,
+                    "The explicitly linked Corporate Action dataset is missing.",
+                    checked_count=1,
+                    affected_count=1,
+                )
+            ]
+        parts.source_fingerprints[f"corporate_action_dataset:{dataset_id}"] = (
+            dataset.content_fingerprint
+        )
+        late = tuple(
+            item.action_id for item in dataset.actions if item.available_at > item.effective_at
+        )
+        unresolved = tuple(
+            item.action_id
+            for item in dataset.actions
+            if item.action_type == "DELISTING" and item.settlement_price is None
+        )
+        return [
+            _finding(
+                "CORPORATE_ACTION_DATASET_MISSING",
+                "PASS",
+                dataset_id,
+                "An immutable Corporate Action dataset is explicitly linked to this research.",
+                evidence=(dataset.content_fingerprint,),
+                checked_count=1,
+            ),
+            _finding(
+                "CORPORATE_ACTION_PIT_WARNING",
+                "WARNING" if late else "PASS",
+                dataset_id,
+                "Some Corporate Actions became available after their effective time."
+                if late
+                else "Every Corporate Action was available no later than its effective time.",
+                evidence=late,
+                checked_count=len(dataset.actions),
+                affected_count=len(late),
+            ),
+            _finding(
+                "UNRESOLVED_DELISTING",
+                "INSUFFICIENT_EVIDENCE" if unresolved else "PASS",
+                dataset_id,
+                "Some Delisting events have no reliable settlement price; no price is guessed."
+                if unresolved
+                else "Every recorded Delisting has explicit settlement evidence.",
+                evidence=unresolved,
+                checked_count=sum(item.action_type == "DELISTING" for item in dataset.actions),
+                affected_count=len(unresolved),
+            ),
+        ]
 
     @staticmethod
     def _dependency_finding(
@@ -749,10 +1062,12 @@ class DataAuditEngine:
                     affected_count=0 if matches else 1,
                 )
             )
+        parts.findings.extend(self._run_universe_findings(manifest, dataset, parts))
         try:
             trace = self.runs.load_trace_for_run(run_id)
         except RunNotFoundError:
             trace = None
+        parts.findings.extend(self._run_corporate_action_findings(manifest, trace, parts))
         if trace is None:
             parts.findings.append(
                 _finding(
@@ -859,6 +1174,9 @@ class DataAuditEngine:
         if kind == "universe":
             universe = self.universes.get(artifact_id)
             return None if universe is None else _model_fingerprint(universe)
+        if kind == "corporate_action_dataset":
+            corporate_actions = self.corporate_actions.get(artifact_id)
+            return None if corporate_actions is None else corporate_actions.content_fingerprint
         if kind == "run":
             try:
                 return self.runs.get_manifest(artifact_id).run_fingerprint

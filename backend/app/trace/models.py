@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.adapters.models import RuntimeDescriptor, native_runtime
+from app.corporate_actions.models import CorporateActionEvent
 
 type TraceScalar = str | int | float | bool
 type PositionState = str
@@ -226,3 +227,4 @@ class BacktestTrace(TraceModel):
     trades: tuple[TradeTrace, ...]
     metrics: dict[str, float | int]
     diagnostics: tuple[Diagnostic, ...]
+    corporate_action_events: tuple[CorporateActionEvent, ...] = ()

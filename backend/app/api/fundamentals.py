@@ -115,11 +115,6 @@ def fundamental_snapshot(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
-@router.get("/universes", response_model=tuple[HistoricalUniverse, ...])
-def list_universes() -> tuple[HistoricalUniverse, ...]:
-    return universe_repository.list()
-
-
 @router.post("/universes/static/{dataset_id}", response_model=HistoricalUniverse, status_code=201)
 def create_static_universe(dataset_id: str) -> HistoricalUniverse:
     dataset = dataset_registry.get(dataset_id)

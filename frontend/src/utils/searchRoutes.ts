@@ -3,6 +3,8 @@ import type { SearchEntityType, SearchOpenTarget } from '../types/search'
 
 const PAGE_BY_TYPE: Record<SearchEntityType, ProductPage> = {
   DATASET: 'data',
+  UNIVERSE: 'data',
+  CORPORATE_ACTION_DATASET: 'data',
   FACTOR: 'factors',
   FACTOR_RESEARCH: 'factors',
   FACTOR_RELATIONSHIP: 'relationships',

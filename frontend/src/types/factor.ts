@@ -132,6 +132,8 @@ export interface FactorResearchRecord {
   factor_observation_count: number
   sample_observations: FactorObservation[]
   fundamental_dataset_id: string | null
+  corporate_action_dataset_id: string | null
+  price_adjustment_policy: 'RAW' | 'SPLIT_ADJUSTED'
   fundamental_provider: string | null
   restatement_safe: boolean
   restatement_warning: string | null

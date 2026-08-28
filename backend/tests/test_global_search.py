@@ -6,6 +6,12 @@ from time import perf_counter
 
 from test_phase23_discovery import _assets, _request
 
+from app.corporate_actions import (
+    CorporateAction,
+    CorporateActionRepository,
+    CorporateActionService,
+    CreateCorporateActionDataset,
+)
 from app.discovery import ResearchHypothesis
 from app.factors.registry import FactorRegistry
 from app.global_search import (
@@ -17,6 +23,7 @@ from app.global_search import (
 from app.main import app
 from app.research_snapshots import ResearchSnapshotRepository
 from app.runs import AnnotationUpdate, RunLedger, run_store
+from app.universes import UniverseRepository
 
 
 def _document(
@@ -97,6 +104,41 @@ def test_exact_prefix_tag_alias_and_unicode_normalization_are_deterministic() ->
     assert rank_search_documents(documents, "动量因子")[0].score == 950
     assert rank_search_documents(documents, "苹果动量")[0].entity_id == "hypothesis-z"
     assert normalize_search_text("  RUN_alpha-01  ") == "run alpha 01"
+
+
+def test_search_indexes_corporate_actions_and_historical_universes(tmp_path: Path) -> None:
+    action_service = CorporateActionService(CorporateActionRepository(tmp_path))
+    actions = action_service.create(
+        CreateCorporateActionDataset(
+            name="Searchable split evidence",
+            provider="Exchange archive",
+            actions=(
+                CorporateAction(
+                    action_id="search-split",
+                    symbol="AAPL",
+                    action_type="SPLIT",
+                    effective_at=datetime(2025, 1, 2, tzinfo=UTC),
+                    announced_at=datetime(2025, 1, 1, tzinfo=UTC),
+                    available_at=datetime(2025, 1, 1, tzinfo=UTC),
+                    source="Exchange archive",
+                    evidence="Split notice",
+                    split_ratio=2.0,
+                ),
+            ),
+            disclosure="Search indexes identity and evidence labels.",
+        )
+    )
+    service = _service(tmp_path)
+    universe = UniverseRepository(tmp_path).static_for_dataset(service.datasets.list()[0])
+
+    action_result = service.search("Searchable split").results[0]
+    universe_result = service.search(universe.universe_id).results[0]
+
+    assert action_result.entity_type == "CORPORATE_ACTION_DATASET"
+    assert action_result.entity_id == actions.corporate_action_dataset_id
+    assert action_result.route.endswith(actions.corporate_action_dataset_id)
+    assert universe_result.entity_type == "UNIVERSE"
+    assert universe_result.route.endswith(universe.universe_id)
 
 
 def test_type_filter_tie_break_and_metrics_never_affect_ranking() -> None:

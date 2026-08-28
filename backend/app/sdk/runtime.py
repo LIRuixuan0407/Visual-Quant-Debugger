@@ -4,6 +4,12 @@ import traceback as traceback_module
 from dataclasses import dataclass
 from typing import Literal, cast
 
+from app.corporate_actions.models import (
+    CorporateAction,
+    CorporateActionEvent,
+    PriceAdjustmentPolicy,
+)
+from app.corporate_actions.service import CorporateActionService
 from app.execution import ExecutionEngine
 from app.fundamentals import FundamentalRepository
 from app.models import (
@@ -24,6 +30,7 @@ from app.sdk.models import (
     TargetPortfolioIntent,
 )
 from app.sdk.strategy import VQDStrategy
+from app.universes import HistoricalUniverse
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +63,9 @@ class StrategyRuntime:
         additional_execution_delay_bars: int = 0,
         execution_mode: Literal["simulated", "external"] = "simulated",
         fundamental_repository: FundamentalRepository | None = None,
+        corporate_actions: tuple[CorporateAction, ...] = (),
+        price_adjustment_policy: PriceAdjustmentPolicy = "RAW",
+        historical_universe: HistoricalUniverse | None = None,
     ) -> None:
         if initial_cash <= 0:
             raise ValueError("initial_cash must be positive")
@@ -81,6 +91,28 @@ class StrategyRuntime:
         self._dependency_counter = 0
         self._previous_target_signature: tuple[tuple[str, float], ...] = ()
         self.external_executions: list[Execution] = []
+        self.corporate_actions = tuple(
+            sorted(corporate_actions, key=lambda item: (item.effective_at, item.action_id))
+        )
+        self.price_adjustment_policy = price_adjustment_policy
+        self.historical_universe = historical_universe
+        self.corporate_action_events: list[CorporateActionEvent] = []
+        self._processed_corporate_action_ids: set[str] = set()
+
+    def _apply_due_corporate_actions(self, frame: MarketFrame) -> None:
+        for action in self.corporate_actions:
+            if (
+                action.action_id in self._processed_corporate_action_ids
+                or action.effective_at > frame.knowledge_time
+            ):
+                continue
+            event = CorporateActionService.apply_action(
+                self.portfolio,
+                action,
+                self.price_adjustment_policy,
+            )
+            self.corporate_action_events.append(event)
+            self._processed_corporate_action_ids.add(action.action_id)
 
     def _next_feature_id(self) -> str:
         self._feature_counter += 1
@@ -110,6 +142,11 @@ class StrategyRuntime:
             next_feature_id=self._next_feature_id,
             next_dependency_id=self._next_dependency_id,
             fundamental_repository=self.fundamental_repository,
+            active_symbols=(
+                None
+                if self.historical_universe is None
+                else self.historical_universe.symbols_at(self.visible_frames[-1].knowledge_time)
+            ),
         )
 
     def _execute_due(
@@ -166,6 +203,7 @@ class StrategyRuntime:
         index = len(self.visible_frames)
         self.visible_frames.append(frame)
         try:
+            self._apply_due_corporate_actions(frame)
             orders_raw, executions_raw = self._execute_due(index, frame)
             from app.models import Execution, Order
 
@@ -233,6 +271,7 @@ class StrategyRuntime:
         index = len(self.visible_frames)
         self.visible_frames.append(frame)
         try:
+            self._apply_due_corporate_actions(frame)
             orders_raw, executions_raw = self._execute_due(index, frame)
             from app.models import Execution, Order
 

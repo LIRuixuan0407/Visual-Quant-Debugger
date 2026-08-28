@@ -104,6 +104,84 @@ test('searches a real stock, shows provider identity, and saves historical bars 
   expect(JSON.parse(String(request?.[1]?.body))).toMatchObject({ symbols: ['AAPL'], timeframe: '1Day', feed: 'iex' })
 })
 
+test('shows Corporate Action evidence and point-in-time Universe history', async () => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const url = String(input)
+    if (url.includes('dataset-existing') && url.endsWith('/preview')) return response({ rows: [] })
+    if (url === '/api/corporate-actions') return response([{
+      corporate_action_dataset_id: 'corporate-actions-real', name: 'Exchange actions', provider: 'NASDAQ', symbols: ['AAPL', 'OLD'],
+      start_time: '2024-06-01T00:00:00Z', end_time: '2025-01-03T00:00:00Z', retrieved_at: '2025-01-05T00:00:00Z', content_fingerprint: 'sha256:actions', point_in_time_safe: false,
+      disclosure: 'Official notices only.',
+      actions: [
+        { action_id: 'split-aapl', symbol: 'AAPL', action_type: 'SPLIT', effective_at: '2024-06-01T00:00:00Z', announced_at: '2024-05-01T00:00:00Z', available_at: '2024-05-01T00:00:00Z', source: 'NASDAQ', evidence: 'Split bulletin', split_ratio: 4, cash_amount: null, currency: null, delisting_reason: null, settlement_price: null },
+        { action_id: 'dividend-aapl', symbol: 'AAPL', action_type: 'CASH_DIVIDEND', effective_at: '2024-08-01T00:00:00Z', announced_at: '2024-07-01T00:00:00Z', available_at: '2024-07-01T00:00:00Z', source: 'NASDAQ', evidence: 'Dividend bulletin', split_ratio: null, cash_amount: 0.25, currency: 'USD', delisting_reason: null, settlement_price: null },
+        { action_id: 'delisting-old', symbol: 'OLD', action_type: 'DELISTING', effective_at: '2025-01-03T00:00:00Z', announced_at: null, available_at: '2025-01-04T00:00:00Z', source: 'NASDAQ', evidence: 'Delisting bulletin', split_ratio: null, cash_amount: null, currency: null, delisting_reason: 'Bankruptcy', settlement_price: null },
+      ],
+    }])
+    if (url === '/api/universes') return response([{
+      universe_id: 'universe-history', name: 'Historical index', source: 'Index archive', mode: 'POINT_IN_TIME', dataset_id: 'dataset-existing', created_at: '2025-01-05T00:00:00Z', survivorship_bias_free: false, disclosure: 'One membership source is missing.',
+      snapshots: [
+        { effective_date: '2024-01-01T00:00:00Z', symbols: ['OLD'], membership_provenance: [] },
+        { effective_date: '2025-01-01T00:00:00Z', symbols: ['AAPL'], membership_provenance: [{ symbol: 'AAPL', source: 'Index archive', effective_from: '2025-01-01T00:00:00Z', effective_to: null, evidence: 'Archived constituent file' }] },
+      ],
+    }])
+    throw new Error(`Unexpected ${url}`)
+  })
+
+  render(<DataPage datasets={[dataset]} onImported={() => undefined} />)
+
+  expect((await screen.findAllByText('Exchange actions')).length).toBe(2)
+  expect(screen.getByText('Split 1 · Dividend 1 · Delisting 1')).toBeInTheDocument()
+  expect(screen.getByText('PIT WARNING')).toBeInTheDocument()
+  expect(screen.getByText('No reliable settlement price; the position is not silently removed.')).toBeInTheDocument()
+  expect(screen.getByText('SURVIVORSHIP RISK')).toBeInTheDocument()
+  expect(screen.getByText('Missing membership evidence: OLD')).toBeInTheDocument()
+})
+
+test('imports Corporate Action and point-in-time Universe evidence from JSON', async () => {
+  const savedActions = {
+    corporate_action_dataset_id: 'corporate-actions-imported', name: 'Imported actions', provider: 'Exchange', symbols: ['AAPL'],
+    start_time: '2025-01-02T00:00:00Z', end_time: '2025-01-02T00:00:00Z', retrieved_at: '2025-01-03T00:00:00Z', content_fingerprint: 'sha256:imported-actions', point_in_time_safe: true,
+    disclosure: 'Official notice.', actions: [{ action_id: 'split-imported', symbol: 'AAPL', action_type: 'SPLIT', effective_at: '2025-01-02T00:00:00Z', announced_at: '2025-01-01T00:00:00Z', available_at: '2025-01-01T00:00:00Z', source: 'Exchange', evidence: 'Archived notice', split_ratio: 2, cash_amount: null, currency: null, delisting_reason: null, settlement_price: null }],
+  }
+  const savedUniverse = {
+    universe_id: 'universe-imported', name: 'Imported PIT universe', source: 'Index archive', mode: 'POINT_IN_TIME', dataset_id: 'dataset-existing', created_at: '2025-01-03T00:00:00Z', survivorship_bias_free: true, disclosure: 'Source-backed membership.',
+    snapshots: [{ effective_date: '2025-01-01T00:00:00Z', symbols: ['AAPL'], membership_provenance: [{ symbol: 'AAPL', source: 'Index archive', effective_from: '2025-01-01T00:00:00Z', effective_to: null, evidence: 'Archived constituent file' }] }],
+  }
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+    const url = String(input)
+    if (url.includes('dataset-existing') && url.endsWith('/preview')) return response({ rows: [] })
+    if (url === '/api/corporate-actions' && !init?.method) return response([])
+    if (url === '/api/universes' && !init?.method) return response([])
+    if (url === '/api/corporate-actions' && init?.method === 'POST') return response(savedActions, 201)
+    if (url === '/api/universes' && init?.method === 'POST') return response(savedUniverse, 201)
+    throw new Error(`Unexpected ${init?.method ?? 'GET'} ${url}`)
+  })
+  render(<DataPage datasets={[dataset]} onImported={() => undefined} />)
+
+  const actionRequest = {
+    name: 'Imported actions', provider: 'Exchange', disclosure: 'Official notice.',
+    actions: [{ action_id: 'split-imported', symbol: 'AAPL', action_type: 'SPLIT', effective_at: '2025-01-02T00:00:00Z', announced_at: '2025-01-01T00:00:00Z', available_at: '2025-01-01T00:00:00Z', source: 'Exchange', evidence: 'Archived notice', split_ratio: 2 }],
+  }
+  fireEvent.change(screen.getByLabelText('Import actions JSON'), {
+    target: { files: [new File([JSON.stringify(actionRequest)], 'actions.json', { type: 'application/json' })] },
+  })
+  expect((await screen.findAllByText('Imported actions')).length).toBe(2)
+  const actionCall = fetchMock.mock.calls.find(([url, init]) => url === '/api/corporate-actions' && init?.method === 'POST')
+  expect(JSON.parse(String(actionCall?.[1]?.body))).toEqual(actionRequest)
+
+  const universeRequest = {
+    name: 'Imported PIT universe', source: 'Index archive', mode: 'POINT_IN_TIME', dataset_id: 'dataset-existing', disclosure: 'Source-backed membership.',
+    snapshots: [{ effective_date: '2025-01-01T00:00:00Z', symbols: ['AAPL'], membership_provenance: [{ symbol: 'AAPL', source: 'Index archive', effective_from: '2025-01-01T00:00:00Z', effective_to: null, evidence: 'Archived constituent file' }] }],
+  }
+  fireEvent.change(screen.getByLabelText('Import universe JSON'), {
+    target: { files: [new File([JSON.stringify(universeRequest)], 'universe.json', { type: 'application/json' })] },
+  })
+  expect((await screen.findAllByText('Imported PIT universe')).length).toBe(2)
+  expect(screen.getByText('SURVIVORSHIP SAFE')).toBeInTheDocument()
+  const universeCall = fetchMock.mock.calls.find(([url, init]) => url === '/api/universes' && init?.method === 'POST')
+  expect(JSON.parse(String(universeCall?.[1]?.body))).toEqual(universeRequest)
+})
 
 test('renders the Data workspace in Chinese by default', async () => {
   window.localStorage.removeItem('vqd-language')
@@ -116,6 +194,8 @@ test('renders the Data workspace in Chinese by default', async () => {
   expect(screen.getByRole('heading', { name: '数据' })).toBeInTheDocument()
   expect(screen.getByLabelText('选择 CSV')).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: '数据集' })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: '公司行动' })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: '历史股票池' })).toBeInTheDocument()
   expect(screen.getByText('名称')).toBeInTheDocument()
   expect(screen.getByText('时间范围')).toBeInTheDocument()
   expect(screen.getAllByText('数据质量').length).toBeGreaterThan(0)

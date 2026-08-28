@@ -7,6 +7,7 @@ from pathlib import Path
 from threading import Lock
 from urllib.parse import quote
 
+from app.corporate_actions import CorporateActionRepository
 from app.datasets import DatasetRegistry
 from app.discovery import HypothesisRepository
 from app.factor_relationships import FactorRelationshipRepository
@@ -19,6 +20,7 @@ from app.runs import RunRepository
 from app.runs.models import RunListItem
 from app.sdk.registry import StrategyRegistry
 from app.strategies.definition import PAIRS_TRADING_DEFINITION
+from app.universes import UniverseRepository
 from app.walk_forward import WalkForwardRepository
 
 from .models import (
@@ -137,6 +139,8 @@ class GlobalSearchService:
         strategies: StrategyRegistry,
         runs: RunRepository,
         snapshots: ResearchSnapshotRepository,
+        universes: UniverseRepository | None = None,
+        corporate_actions: CorporateActionRepository | None = None,
     ) -> None:
         self.datasets = datasets
         self.factors = factors
@@ -148,6 +152,10 @@ class GlobalSearchService:
         self.strategies = strategies
         self.runs = runs
         self.snapshots = snapshots
+        self.universes = universes or UniverseRepository(datasets.workspace_root)
+        self.corporate_actions = corporate_actions or CorporateActionRepository(
+            datasets.workspace_root
+        )
         self._cache_lock = Lock()
         self._cached_signature: tuple[tuple[str, int, int], ...] | None = None
         self._cached_documents: tuple[SearchDocument, ...] | None = None
@@ -176,6 +184,8 @@ class GlobalSearchService:
             self.portfolios.root,
             self.hypotheses.root,
             self.snapshots.root,
+            self.universes.root,
+            self.corporate_actions.root,
         )
         files = [
             self.factors.registry_path,
@@ -235,6 +245,61 @@ class GlobalSearchService:
                         "source_type": dataset.source_type,
                         "provider": provider,
                         "fingerprint": dataset.content_fingerprint,
+                    },
+                )
+            )
+
+        for universe in self.universes.list():
+            documents.append(
+                SearchDocument(
+                    entity_type="UNIVERSE",
+                    entity_id=universe.universe_id,
+                    title=universe.name,
+                    subtitle=(
+                        f"{universe.mode} · {len(universe.snapshots)} snapshots · {universe.source}"
+                    ),
+                    aliases=(
+                        universe.source,
+                        universe.mode,
+                        universe.dataset_id or "",
+                        *(symbol for item in universe.snapshots for symbol in item.symbols),
+                    ),
+                    created_at=universe.created_at,
+                    route=_route("/data", "universe_id", universe.universe_id),
+                    metadata={
+                        "mode": universe.mode,
+                        "snapshot_count": len(universe.snapshots),
+                        "survivorship_bias_free": universe.survivorship_bias_free,
+                    },
+                )
+            )
+
+        for actions in self.corporate_actions.list():
+            documents.append(
+                SearchDocument(
+                    entity_type="CORPORATE_ACTION_DATASET",
+                    entity_id=actions.corporate_action_dataset_id,
+                    title=actions.name,
+                    subtitle=(
+                        f"{actions.provider} · {len(actions.actions)} actions · "
+                        f"{', '.join(actions.symbols)}"
+                    ),
+                    aliases=(
+                        actions.provider,
+                        actions.content_fingerprint,
+                        *actions.symbols,
+                        *(item.action_id for item in actions.actions),
+                    ),
+                    created_at=actions.retrieved_at,
+                    route=_route(
+                        "/data",
+                        "corporate_action_dataset_id",
+                        actions.corporate_action_dataset_id,
+                    ),
+                    metadata={
+                        "provider": actions.provider,
+                        "action_count": len(actions.actions),
+                        "point_in_time_safe": actions.point_in_time_safe,
                     },
                 )
             )

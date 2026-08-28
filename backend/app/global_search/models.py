@@ -7,6 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 SearchEntityType = Literal[
     "DATASET",
+    "UNIVERSE",
+    "CORPORATE_ACTION_DATASET",
     "FACTOR",
     "FACTOR_RESEARCH",
     "FACTOR_RELATIONSHIP",
@@ -22,6 +24,8 @@ type SearchScalar = str | int | float | bool | None
 
 SEARCH_ENTITY_TYPES: tuple[SearchEntityType, ...] = (
     "DATASET",
+    "UNIVERSE",
+    "CORPORATE_ACTION_DATASET",
     "FACTOR",
     "FACTOR_RESEARCH",
     "FACTOR_RELATIONSHIP",

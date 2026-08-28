@@ -9,6 +9,7 @@ from importlib.metadata import PackageNotFoundError, version
 
 from pydantic import BaseModel
 
+from app.corporate_actions.repository import CorporateActionRepository
 from app.datasets import DatasetRegistry
 from app.discovery.repository import HypothesisRepository
 from app.factor_relationships.repository import FactorRelationshipRepository
@@ -20,6 +21,7 @@ from app.research_ledger import ResearchLedgerEntry, ResearchLedgerRepository
 from app.runs import RunRepository
 from app.sdk.registry import StrategyRegistry
 from app.trace.serialization import trace_to_json
+from app.universes.repository import UniverseRepository
 from app.walk_forward.repository import WalkForwardRepository
 
 from .models import (
@@ -82,6 +84,8 @@ class ResearchSnapshotEngine:
         runs: RunRepository,
         snapshots: ResearchSnapshotRepository,
         ledger: ResearchLedgerRepository,
+        universes: UniverseRepository | None = None,
+        corporate_actions: CorporateActionRepository | None = None,
     ) -> None:
         self.datasets = datasets
         self.factors = factors
@@ -93,6 +97,10 @@ class ResearchSnapshotEngine:
         self.runs = runs
         self.snapshots = snapshots
         self.ledger = ledger
+        self.universes = universes or UniverseRepository(datasets.workspace_root)
+        self.corporate_actions = corporate_actions or CorporateActionRepository(
+            datasets.workspace_root
+        )
 
     @staticmethod
     def _dependency(name: str) -> EnvironmentDependency:
@@ -178,6 +186,32 @@ class ResearchSnapshotEngine:
             hypothesis.dataset_id,
             hypothesis.dataset_fingerprint,
         )
+        universe_ids = tuple(
+            sorted({item.universe_id for item in factors if item.universe_id is not None})
+        )
+        corporate_action_dataset_ids = tuple(
+            sorted(
+                {
+                    item.corporate_action_dataset_id
+                    for item in factors
+                    if item.corporate_action_dataset_id is not None
+                }
+            )
+        )
+        universe_records = []
+        for universe_id in universe_ids:
+            universe = self.universes.get(universe_id)
+            if universe is None:
+                raise KeyError(f"Universe '{universe_id}' was not found")
+            universe_records.append(universe)
+        corporate_action_records = []
+        for corporate_action_dataset_id in corporate_action_dataset_ids:
+            corporate_action_dataset = self.corporate_actions.get(corporate_action_dataset_id)
+            if corporate_action_dataset is None:
+                raise KeyError(
+                    f"Corporate Action dataset '{corporate_action_dataset_id}' was not found"
+                )
+            corporate_action_records.append(corporate_action_dataset)
         portfolio = self.portfolios.get(lineage.portfolio_research_id)
         if portfolio is None:
             raise KeyError(f"Portfolio research '{lineage.portfolio_research_id}' was not found")
@@ -298,6 +332,18 @@ class ResearchSnapshotEngine:
             )
             for item, manifest, trace_id in zip(traces, manifests, lineage.trace_ids, strict=True)
         )
+        universe_artifacts = tuple(
+            _artifact("UNIVERSE", item.universe_id, item) for item in universe_records
+        )
+        corporate_action_artifacts = tuple(
+            _artifact(
+                "CORPORATE_ACTION_DATASET",
+                item.corporate_action_dataset_id,
+                item,
+                item.content_fingerprint,
+            )
+            for item in corporate_action_records
+        )
 
         parameters: list[SnapshotParameterSet] = [
             SnapshotParameterSet(
@@ -382,6 +428,8 @@ class ResearchSnapshotEngine:
             content_fingerprint="sha256:" + "0" * 64,
             lineage=SnapshotLineage(
                 dataset_id=hypothesis.dataset_id,
+                universe_ids=universe_ids,
+                corporate_action_dataset_ids=corporate_action_dataset_ids,
                 factor_research_ids=lineage.factor_research_ids,
                 factor_ids=lineage.factor_ids,
                 relationship_ids=lineage.relationship_ids,
@@ -399,6 +447,8 @@ class ResearchSnapshotEngine:
                 dataset,
                 dataset.content_fingerprint,
             ),
+            universes=universe_artifacts,
+            corporate_actions=corporate_action_artifacts,
             factors=factor_artifacts,
             relationships=relationship_artifacts,
             walk_forward=walk_forward_artifacts,
@@ -454,6 +504,8 @@ class ResearchSnapshotEngine:
                     "content_fingerprint": saved.content_fingerprint,
                     "artifact_count": (
                         4
+                        + len(saved.universes)
+                        + len(saved.corporate_actions)
                         + len(saved.factors)
                         + len(saved.relationships)
                         + len(saved.walk_forward)

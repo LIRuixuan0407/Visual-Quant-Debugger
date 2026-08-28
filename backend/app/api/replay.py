@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.adapters.models import RuntimeDescriptor
 from app.backtest import BacktestParameters
+from app.corporate_actions.models import PriceAdjustmentPolicy
 from app.datasets import dataset_registry
 from app.runs import ArtifactIntegrityError, RunNotFoundError, run_ledger
 from app.sdk.models import RuntimeFailure
@@ -35,6 +36,9 @@ class BacktestRequest(BaseModel):
     dataset_id: str | None = None
     parameters: dict[str, int | float] = Field(default_factory=dict)
     research_cutoff: datetime | None = None
+    universe_id: str | None = None
+    corporate_action_dataset_id: str | None = None
+    price_adjustment_policy: PriceAdjustmentPolicy = "RAW"
 
     @model_validator(mode="after")
     def require_one_strategy_id(self) -> "BacktestRequest":
@@ -95,6 +99,9 @@ def create_backtest(request: BacktestRequest) -> BacktestCreated:
             research_cutoff=request.research_cutoff,
             strategy_registry_override=strategy_registry,
             dataset_registry_override=dataset_registry,
+            universe_id=request.universe_id,
+            corporate_action_dataset_id=request.corporate_action_dataset_id,
+            price_adjustment_policy=request.price_adjustment_policy,
         )
     except (KeyError, TypeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

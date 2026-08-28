@@ -44,6 +44,8 @@ export async function createFactorResearch(input: {
   universe: string[]
   universe_id?: string | null
   fundamental_dataset_id?: string | null
+  corporate_action_dataset_id?: string | null
+  price_adjustment_policy?: 'RAW' | 'SPLIT_ADJUSTED'
   components?: FactorComponent[]
 }): Promise<FactorResearchRecord> {
   const response = await fetch('/api/factor-research', {

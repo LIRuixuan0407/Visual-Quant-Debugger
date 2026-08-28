@@ -10,6 +10,13 @@ import pytest
 
 import app.api.data_audit as data_audit_api
 from app.backtest import BacktestParameters, run_backtest
+from app.corporate_actions import (
+    CorporateAction,
+    CorporateActionEvent,
+    CorporateActionRepository,
+    CorporateActionService,
+    CreateCorporateActionDataset,
+)
 from app.data import load_pair_csv
 from app.data_audit import (
     CreateDataAudit,
@@ -45,7 +52,13 @@ from app.runs.models import (
 from app.runs.models import ResearchPeriod as RunPeriod
 from app.strategies import PairsTradingParameters
 from app.trace.models import BacktestTrace, DataDependency
-from app.universes import UniverseRepository
+from app.universes import (
+    CreateHistoricalUniverse,
+    HistoricalUniverse,
+    UniverseMembershipProvenance,
+    UniverseRepository,
+    UniverseSnapshot,
+)
 
 
 class StubFactorEngine:
@@ -425,9 +438,183 @@ def test_restatement_and_survivorship_are_warnings_not_future_leaks(
         CreateDataAudit(root_type="FACTOR_RESEARCH", root_id=record.research_id)
     )
     assert _finding(audit, "FUNDAMENTAL_RESTATEMENT_SAFETY").severity == "WARNING"
-    assert _finding(audit, "UNIVERSE_SURVIVORSHIP_DISCLOSURE").severity == "WARNING"
+    assert _finding(audit, "STATIC_UNIVERSE_SURVIVORSHIP_RISK").severity == "WARNING"
     assert _finding(audit, "FUNDAMENTAL_AVAILABILITY_VIOLATION").severity == "PASS"
     assert audit.status == "WARNING"
+
+
+def test_corporate_action_and_universe_evidence_have_distinct_findings(
+    tmp_path: Path,
+) -> None:
+    datasets = DatasetRegistry(tmp_path)
+    dataset = datasets.get("pairs-sample-v1")
+    assert dataset is not None
+    used_at = dataset.start_time
+    symbols = (*dataset.symbols, "MISSING_MARKET_DATA")
+    universe = HistoricalUniverse(
+        universe_id="universe-audit-evidence",
+        name="Historical membership",
+        source="Index archive",
+        mode="POINT_IN_TIME",
+        dataset_id=dataset.dataset_id,
+        created_at=datetime(2025, 2, 1, tzinfo=UTC),
+        snapshots=(
+            UniverseSnapshot(
+                effective_date=used_at,
+                symbols=symbols,
+                membership_provenance=tuple(
+                    UniverseMembershipProvenance(
+                        symbol=symbol,
+                        source="Index archive",
+                        effective_from=used_at,
+                        evidence="Archived constituent file",
+                    )
+                    for symbol in symbols
+                ),
+            ),
+        ),
+        survivorship_bias_free=True,
+        disclosure="Historical membership is source-backed.",
+    )
+    UniverseRepository(tmp_path).save(universe)
+    actions = CorporateActionService(CorporateActionRepository(tmp_path)).create(
+        CreateCorporateActionDataset(
+            name="Late delisting evidence",
+            provider="Exchange",
+            actions=(
+                CorporateAction(
+                    action_id="delisting-missing-settlement",
+                    symbol=dataset.symbols[0],
+                    action_type="DELISTING",
+                    effective_at=used_at,
+                    announced_at=None,
+                    available_at=used_at + timedelta(days=1),
+                    source="Exchange bulletin",
+                    evidence="Settlement was not published.",
+                    delisting_reason="Insolvency",
+                ),
+            ),
+            disclosure="No settlement price is inferred.",
+        )
+    )
+    observations = _observations()
+    record = _record(datasets, observations).model_copy(
+        update={
+            "universe": symbols,
+            "universe_id": universe.universe_id,
+            "universe_mode": "POINT_IN_TIME",
+            "survivorship_bias_free": True,
+            "corporate_action_dataset_id": actions.corporate_action_dataset_id,
+        }
+    )
+    audit = _engine(tmp_path, StubFactorEngine(observations), record).create(
+        CreateDataAudit(root_type="FACTOR_RESEARCH", root_id=record.research_id)
+    )
+
+    assert _finding(audit, "STATIC_UNIVERSE_SURVIVORSHIP_RISK").severity == "PASS"
+    assert _finding(audit, "UNIVERSE_MEMBERSHIP_PROVENANCE_MISSING").severity == "PASS"
+    missing_market = _finding(audit, "UNIVERSE_MEMBER_WITHOUT_MARKET_DATA")
+    assert missing_market.severity == "INSUFFICIENT_EVIDENCE"
+    assert missing_market.evidence == ("MISSING_MARKET_DATA",)
+    assert _finding(audit, "CORPORATE_ACTION_DATASET_MISSING").severity == "PASS"
+    assert _finding(audit, "CORPORATE_ACTION_PIT_WARNING").severity == "WARNING"
+    assert _finding(audit, "UNRESOLVED_DELISTING").severity == "INSUFFICIENT_EVIDENCE"
+
+
+def test_run_audit_includes_universe_and_corporate_action_evidence(tmp_path: Path) -> None:
+    datasets = DatasetRegistry(tmp_path)
+    dataset = datasets.get("pairs-sample-v1")
+    assert dataset is not None
+    universe = UniverseRepository(tmp_path).create(
+        CreateHistoricalUniverse(
+            name="Run historical universe",
+            source="Index archive",
+            mode="POINT_IN_TIME",
+            dataset_id=dataset.dataset_id,
+            snapshots=(
+                UniverseSnapshot(
+                    effective_date=dataset.start_time,
+                    symbols=dataset.symbols,
+                    membership_provenance=tuple(
+                        UniverseMembershipProvenance(
+                            symbol=symbol,
+                            source="Index archive",
+                            effective_from=dataset.start_time,
+                            evidence="Archived constituent file",
+                        )
+                        for symbol in dataset.symbols
+                    ),
+                ),
+            ),
+            disclosure="Historical membership is source-backed.",
+        )
+    )
+    action = CorporateAction(
+        action_id="run-unresolved-delisting",
+        symbol=dataset.symbols[0],
+        action_type="DELISTING",
+        effective_at=dataset.end_time,
+        announced_at=None,
+        available_at=dataset.end_time,
+        source="Exchange bulletin",
+        evidence="No reliable settlement price was published.",
+        delisting_reason="Insolvency",
+    )
+    actions = CorporateActionService(CorporateActionRepository(tmp_path)).create(
+        CreateCorporateActionDataset(
+            name="Run action evidence",
+            provider="Exchange",
+            actions=(action,),
+            disclosure="No settlement price is inferred.",
+        )
+    )
+    trace = _trace().model_copy(
+        update={
+            "corporate_action_events": (
+                CorporateActionEvent(
+                    action_id=action.action_id,
+                    symbol=action.symbol,
+                    action_type="DELISTING",
+                    timestamp=action.effective_at,
+                    status="UNRESOLVED",
+                    quantity_before=10.0,
+                    quantity_after=10.0,
+                    cash_amount=0.0,
+                    settlement_price=None,
+                    evidence=action.evidence,
+                ),
+            )
+        }
+    )
+    manifest = _run_manifest(datasets, trace).model_copy(
+        update={
+            "universe_id": universe.universe_id,
+            "corporate_action_dataset_id": actions.corporate_action_dataset_id,
+            "unresolved_corporate_action_ids": (action.action_id,),
+        }
+    )
+    placeholder = _record(datasets, ())
+    audit = _engine(
+        tmp_path,
+        StubFactorEngine(()),
+        placeholder,
+        runs=StubRunRepository(manifest, trace),
+    ).create(CreateDataAudit(root_type="RUN", root_id=manifest.run_id))
+
+    assert _finding(audit, "STATIC_UNIVERSE_SURVIVORSHIP_RISK").severity == "PASS"
+    assert _finding(audit, "UNIVERSE_MEMBERSHIP_PROVENANCE_MISSING").severity == "PASS"
+    assert _finding(audit, "UNIVERSE_MEMBER_WITHOUT_MARKET_DATA").severity == "PASS"
+    assert _finding(audit, "CORPORATE_ACTION_DATASET_MISSING").severity == "PASS"
+    assert _finding(audit, "CORPORATE_ACTION_PIT_WARNING").severity == "PASS"
+    assert _finding(audit, "UNRESOLVED_DELISTING").severity == "INSUFFICIENT_EVIDENCE"
+    assert _finding(audit, "CORPORATE_ACTION_TRACE_CONSISTENCY").severity == "PASS"
+    assert audit.source_fingerprints[f"universe:{universe.universe_id}"].startswith("sha256:")
+    assert (
+        audit.source_fingerprints[
+            f"corporate_action_dataset:{actions.corporate_action_dataset_id}"
+        ]
+        == actions.content_fingerprint
+    )
 
 
 def test_run_trace_look_ahead_is_counted_and_saved_as_violation(tmp_path: Path) -> None:

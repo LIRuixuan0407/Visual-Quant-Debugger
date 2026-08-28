@@ -4,6 +4,12 @@ from pathlib import Path
 
 from test_phase23_discovery import _assets, _request
 
+from app.corporate_actions import (
+    CorporateAction,
+    CorporateActionRepository,
+    CorporateActionService,
+    CreateCorporateActionDataset,
+)
 from app.discovery import CreateHypothesisRevision
 from app.main import app
 from app.research_lineage import (
@@ -133,9 +139,38 @@ def test_builder_uses_only_explicit_factor_relationship_walk_and_portfolio_field
     tmp_path: Path,
 ) -> None:
     assets = _assets(tmp_path)
-    discovery, _, factors, _, _, _, _, research_ids = assets
+    discovery, _, factors, _, _, datasets, _, research_ids = assets
     hypothesis = discovery.build_candidate(discovery.create(_request(research_ids)))
     assert hypothesis.lineage.portfolio_research_id is not None
+    factor_record = factors.get(research_ids[0])
+    assert factor_record is not None
+    dataset = datasets.get(factor_record.dataset_id)
+    assert dataset is not None
+    actions = CorporateActionService(CorporateActionRepository(tmp_path)).create(
+        CreateCorporateActionDataset(
+            name="Explicit lineage actions",
+            provider="Exchange",
+            actions=(
+                CorporateAction(
+                    action_id="lineage-split",
+                    symbol=factor_record.universe[0],
+                    action_type="SPLIT",
+                    effective_at=dataset.start_time,
+                    announced_at=None,
+                    available_at=dataset.start_time,
+                    source="Exchange",
+                    evidence="Archived split notice",
+                    split_ratio=2.0,
+                ),
+            ),
+            disclosure="Only explicit ids create lineage edges.",
+        )
+    )
+    factors.save(
+        factor_record.model_copy(
+            update={"corporate_action_dataset_id": actions.corporate_action_dataset_id}
+        )
+    )
     service = _service(assets, ResearchSnapshotRepository(tmp_path))
 
     graph = service.graph()
@@ -147,6 +182,25 @@ def test_builder_uses_only_explicit_factor_relationship_walk_and_portfolio_field
         edge for edge in _incoming(graph, factor_research) if edge.edge_type == "USES_DATASET"
     )
     assert dataset_edge.source_field == "FactorResearchRecord.dataset_id"
+    explicit_edges = {
+        edge.edge_type: edge
+        for edge in _incoming(graph, factor_research)
+        if edge.edge_type in {"USES_UNIVERSE", "USES_CORPORATE_ACTIONS"}
+    }
+    assert explicit_edges["USES_UNIVERSE"].source_field == "FactorResearchRecord.universe_id"
+    assert explicit_edges["USES_CORPORATE_ACTIONS"].source_field == (
+        "FactorResearchRecord.corporate_action_dataset_id"
+    )
+    assert _node(graph, "UNIVERSE", factor_record.universe_id or "").status == "RESOLVED"
+    assert (
+        _node(
+            graph,
+            "CORPORATE_ACTION_DATASET",
+            actions.corporate_action_dataset_id,
+        ).status
+        == "RESOLVED"
+    )
+    assert sum(edge.edge_type == "USES_CORPORATE_ACTIONS" for edge in graph.edges) == 1
     factor_node = _node(graph, "FACTOR", factor_record.factor.factor_id)
     assert factor_node.revision == (
         factor_record.factor.source_fingerprint or factor_record.factor.version

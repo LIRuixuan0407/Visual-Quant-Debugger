@@ -9,6 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.adapters.models import RuntimeDescriptor, native_runtime
 from app.backtest import BacktestParameters
+from app.corporate_actions.models import PriceAdjustmentPolicy
 from app.models import MarketBar, MarketFrame
 from app.sdk.models import RuntimeFailure
 from app.trace.models import BacktestTrace, TraceScalar
@@ -100,6 +101,10 @@ class RunManifest(RunModel):
     completed_at: datetime | None
     strategy: StrategyRevision
     dataset: DatasetRevision
+    universe_id: str | None = None
+    corporate_action_dataset_id: str | None = None
+    price_adjustment_policy: PriceAdjustmentPolicy = "RAW"
+    unresolved_corporate_action_ids: tuple[str, ...] = ()
     period: ResearchPeriod
     parameters: dict[str, int | float]
     execution_model: ExecutionModelRevision
@@ -150,6 +155,9 @@ class RunListItem(RunModel):
     dataset_id: str
     dataset_name: str
     dataset_fingerprint: str
+    universe_id: str | None = None
+    corporate_action_dataset_id: str | None = None
+    price_adjustment_policy: PriceAdjustmentPolicy = "RAW"
     parameters: dict[str, int | float]
     period: ResearchPeriod
     metrics: RunMetrics | None
@@ -196,6 +204,7 @@ class ContextComparison(RunModel):
     field: Literal[
         "strategy_revision",
         "dataset_revision",
+        "market_evidence",
         "evaluation_period",
         "execution_model",
         "runtime",

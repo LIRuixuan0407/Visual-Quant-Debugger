@@ -42,6 +42,16 @@ def _context(manifests: tuple[RunManifest, ...]) -> tuple[ContextComparison, ...
     fields: tuple[tuple[str, Callable[[RunManifest], str]], ...] = (
         ("strategy_revision", lambda item: item.strategy.source_fingerprint),
         ("dataset_revision", lambda item: item.dataset.content_fingerprint),
+        (
+            "market_evidence",
+            lambda item: _render(
+                {
+                    "universe_id": item.universe_id,
+                    "corporate_action_dataset_id": item.corporate_action_dataset_id,
+                    "price_adjustment_policy": item.price_adjustment_policy,
+                }
+            ),
+        ),
         ("evaluation_period", _period),
         (
             "execution_model",
@@ -70,6 +80,7 @@ def _context(manifests: tuple[RunManifest, ...]) -> tuple[ContextComparison, ...
                 Literal[
                     "strategy_revision",
                     "dataset_revision",
+                    "market_evidence",
                     "evaluation_period",
                     "execution_model",
                     "runtime",

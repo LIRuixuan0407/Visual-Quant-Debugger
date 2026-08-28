@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from app.backtest import BacktestParameters, run_backtest
+from app.corporate_actions.models import CorporateAction, PriceAdjustmentPolicy
 from app.datasets import DatasetRegistry
 from app.fundamentals import FundamentalRepository
 from app.models import BacktestMetrics, BacktestResult, MarketBar, MarketFrame
@@ -18,6 +19,7 @@ from app.sdk.tracing import (
 )
 from app.strategies import PairsTradingParameters, PairsTradingStrategy
 from app.trace.models import BacktestTrace, TraceScalar
+from app.universes import HistoricalUniverse
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +76,10 @@ def execute_open_run(
     strategy_registry: StrategyRegistry,
     dataset_registry: DatasetRegistry,
     loaded_strategy: LoadedStrategy | None = None,
+    frames_override: tuple[MarketFrame, ...] | None = None,
+    corporate_actions: tuple[CorporateAction, ...] = (),
+    price_adjustment_policy: PriceAdjustmentPolicy = "RAW",
+    historical_universe: HistoricalUniverse | None = None,
 ) -> OpenRunResult:
     loaded = loaded_strategy or strategy_registry.load(strategy_id)
     strategy = loaded.strategy_class()
@@ -85,9 +91,20 @@ def execute_open_run(
     if definition is None:
         raise KeyError(f"Dataset '{dataset_id}' was not found")
     requirements = strategy.metadata.data_requirements
-    all_frames = dataset_registry.load_frames(dataset_id)
+    all_frames = frames_override or dataset_registry.load_frames(dataset_id)
     symbols = _selected_symbols(all_frames, requirements.symbols, requirements.symbol_count)
-    frames = dataset_registry.load_frames(dataset_id, symbols)
+    frames = (
+        tuple(
+            MarketFrame(
+                timestamp=frame.timestamp,
+                values={symbol: frame.values[symbol] for symbol in symbols},
+                available_at=frame.available_at,
+            )
+            for frame in all_frames
+        )
+        if frames_override is not None
+        else dataset_registry.load_frames(dataset_id, symbols)
+    )
     if research_cutoff is not None:
         if research_cutoff.tzinfo is None or research_cutoff.utcoffset() is None:
             raise ValueError("research_cutoff must be timezone-aware")
@@ -105,6 +122,11 @@ def execute_open_run(
         for item in strategy.parameter_definitions()
     }
     if strategy_id == PairsTradingStrategy.metadata.strategy_id:
+        if corporate_actions:
+            raise ValueError(
+                "Corporate Actions require a native open strategy runtime; "
+                "the legacy pairs runtime cannot record these events"
+            )
         lookback = int(strategy_parameters["lookback"])
         entry_z = float(strategy_parameters["entry_z"])
         exit_z = float(strategy_parameters["exit_z"])
@@ -155,6 +177,9 @@ def execute_open_run(
         slippage_bps=slippage_bps,
         additional_execution_delay_bars=additional_execution_delay_bars,
         fundamental_repository=FundamentalRepository(dataset_registry.workspace_root),
+        corporate_actions=corporate_actions,
+        price_adjustment_policy=price_adjustment_policy,
+        historical_universe=historical_universe,
     )
     runtime_result = runtime.run(frames)
     trace_parameters: dict[str, TraceScalar] = {
@@ -179,6 +204,7 @@ def execute_open_run(
                     else "signal at close(t); execute at close(t+"
                     f"{1 + additional_execution_delay_bars})"
                 ),
+                corporate_action_events=tuple(runtime.corporate_action_events),
             ),
         )
         if runtime_result.rows

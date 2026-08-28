@@ -57,7 +57,7 @@ function ReplayPage({ trace, initialEventId, onDiagnose, onAutopsy }: { trace: B
         <summary>{tr('Backtest parameters')}</summary>
         <div>{Object.entries(trace.parameters).map(([key, value]) => <span key={key}><small>{key}</small><strong>{String(value)}</strong></span>)}</div>
       </details>
-      <ReplayTimeline events={trace.timeline} selectedEventId={selectedEventId} onSelect={selectEvent} />
+      <ReplayTimeline events={trace.timeline} selectedEventId={selectedEventId} onSelect={selectEvent} corporateActions={trace.corporate_action_events} />
       <ReplayControls previousBarId={previousBarId} nextBarId={nextBarId} previousSignalId={previousSignalId} nextSignalId={nextSignalId} onSelect={selectEvent} />
       {!hasSignals && <p className="no-signals">{tr('No trading signals were generated for this backtest.')}</p>}
       <div className="inspector-grid">

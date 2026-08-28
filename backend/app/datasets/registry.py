@@ -485,7 +485,11 @@ class DatasetRegistry:
         )
 
     def load_frames(
-        self, dataset_id: str, required_symbols: tuple[str, ...] = ()
+        self,
+        dataset_id: str,
+        required_symbols: tuple[str, ...] = (),
+        *,
+        allow_partial: bool = False,
     ) -> tuple[MarketFrame, ...]:
         if dataset_id == "pairs-sample-v1":
             frames = self._built_in_frames()
@@ -511,10 +515,23 @@ class DatasetRegistry:
         symbols = required_symbols or tuple(
             sorted(set.intersection(*(set(frame.symbols) for frame in frames)))
         )
+        if allow_partial:
+            return tuple(
+                MarketFrame(
+                    timestamp=frame.timestamp,
+                    values={
+                        symbol: frame.values[symbol] for symbol in symbols if symbol in frame.values
+                    },
+                    available_at=frame.available_at,
+                )
+                for frame in frames
+                if any(symbol in frame.values for symbol in symbols)
+            )
         return tuple(
             MarketFrame(
                 timestamp=frame.timestamp,
                 values={symbol: frame.values[symbol] for symbol in symbols},
+                available_at=frame.available_at,
             )
             for frame in frames
             if all(symbol in frame.values for symbol in symbols)

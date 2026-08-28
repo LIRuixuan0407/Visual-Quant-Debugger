@@ -6,6 +6,7 @@ from datetime import datetime
 
 import numpy as np
 
+from app.corporate_actions.models import CorporateActionEvent
 from app.models import BacktestMetrics
 from app.sdk.models import RuntimeRow
 from app.trace.models import (
@@ -39,6 +40,7 @@ class RuntimeTraceConfiguration:
     parameters: dict[str, TraceScalar]
     initial_cash: float
     execution_model: str = "signal at close(t); execute at close(t+1)"
+    corporate_action_events: tuple[CorporateActionEvent, ...] = ()
 
 
 def calculate_runtime_metrics(rows: tuple[RuntimeRow, ...], initial_cash: float) -> BacktestMetrics:
@@ -305,6 +307,7 @@ def build_runtime_trace(
             "number_of_orders": metrics.number_of_orders,
         },
         diagnostics=(),
+        corporate_action_events=configuration.corporate_action_events,
     )
     return trace.model_copy(update={"diagnostics": collect_look_ahead_diagnostics(trace)})
 

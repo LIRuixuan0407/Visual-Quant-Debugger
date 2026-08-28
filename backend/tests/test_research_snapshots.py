@@ -6,6 +6,11 @@ from pathlib import Path
 import pytest
 from test_phase23_discovery import _assets, _request
 
+from app.corporate_actions import (
+    CorporateAction,
+    CorporateActionService,
+    CreateCorporateActionDataset,
+)
 from app.main import app
 from app.research_snapshots import (
     CreateResearchSnapshot,
@@ -170,6 +175,36 @@ def _comparison_variant(snapshot: ResearchSnapshot) -> ResearchSnapshot:
 
 def test_complete_research_snapshot_freezes_replayable_lineage(tmp_path: Path) -> None:
     engine, snapshots, hypotheses, ledger, hypothesis = _complete_hypothesis(tmp_path)
+    actions = CorporateActionService(engine.corporate_actions).create(
+        CreateCorporateActionDataset(
+            name="Frozen action evidence",
+            provider="Exchange",
+            actions=(
+                CorporateAction(
+                    action_id="snapshot-split",
+                    symbol=hypothesis.universe[0],
+                    action_type="SPLIT",
+                    effective_at=hypothesis.created_at,
+                    announced_at=hypothesis.created_at,
+                    available_at=hypothesis.created_at,
+                    source="Exchange notice",
+                    evidence="Archived split bulletin",
+                    split_ratio=2.0,
+                ),
+            ),
+            disclosure="Frozen from explicit Factor research references.",
+        )
+    )
+    for research_id in hypothesis.lineage.factor_research_ids:
+        record = engine.factors.get(research_id)
+        assert record is not None
+        engine.factors.save(
+            record.model_copy(
+                update={
+                    "corporate_action_dataset_id": actions.corporate_action_dataset_id,
+                }
+            )
+        )
     snapshot = engine.create(
         CreateResearchSnapshot(
             name="Diversified price signals · frozen research",
@@ -179,6 +214,12 @@ def test_complete_research_snapshot_freezes_replayable_lineage(tmp_path: Path) -
 
     assert snapshot.content_fingerprint == snapshot_content_fingerprint(snapshot)
     assert snapshot.dataset.source_revision == hypothesis.dataset_fingerprint
+    assert snapshot.lineage.universe_ids
+    assert tuple(item.artifact_id for item in snapshot.universes) == (snapshot.lineage.universe_ids)
+    assert snapshot.lineage.corporate_action_dataset_ids == (actions.corporate_action_dataset_id,)
+    assert tuple(item.artifact_id for item in snapshot.corporate_actions) == (
+        actions.corporate_action_dataset_id,
+    )
     assert snapshot.lineage.hypothesis_revision == hypothesis.revision
     assert tuple(item.artifact_id for item in snapshot.factors) == (
         hypothesis.lineage.factor_research_ids

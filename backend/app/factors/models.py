@@ -5,6 +5,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from app.corporate_actions.models import PriceAdjustmentPolicy
 from app.fundamentals.models import FundamentalFieldSnapshot, FundamentalSnapshot
 from app.trace.models import DataDependency
 
@@ -97,7 +98,18 @@ class CreateFactorResearch(FactorModel):
     universe: tuple[str, ...] = ()
     universe_id: str | None = None
     fundamental_dataset_id: str | None = None
+    corporate_action_dataset_id: str | None = None
+    price_adjustment_policy: PriceAdjustmentPolicy = "RAW"
     components: tuple[FactorComponent, ...] = ()
+
+    @model_validator(mode="after")
+    def explicit_adjustment_source(self) -> CreateFactorResearch:
+        if (
+            self.price_adjustment_policy == "SPLIT_ADJUSTED"
+            and not self.corporate_action_dataset_id
+        ):
+            raise ValueError("SPLIT_ADJUSTED research requires a Corporate Action dataset")
+        return self
 
     @model_validator(mode="after")
     def mixed_contract(self) -> CreateFactorResearch:
@@ -218,6 +230,8 @@ class FactorResearchRecord(FactorModel):
     factor_observation_count: int
     sample_observations: tuple[FactorObservation, ...]
     fundamental_dataset_id: str | None = None
+    corporate_action_dataset_id: str | None = None
+    price_adjustment_policy: PriceAdjustmentPolicy = "RAW"
     fundamental_provider: str | None = None
     restatement_safe: bool = True
     restatement_warning: str | None = None

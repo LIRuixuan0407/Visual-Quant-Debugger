@@ -229,6 +229,8 @@ export default function ResearchSnapshotsPage({
 
   const artifacts = snapshot == null ? [] : [
     snapshot.dataset,
+    ...snapshot.universes,
+    ...snapshot.corporate_actions,
     ...snapshot.factors,
     ...snapshot.relationships,
     ...snapshot.walk_forward,

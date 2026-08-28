@@ -8,6 +8,12 @@ import pytest
 import app.api.replay as replay_api
 import app.api.runs as runs_api
 import app.diagnostics.engine as diagnostics_engine
+from app.corporate_actions import (
+    CorporateAction,
+    CorporateActionRepository,
+    CorporateActionService,
+    CreateCorporateActionDataset,
+)
 from app.datasets import DatasetImportRequest, DatasetRegistry
 from app.main import app
 from app.runs import (
@@ -20,6 +26,7 @@ from app.runs import (
 )
 from app.sdk.registry import StrategyRegistry
 from app.trace import trace_to_json
+from app.universes import UniverseRepository
 
 
 def _csv(*, price_offset: float = 0.0) -> bytes:
@@ -145,6 +152,96 @@ def test_sqlite_manifest_trace_snapshot_restart_and_integrity(tmp_path: Path) ->
     (run_directory / "trace.json").write_text("{}", encoding="utf-8")
     with pytest.raises(ArtifactIntegrityError, match="trace.json hash mismatch"):
         restarted.get_manifest(manifest.run_id)
+
+
+def test_run_manifest_trace_and_reproduction_pin_corporate_action_evidence(
+    tmp_path: Path,
+) -> None:
+    strategies, datasets, _, strategy_id, dataset_id = _registries(tmp_path)
+    dataset = datasets.get(dataset_id)
+    assert dataset is not None
+    universe = UniverseRepository(tmp_path).static_for_dataset(dataset)
+    actions = CorporateActionService(CorporateActionRepository(tmp_path)).create(
+        CreateCorporateActionDataset(
+            name="Run action evidence",
+            provider="Exchange",
+            actions=(
+                CorporateAction(
+                    action_id="run-split",
+                    symbol="AAPL",
+                    action_type="SPLIT",
+                    effective_at=datetime(2025, 1, 8, tzinfo=UTC),
+                    announced_at=datetime(2025, 1, 1, tzinfo=UTC),
+                    available_at=datetime(2025, 1, 1, tzinfo=UTC),
+                    source="Exchange",
+                    evidence="Split bulletin",
+                    split_ratio=2.0,
+                ),
+                CorporateAction(
+                    action_id="run-dividend",
+                    symbol="AAPL",
+                    action_type="CASH_DIVIDEND",
+                    effective_at=datetime(2025, 1, 12, tzinfo=UTC),
+                    announced_at=datetime(2025, 1, 2, tzinfo=UTC),
+                    available_at=datetime(2025, 1, 2, tzinfo=UTC),
+                    source="Exchange",
+                    evidence="Dividend bulletin",
+                    cash_amount=1.0,
+                    currency="USD",
+                ),
+                CorporateAction(
+                    action_id="run-delisting",
+                    symbol="AAPL",
+                    action_type="DELISTING",
+                    effective_at=datetime(2025, 1, 24, tzinfo=UTC),
+                    announced_at=None,
+                    available_at=datetime(2025, 1, 20, tzinfo=UTC),
+                    source="Exchange",
+                    evidence="No reliable settlement evidence",
+                    delisting_reason="Bankruptcy",
+                ),
+            ),
+            disclosure="Every runtime event is explicit.",
+        )
+    )
+    result = run_ledger.create(
+        strategy_id=strategy_id,
+        dataset_id=dataset_id,
+        parameters={
+            "fast_window": 3,
+            "slow_window": 5,
+            "quantity": 100,
+            "fee_bps": 5,
+            "slippage_bps": 5,
+        },
+        research_cutoff=None,
+        strategy_registry_override=strategies,
+        dataset_registry_override=datasets,
+        universe_id=universe.universe_id,
+        corporate_action_dataset_id=actions.corporate_action_dataset_id,
+        price_adjustment_policy="RAW",
+    )
+
+    assert result.trace is not None
+    assert result.manifest.universe_id == universe.universe_id
+    assert result.manifest.corporate_action_dataset_id == actions.corporate_action_dataset_id
+    assert result.manifest.price_adjustment_policy == "RAW"
+    assert tuple(item.action_id for item in result.trace.corporate_action_events) == (
+        "run-split",
+        "run-dividend",
+        "run-delisting",
+    )
+    assert result.manifest.unresolved_corporate_action_ids == ("run-delisting",)
+
+    reproduced = run_ledger.reproduce(
+        result.manifest.run_id,
+        strategy_registry_override=strategies,
+        dataset_registry_override=datasets,
+    )
+    assert reproduced.manifest.universe_id == universe.universe_id
+    assert reproduced.manifest.corporate_action_dataset_id == actions.corporate_action_dataset_id
+    assert reproduced.trace is not None
+    assert reproduced.trace.corporate_action_events == result.trace.corporate_action_events
 
 
 def test_source_change_is_detected_and_exact_rerun_uses_snapshot(tmp_path: Path) -> None:

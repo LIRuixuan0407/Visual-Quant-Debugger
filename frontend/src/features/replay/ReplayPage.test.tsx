@@ -127,6 +127,34 @@ test('selects a trace event supplied by an Autopsy jump', () => {
   expect(screen.getByText('$99,980.00')).toBeInTheDocument()
 })
 
+test('shows corporate actions on the timeline and jumps to their trace event', () => {
+  const targetEvent = goldenTrace.timeline[1]
+  const trace: BacktestTrace = {
+    ...goldenTrace,
+    corporate_action_events: [
+      {
+        action_id: 'action-dividend-1',
+        symbol: 'ASSET_A',
+        action_type: 'CASH_DIVIDEND',
+        timestamp: targetEvent.timestamp,
+        status: 'APPLIED',
+        quantity_before: 10,
+        quantity_after: 10,
+        cash_amount: 15,
+        settlement_price: null,
+        evidence: 'Explicit point-in-time dividend record.',
+      },
+    ],
+  }
+
+  const { container } = render(<ReplayPage trace={trace} />)
+
+  expect(screen.getByText('Corporate Action')).toBeInTheDocument()
+  expect(container.querySelector('.corporate-action-marker')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: /ASSET_A/ }))
+  expect(container.querySelector(`[data-event-id="${targetEvent.event_id}"] .event-hit`)).toHaveClass('selected-event')
+})
+
 test('does not turn missing framework evidence into a safety or zero-cost claim', () => {
   const frameworkTrace: BacktestTrace = {
     ...goldenTrace,

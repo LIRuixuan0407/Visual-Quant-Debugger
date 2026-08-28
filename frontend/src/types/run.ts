@@ -57,6 +57,9 @@ export interface RunListItem {
   dataset_id: string
   dataset_name: string
   dataset_fingerprint: string
+  universe_id?: string | null
+  corporate_action_dataset_id?: string | null
+  price_adjustment_policy?: 'RAW' | 'SPLIT_ADJUSTED'
   parameters: Record<string, number>
   period: ResearchPeriod
   metrics: RunMetrics | null
@@ -83,6 +86,10 @@ export interface RunManifest {
   completed_at: string | null
   strategy: StrategyRevision
   dataset: DatasetRevision
+  universe_id?: string | null
+  corporate_action_dataset_id?: string | null
+  price_adjustment_policy?: 'RAW' | 'SPLIT_ADJUSTED'
+  unresolved_corporate_action_ids?: string[]
   period: ResearchPeriod
   parameters: Record<string, number>
   execution_model: {
@@ -133,7 +140,7 @@ export interface RunDetail {
 }
 
 export interface ContextComparison {
-  field: 'strategy_revision' | 'dataset_revision' | 'evaluation_period' | 'execution_model' | 'runtime'
+  field: 'strategy_revision' | 'dataset_revision' | 'market_evidence' | 'evaluation_period' | 'execution_model' | 'runtime'
   same: boolean
   values: string[]
 }

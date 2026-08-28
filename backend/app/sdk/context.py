@@ -33,6 +33,7 @@ class StrategyContext:
         next_feature_id: Callable[[], str],
         next_dependency_id: Callable[[], str],
         fundamental_repository: FundamentalRepository | None = None,
+        active_symbols: tuple[str, ...] | None = None,
     ) -> None:
         if not frames:
             raise ValueError("A strategy context requires a current frame")
@@ -40,8 +41,17 @@ class StrategyContext:
         self.parameters = MappingProxyType(dict(parameters))
         self.current_positions = MappingProxyType(dict(current_positions))
         self.current_time = frames[-1].knowledge_time
+        self.__active_symbols = None if active_symbols is None else frozenset(active_symbols)
+        visible_symbols = (
+            tuple(frames[-1].values)
+            if active_symbols is None
+            else tuple(symbol for symbol in active_symbols if symbol in frames[-1].values)
+        )
         self.market = MappingProxyType(
-            {symbol: MappingProxyType(dict(fields)) for symbol, fields in frames[-1].values.items()}
+            {
+                symbol: MappingProxyType(dict(frames[-1].values[symbol]))
+                for symbol in visible_symbols
+            }
         )
         self.__previous_target_signature = previous_target_signature
         self.__next_feature_id = next_feature_id
@@ -51,8 +61,8 @@ class StrategyContext:
         self.__external_dependency_by_key: dict[tuple[str, datetime, str, str], MarketValueRef] = {}
         self.__dependencies: list[DataDependency] = []
         self.__features: list[FeatureRecord] = []
-        for symbol, fields in frames[-1].values.items():
-            for field in fields:
+        for symbol in visible_symbols:
+            for field in frames[-1].values[symbol]:
                 self.__market_ref(frames[-1], symbol, field)
 
     @property
@@ -97,7 +107,15 @@ class StrategyContext:
         )
         return ref
 
+    def __require_active_symbol(self, symbol: str) -> None:
+        if self.__active_symbols is not None and symbol not in self.__active_symbols:
+            raise ValueError(
+                f"Symbol '{symbol}' is not active in the historical universe at "
+                f"{self.current_time.isoformat()}"
+            )
+
     def current(self, symbol: str, field: str = "close") -> MarketValueRef:
+        self.__require_active_symbol(symbol)
         return self.__market_ref(self.__frames[-1], symbol, field)
 
     def external_value(
@@ -151,6 +169,7 @@ class StrategyContext:
         period_type: str | None = None,
         count: int = 1,
     ) -> tuple[FundamentalObservation, ...]:
+        self.__require_active_symbol(symbol)
         if self.__fundamental_repository is None:
             return ()
         dataset = self.__fundamental_repository.get(dataset_id)
@@ -166,6 +185,7 @@ class StrategyContext:
         )
 
     def history(self, *, symbol: str, field: str = "close", bars: int) -> MarketSeries:
+        self.__require_active_symbol(symbol)
         if bars < 1:
             raise ValueError("history bars must be positive")
         available = [

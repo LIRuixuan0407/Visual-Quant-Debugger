@@ -105,6 +105,18 @@ def _context(
             lambda snapshot, _: snapshot.dataset.source_revision,
         ),
         (
+            "universe_revisions",
+            "STRICT_CONTROL",
+            lambda snapshot, _: _render(tuple(item.source_revision for item in snapshot.universes)),
+        ),
+        (
+            "corporate_action_revisions",
+            "STRICT_CONTROL",
+            lambda snapshot, _: _render(
+                tuple(item.source_revision for item in snapshot.corporate_actions)
+            ),
+        ),
+        (
             "research_periods",
             "STRICT_CONTROL",
             lambda snapshot, _: _stage_periods(snapshot),
@@ -137,6 +149,8 @@ def _context(
                 field=cast(
                     Literal[
                         "dataset_revision",
+                        "universe_revisions",
+                        "corporate_action_revisions",
                         "research_periods",
                         "run_period",
                         "execution_model",
@@ -174,6 +188,15 @@ def _unique_key(base: str, counts: Counter[str]) -> str:
 def _artifacts(snapshot: ResearchSnapshot) -> dict[tuple[ArtifactKind, str], FrozenArtifact]:
     result: dict[tuple[ArtifactKind, str], FrozenArtifact] = {}
     result[("DATASET", "DATASET")] = snapshot.dataset
+    for artifact in snapshot.universes:
+        result[("UNIVERSE", f"UNIVERSE:{artifact.artifact_id}")] = artifact
+    for artifact in snapshot.corporate_actions:
+        result[
+            (
+                "CORPORATE_ACTION_DATASET",
+                f"CORPORATE_ACTION_DATASET:{artifact.artifact_id}",
+            )
+        ] = artifact
     for factor_id, artifact in zip(snapshot.lineage.factor_ids, snapshot.factors, strict=True):
         result[("FACTOR_RESEARCH", f"FACTOR:{factor_id}")] = artifact
 

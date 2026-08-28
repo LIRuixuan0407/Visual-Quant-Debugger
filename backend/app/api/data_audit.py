@@ -1,5 +1,6 @@
 from fastapi import APIRouter, HTTPException
 
+from app.corporate_actions import corporate_action_repository
 from app.data_audit import (
     CreateDataAudit,
     DataAuditDetail,
@@ -32,6 +33,7 @@ def _engine() -> DataAuditEngine:
         universe_repository,
         run_store.repository,
         data_audit_repository,
+        corporate_action_repository,
     )
 
 

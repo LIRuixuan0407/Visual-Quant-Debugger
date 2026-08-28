@@ -7,6 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 LineageNodeType = Literal[
     "DATASET",
+    "UNIVERSE",
+    "CORPORATE_ACTION_DATASET",
     "FACTOR",
     "FACTOR_RESEARCH",
     "FACTOR_RELATIONSHIP",
@@ -20,6 +22,8 @@ LineageNodeType = Literal[
 ]
 LineageEdgeType = Literal[
     "USES_DATASET",
+    "USES_UNIVERSE",
+    "USES_CORPORATE_ACTIONS",
     "RESEARCHES_FACTOR",
     "RELATES_FACTORS",
     "VALIDATES_FACTOR",

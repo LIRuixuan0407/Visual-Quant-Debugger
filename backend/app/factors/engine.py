@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 
 import numpy as np
 
+from app.corporate_actions import CorporateActionRepository, CorporateActionService
 from app.datasets import DatasetRegistry
 from app.factor_sdk.context import FactorContext
 from app.factor_sdk.models import FactorPoint, FactorResult, FactorSeries
@@ -185,11 +186,19 @@ class FactorResearchEngine:
         fundamentals: FundamentalRepository | None = None,
         universes: UniverseRepository | None = None,
         factors: FactorRegistry | None = None,
+        corporate_actions: CorporateActionRepository | None = None,
     ) -> None:
         self.datasets = datasets
         self.fundamentals = fundamentals or FundamentalRepository(datasets.workspace_root)
         self.universes = universes or UniverseRepository(datasets.workspace_root)
         self.factors = factors or factor_registry
+        self.corporate_actions = corporate_actions or CorporateActionRepository(
+            datasets.workspace_root
+        )
+        self.corporate_action_service = CorporateActionService(
+            self.corporate_actions,
+            datasets,
+        )
 
     def _inputs(
         self, request: CreateFactorResearch
@@ -225,7 +234,11 @@ class FactorResearchEngine:
         if universe_record.dataset_id not in {None, dataset.dataset_id}:
             raise ValueError("The selected universe does not belong to this market dataset")
         universe = tuple(dict.fromkeys(item.upper() for item in request.universe))
-        universe = universe or universe_record.symbols_at(dataset.end_time)
+        universe = universe or tuple(
+            sorted(
+                {symbol for snapshot in universe_record.snapshots for symbol in snapshot.symbols}
+            )
+        )
         unknown = sorted(set(universe) - set(dataset.symbols))
         if unknown:
             raise ValueError(f"Universe symbols are not in the dataset: {', '.join(unknown)}")
@@ -247,8 +260,15 @@ class FactorResearchEngine:
                 raise ValueError(
                     "Fundamental data is missing universe symbols: " + ", ".join(missing_symbols)
                 )
+        frames = self.corporate_action_service.adjusted_frames(
+            request.dataset_id,
+            request.corporate_action_dataset_id,
+            request.price_adjustment_policy,
+            universe,
+            allow_partial=universe_record.mode == "POINT_IN_TIME",
+        )
         return (
-            self.datasets.load_frames(request.dataset_id, universe),
+            frames,
             universe,
             parameter_values(definition, request.parameters),
             universe_record,
@@ -259,16 +279,20 @@ class FactorResearchEngine:
     def _future_returns(
         frames: tuple[MarketFrame, ...], index: int, symbol: str
     ) -> dict[int, float | None]:
-        return {
-            horizon: (
-                None
-                if index + horizon >= len(frames)
-                else frames[index + horizon].value(symbol, "close")
-                / frames[index].value(symbol, "close")
-                - 1
-            )
-            for horizon in (1, 5, 20)
-        }
+        result: dict[int, float | None] = {}
+        for horizon in (1, 5, 20):
+            if index + horizon >= len(frames):
+                result[horizon] = None
+                continue
+            try:
+                result[horizon] = (
+                    frames[index + horizon].value(symbol, "close")
+                    / frames[index].value(symbol, "close")
+                    - 1
+                )
+            except (KeyError, ZeroDivisionError):
+                result[horizon] = None
+        return result
 
     @staticmethod
     def _future_return_timestamps(
@@ -989,6 +1013,8 @@ class FactorResearchEngine:
             fundamental_dataset_id=(
                 None if fundamental_dataset is None else fundamental_dataset.fundamental_dataset_id
             ),
+            corporate_action_dataset_id=request.corporate_action_dataset_id,
+            price_adjustment_policy=request.price_adjustment_policy,
             fundamental_provider=(
                 None if fundamental_dataset is None else fundamental_dataset.provider
             ),
@@ -1020,7 +1046,14 @@ class FactorResearchEngine:
             if record.fundamental_dataset_id is not None
             else None
         )
-        return self.datasets.load_frames(record.dataset_id, record.universe), universe, fundamentals
+        frames = self.corporate_action_service.adjusted_frames(
+            record.dataset_id,
+            record.corporate_action_dataset_id,
+            record.price_adjustment_policy,
+            record.universe,
+            allow_partial=universe.mode == "POINT_IN_TIME",
+        )
+        return frames, universe, fundamentals
 
     def observations(self, record: FactorResearchRecord) -> tuple[FactorObservation, ...]:
         """Recompute one saved Factor study through the canonical Factor Engine.

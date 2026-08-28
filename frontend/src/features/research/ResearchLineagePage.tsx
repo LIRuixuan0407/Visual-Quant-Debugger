@@ -4,8 +4,8 @@ import { getResearchLineage, getResearchLineageSummary } from '../../api/researc
 import { useI18n } from '../../i18n/I18nProvider'
 import type { LineageDirection, LineageEdge, LineageNode, LineageNodeType, ResearchLineageGraph, ResearchLineageSummary } from '../../types/researchLineage'
 
-const NODE_TYPES: LineageNodeType[] = ['DATASET', 'FACTOR', 'FACTOR_RESEARCH', 'FACTOR_RELATIONSHIP', 'WALK_FORWARD', 'PORTFOLIO_RESEARCH', 'HYPOTHESIS', 'STRATEGY', 'RUN', 'TRACE', 'SNAPSHOT']
-const COLUMN_BY_TYPE: Record<LineageNodeType, number> = { DATASET: 0, FACTOR: 1, FACTOR_RESEARCH: 2, FACTOR_RELATIONSHIP: 3, WALK_FORWARD: 3, PORTFOLIO_RESEARCH: 3, HYPOTHESIS: 4, STRATEGY: 5, RUN: 6, TRACE: 7, SNAPSHOT: 7 }
+const NODE_TYPES: LineageNodeType[] = ['DATASET', 'UNIVERSE', 'CORPORATE_ACTION_DATASET', 'FACTOR', 'FACTOR_RESEARCH', 'FACTOR_RELATIONSHIP', 'WALK_FORWARD', 'PORTFOLIO_RESEARCH', 'HYPOTHESIS', 'STRATEGY', 'RUN', 'TRACE', 'SNAPSHOT']
+const COLUMN_BY_TYPE: Record<LineageNodeType, number> = { DATASET: 0, UNIVERSE: 0, CORPORATE_ACTION_DATASET: 0, FACTOR: 1, FACTOR_RESEARCH: 2, FACTOR_RELATIONSHIP: 3, WALK_FORWARD: 3, PORTFOLIO_RESEARCH: 3, HYPOTHESIS: 4, STRATEGY: 5, RUN: 6, TRACE: 7, SNAPSHOT: 7 }
 const COLUMN_LABELS = ['Dataset', 'Factor', 'Factor Research', 'Relationship / Walk-Forward / Portfolio', 'Hypothesis', 'Strategy', 'Run', 'Trace / Snapshot']
 const NODE_WIDTH = 184
 const NODE_HEIGHT = 82

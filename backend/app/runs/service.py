@@ -21,11 +21,14 @@ from app.adapters.runner import FrameworkRunError, FrameworkRunner
 from app.adapters.trace_builder import build_adapter_trace
 from app.adapters.validation import validate_parameters
 from app.backtest import BacktestParameters
+from app.corporate_actions import CorporateActionRepository, CorporateActionService
+from app.corporate_actions.models import PriceAdjustmentPolicy
 from app.datasets import DatasetRegistry, dataset_registry
 from app.sdk.loader import LoadedStrategy, load_strategy, source_fingerprint
 from app.sdk.models import RuntimeFailure
 from app.sdk.registry import StrategyRegistration, StrategyRegistry, strategy_registry
 from app.trace import BacktestTrace, trace_to_json
+from app.universes import UniverseRepository
 
 from .engine import OpenRunResult, execute_open_run
 from .models import (
@@ -118,11 +121,19 @@ class RunLedger:
         class_name: str | None = None,
         reproduced_from_run_id: str | None = None,
         adapter_manifest_override: AdapterStrategyManifest | None = None,
+        universe_id: str | None = None,
+        corporate_action_dataset_id: str | None = None,
+        price_adjustment_policy: PriceAdjustmentPolicy = "RAW",
     ) -> PersistedRunResult:
         strategies = strategy_registry_override or strategy_registry
         datasets = dataset_registry_override or dataset_registry
         registration = strategies.get_registration(strategy_id)
         if registration is not None and registration.runtime_kind == "framework":
+            if universe_id is not None or corporate_action_dataset_id is not None:
+                raise ValueError(
+                    "Historical Universe and Corporate Action references are not supported "
+                    "by framework adapter runs"
+                )
             return self._create_framework(
                 registration=registration,
                 dataset_id=dataset_id,
@@ -143,6 +154,33 @@ class RunLedger:
         definition = datasets.get(dataset_id)
         if definition is None:
             raise KeyError(f"Dataset '{dataset_id}' was not found")
+        if price_adjustment_policy == "SPLIT_ADJUSTED" and corporate_action_dataset_id is None:
+            raise ValueError("SPLIT_ADJUSTED runs require a Corporate Action dataset")
+        universes = UniverseRepository(datasets.workspace_root)
+        universe = None if universe_id is None else universes.get(universe_id)
+        if universe_id is not None and universe is None:
+            raise KeyError(f"Universe '{universe_id}' was not found")
+        if universe is not None and universe.dataset_id not in (None, dataset_id):
+            raise ValueError("Historical Universe references another Market Dataset")
+        corporate_action_repository = CorporateActionRepository(datasets.workspace_root)
+        corporate_action_service = CorporateActionService(
+            corporate_action_repository,
+            datasets,
+        )
+        corporate_action_dataset = (
+            None
+            if corporate_action_dataset_id is None
+            else corporate_action_repository.get(corporate_action_dataset_id)
+        )
+        if corporate_action_dataset_id is not None and corporate_action_dataset is None:
+            raise KeyError(
+                f"Corporate Action dataset '{corporate_action_dataset_id}' was not found"
+            )
+        adjusted_frames = corporate_action_service.adjusted_frames(
+            dataset_id,
+            corporate_action_dataset_id,
+            price_adjustment_policy,
+        )
         values = self._normalized_parameters(initial_loaded, parameters)
         source_bytes = initial_loaded.source_path.read_bytes()
         source_hash = sha256_bytes(source_bytes)
@@ -155,6 +193,14 @@ class RunLedger:
             {
                 "strategy_fingerprint": source_hash,
                 "dataset_fingerprint": definition.content_fingerprint,
+                "universe_id": universe_id,
+                "corporate_action_dataset_id": corporate_action_dataset_id,
+                "corporate_action_fingerprint": (
+                    None
+                    if corporate_action_dataset is None
+                    else corporate_action_dataset.content_fingerprint
+                ),
+                "price_adjustment_policy": price_adjustment_policy,
                 "research_cutoff": None if research_cutoff is None else research_cutoff.isoformat(),
                 "parameters": values,
                 "execution_model_id": execution_model.execution_model_id,
@@ -188,6 +234,9 @@ class RunLedger:
                 source_timezone=definition.source_timezone,
                 symbols=definition.symbols,
             ),
+            universe_id=universe_id,
+            corporate_action_dataset_id=corporate_action_dataset_id,
+            price_adjustment_policy=price_adjustment_policy,
             period=ResearchPeriod(start=None, end=None, cutoff=research_cutoff),
             parameters=values,
             execution_model=execution_model,
@@ -212,6 +261,12 @@ class RunLedger:
                 strategy_registry=strategies,
                 dataset_registry=datasets,
                 loaded_strategy=snapshot_loaded,
+                frames_override=adjusted_frames,
+                corporate_actions=(
+                    () if corporate_action_dataset is None else corporate_action_dataset.actions
+                ),
+                price_adjustment_policy=price_adjustment_policy,
+                historical_universe=universe,
             )
         except Exception as exc:
             timestamp = definition.start_time
@@ -256,6 +311,15 @@ class RunLedger:
                     }
                 ),
                 "failure": result.failure,
+                "unresolved_corporate_action_ids": (
+                    ()
+                    if trace is None
+                    else tuple(
+                        item.action_id
+                        for item in trace.corporate_action_events
+                        if item.status == "UNRESOLVED"
+                    )
+                ),
             }
         )
         self.repository.finalize(completed, trace)
@@ -482,6 +546,9 @@ class RunLedger:
             class_name=manifest.strategy.class_name,
             reproduced_from_run_id=run_id,
             adapter_manifest_override=saved_adapter_manifest,
+            universe_id=manifest.universe_id,
+            corporate_action_dataset_id=manifest.corporate_action_dataset_id,
+            price_adjustment_policy=manifest.price_adjustment_policy,
         )
 
     def execution_record(self, trace_id: str) -> BacktestRunRecord | None:

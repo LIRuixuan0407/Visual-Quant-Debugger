@@ -8,6 +8,8 @@ from urllib.parse import quote
 
 from pydantic import BaseModel
 
+from app.corporate_actions.models import CorporateActionDataset
+from app.corporate_actions.repository import CorporateActionRepository
 from app.datasets import DatasetRegistry
 from app.discovery.models import ResearchHypothesis
 from app.discovery.repository import HypothesisRepository
@@ -23,6 +25,8 @@ from app.research_snapshots.repository import ResearchSnapshotRepository
 from app.runs import ArtifactIntegrityError, RunNotFoundError, RunRepository
 from app.runs.models import RunManifest
 from app.sdk.registry import StrategyRegistry
+from app.universes.models import HistoricalUniverse
+from app.universes.repository import UniverseRepository
 from app.walk_forward.models import WalkForwardResearchRecord
 from app.walk_forward.repository import WalkForwardRepository
 
@@ -38,6 +42,8 @@ from .models import (
 
 NODE_TYPE_ORDER: tuple[LineageNodeType, ...] = (
     "DATASET",
+    "UNIVERSE",
+    "CORPORATE_ACTION_DATASET",
     "FACTOR",
     "FACTOR_RESEARCH",
     "FACTOR_RELATIONSHIP",
@@ -73,6 +79,14 @@ def _factor_revision(factor: FactorDefinition) -> str:
 
 def _dataset_node_id(dataset_id: str, revision: str) -> str:
     return f"DATASET:{dataset_id}:{revision}"
+
+
+def _universe_node_id(universe_id: str) -> str:
+    return f"UNIVERSE:{universe_id}"
+
+
+def _corporate_action_node_id(corporate_action_dataset_id: str) -> str:
+    return f"CORPORATE_ACTION_DATASET:{corporate_action_dataset_id}"
 
 
 def _factor_node_id(factor_id: str, revision: str) -> str:
@@ -226,6 +240,8 @@ class ResearchLineageBuilder:
         runs: RunRepository,
         snapshots: ResearchSnapshotRepository,
         integrity: ResearchIntegrityEngine | None = None,
+        universes: UniverseRepository | None = None,
+        corporate_actions: CorporateActionRepository | None = None,
     ) -> None:
         self.datasets = datasets
         self.factors = factors
@@ -237,12 +253,90 @@ class ResearchLineageBuilder:
         self.runs = runs
         self.snapshots = snapshots
         self.integrity = integrity
+        self.universes = universes or UniverseRepository(datasets.workspace_root)
+        self.corporate_actions = corporate_actions or CorporateActionRepository(
+            datasets.workspace_root
+        )
         self._graph = _Graph()
         self._factor_records: dict[str, FactorResearchRecord] = {}
         self._relationship_nodes: dict[str, str] = {}
         self._walk_forward_nodes: dict[str, str] = {}
         self._portfolio_nodes: dict[str, str] = {}
         self._run_manifests: dict[str, RunManifest] = {}
+
+    def _universe_node(self, universe_id: str) -> str:
+        node_id = _universe_node_id(universe_id)
+        universe = self.universes.get(universe_id)
+        if universe is None:
+            return self._missing_node(
+                "UNIVERSE",
+                universe_id,
+                node_id,
+                f"Missing Historical Universe · {universe_id}",
+                _route("/data", universe_id, "universe_id"),
+            )
+        return self._add_universe(universe)
+
+    def _add_universe(self, universe: HistoricalUniverse) -> str:
+        return self._graph.add_node(
+            LineageNode(
+                node_id=_universe_node_id(universe.universe_id),
+                node_type="UNIVERSE",
+                artifact_id=universe.universe_id,
+                revision=_canonical_fingerprint(universe),
+                label=universe.name,
+                created_at=universe.created_at,
+                status="ORPHAN",
+                route=_route("/data", universe.universe_id, "universe_id"),
+                metadata={
+                    "mode": universe.mode,
+                    "source": universe.source,
+                    "snapshot_count": len(universe.snapshots),
+                    "survivorship_bias_free": universe.survivorship_bias_free,
+                },
+            )
+        )
+
+    def _corporate_action_node(self, corporate_action_dataset_id: str) -> str:
+        node_id = _corporate_action_node_id(corporate_action_dataset_id)
+        dataset = self.corporate_actions.get(corporate_action_dataset_id)
+        if dataset is None:
+            return self._missing_node(
+                "CORPORATE_ACTION_DATASET",
+                corporate_action_dataset_id,
+                node_id,
+                f"Missing Corporate Action Dataset · {corporate_action_dataset_id}",
+                _route(
+                    "/data",
+                    corporate_action_dataset_id,
+                    "corporate_action_dataset_id",
+                ),
+            )
+        return self._add_corporate_action_dataset(dataset)
+
+    def _add_corporate_action_dataset(self, dataset: CorporateActionDataset) -> str:
+        return self._graph.add_node(
+            LineageNode(
+                node_id=_corporate_action_node_id(dataset.corporate_action_dataset_id),
+                node_type="CORPORATE_ACTION_DATASET",
+                artifact_id=dataset.corporate_action_dataset_id,
+                revision=dataset.content_fingerprint,
+                label=dataset.name,
+                created_at=dataset.retrieved_at,
+                status="ORPHAN",
+                route=_route(
+                    "/data",
+                    dataset.corporate_action_dataset_id,
+                    "corporate_action_dataset_id",
+                ),
+                metadata={
+                    "provider": dataset.provider,
+                    "symbols": len(dataset.symbols),
+                    "action_count": len(dataset.actions),
+                    "point_in_time_safe": dataset.point_in_time_safe,
+                },
+            )
+        )
 
     def _missing_node(
         self,
@@ -363,6 +457,20 @@ class ResearchLineageBuilder:
             research_node,
             "FactorResearchRecord.factor",
         )
+        if record.universe_id is not None:
+            self._graph.add_edge(
+                "USES_UNIVERSE",
+                self._universe_node(record.universe_id),
+                research_node,
+                "FactorResearchRecord.universe_id",
+            )
+        if record.corporate_action_dataset_id is not None:
+            self._graph.add_edge(
+                "USES_CORPORATE_ACTIONS",
+                self._corporate_action_node(record.corporate_action_dataset_id),
+                research_node,
+                "FactorResearchRecord.corporate_action_dataset_id",
+            )
 
     def _add_relationship(self, record: FactorRelationshipRecord) -> None:
         revision = _canonical_fingerprint(record)
@@ -767,6 +875,42 @@ class ResearchLineageBuilder:
             )
         )
         dataset_node = self._frozen_dataset(snapshot.dataset, snapshot.snapshot_id)
+        frozen_universe_nodes: dict[str, str] = {}
+        for artifact in snapshot.universes:
+            payload = _payload(artifact)
+            frozen_universe_nodes[artifact.artifact_id] = self._graph.add_node(
+                LineageNode(
+                    node_id=_universe_node_id(artifact.artifact_id),
+                    node_type="UNIVERSE",
+                    artifact_id=artifact.artifact_id,
+                    revision=artifact.source_revision,
+                    label=_text(payload.get("name"), artifact.artifact_id),
+                    created_at=_created_at(payload.get("created_at")),
+                    status="ORPHAN",
+                    route=_route("/data", artifact.artifact_id, "universe_id"),
+                    metadata={"frozen_in_snapshot": snapshot.snapshot_id},
+                )
+            )
+        frozen_corporate_action_nodes: dict[str, str] = {}
+        for artifact in snapshot.corporate_actions:
+            payload = _payload(artifact)
+            frozen_corporate_action_nodes[artifact.artifact_id] = self._graph.add_node(
+                LineageNode(
+                    node_id=_corporate_action_node_id(artifact.artifact_id),
+                    node_type="CORPORATE_ACTION_DATASET",
+                    artifact_id=artifact.artifact_id,
+                    revision=artifact.source_revision,
+                    label=_text(payload.get("name"), artifact.artifact_id),
+                    created_at=_created_at(payload.get("retrieved_at")),
+                    status="ORPHAN",
+                    route=_route(
+                        "/data",
+                        artifact.artifact_id,
+                        "corporate_action_dataset_id",
+                    ),
+                    metadata={"frozen_in_snapshot": snapshot.snapshot_id},
+                )
+            )
         frozen_factor_nodes: dict[str, str] = {}
         for artifact in snapshot.factors:
             research_node, factor_node, payload = self._frozen_factor_research(
@@ -795,6 +939,25 @@ class ResearchLineageBuilder:
                 research_node,
                 "Frozen FactorResearchRecord.factor",
             )
+            universe_id = _text(payload.get("universe_id"))
+            if universe_id:
+                self._graph.add_edge(
+                    "USES_UNIVERSE",
+                    frozen_universe_nodes.get(universe_id, self._universe_node(universe_id)),
+                    research_node,
+                    "Frozen FactorResearchRecord.universe_id",
+                )
+            corporate_action_dataset_id = _text(payload.get("corporate_action_dataset_id"))
+            if corporate_action_dataset_id:
+                self._graph.add_edge(
+                    "USES_CORPORATE_ACTIONS",
+                    frozen_corporate_action_nodes.get(
+                        corporate_action_dataset_id,
+                        self._corporate_action_node(corporate_action_dataset_id),
+                    ),
+                    research_node,
+                    "Frozen FactorResearchRecord.corporate_action_dataset_id",
+                )
 
         frozen_relationship_nodes: dict[str, str] = {}
         for artifact in snapshot.relationships:
@@ -1064,6 +1227,10 @@ class ResearchLineageBuilder:
         self._run_manifests = {}
         for dataset in self.datasets.list():
             self._dataset_node(dataset.dataset_id, dataset.content_fingerprint)
+        for universe in self.universes.list():
+            self._add_universe(universe)
+        for corporate_action_dataset in self.corporate_actions.list():
+            self._add_corporate_action_dataset(corporate_action_dataset)
         for factor_record in self._records():
             self._add_factor_research(factor_record)
         for relationship_record in self.relationships.list():

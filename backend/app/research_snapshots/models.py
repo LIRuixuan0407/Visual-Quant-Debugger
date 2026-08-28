@@ -11,6 +11,8 @@ from app.runs.models import RunComparisonReport
 
 ArtifactKind = Literal[
     "DATASET",
+    "UNIVERSE",
+    "CORPORATE_ACTION_DATASET",
     "FACTOR_RESEARCH",
     "FACTOR_RELATIONSHIP",
     "WALK_FORWARD",
@@ -114,6 +116,8 @@ class SnapshotEnvironment(SnapshotModel):
 
 class SnapshotLineage(SnapshotModel):
     dataset_id: str
+    universe_ids: tuple[str, ...] = ()
+    corporate_action_dataset_ids: tuple[str, ...] = ()
     factor_research_ids: tuple[str, ...]
     factor_ids: tuple[str, ...]
     relationship_ids: tuple[str, ...]
@@ -134,6 +138,8 @@ class ResearchSnapshot(SnapshotModel):
     content_fingerprint: str
     lineage: SnapshotLineage
     dataset: FrozenArtifact
+    universes: tuple[FrozenArtifact, ...] = ()
+    corporate_actions: tuple[FrozenArtifact, ...] = ()
     factors: tuple[FrozenArtifact, ...]
     relationships: tuple[FrozenArtifact, ...]
     walk_forward: tuple[FrozenArtifact, ...]
@@ -206,6 +212,8 @@ class ExperimentSnapshotIdentity(SnapshotModel):
 class ExperimentContextComparison(SnapshotModel):
     field: Literal[
         "dataset_revision",
+        "universe_revisions",
+        "corporate_action_revisions",
         "research_periods",
         "run_period",
         "execution_model",

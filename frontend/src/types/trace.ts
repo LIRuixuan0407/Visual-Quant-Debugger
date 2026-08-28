@@ -204,6 +204,19 @@ export interface Diagnostic {
   dependency_id: string
 }
 
+export interface CorporateActionEvent {
+  action_id: string
+  symbol: string
+  action_type: 'SPLIT' | 'CASH_DIVIDEND' | 'DELISTING'
+  timestamp: string
+  status: 'APPLIED' | 'REFLECTED_IN_PRICE_VIEW' | 'UNRESOLVED'
+  quantity_before: number
+  quantity_after: number
+  cash_amount: number
+  settlement_price: number | null
+  evidence: string
+}
+
 export interface BacktestTrace {
   trace_version: '1.0'
   metadata: TraceMetadata
@@ -213,6 +226,7 @@ export interface BacktestTrace {
   trades: TradeTrace[]
   metrics: Record<string, number>
   diagnostics: Diagnostic[]
+  corporate_action_events?: CorporateActionEvent[]
 }
 
 export interface BacktestCreated {
