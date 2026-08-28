@@ -113,7 +113,7 @@ it('shows immutable lineage, revisions, periods, parameters, environment, and ve
   expect(screen.getByText('Frozen parameters')).toBeInTheDocument()
   expect(screen.getByText('Environment summary')).toBeInTheDocument()
   expect(screen.getAllByText('VERIFIED').length).toBeGreaterThan(1)
-  expect(screen.queryByText(/PHASE 24/i)).not.toBeInTheDocument()
+  expect(screen.queryByText(/internal build label/i)).not.toBeInTheDocument()
 
   fireEvent.click(screen.getByRole('button', { name: 'Open frozen Run' }))
   fireEvent.click(screen.getByRole('button', { name: 'Open frozen Replay' }))

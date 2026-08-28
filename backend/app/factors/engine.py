@@ -998,6 +998,8 @@ class FactorResearchEngine:
             dataset_id=dataset.dataset_id,
             dataset_name=dataset.name,
             dataset_revision=dataset.content_fingerprint,
+            dataset_family_id=dataset.dataset_family_id,
+            dataset_revision_number=dataset.revision,
             factor=definition.model_copy(update={"lookback": lookback}),
             parameters=parameters,
             components=request.components,

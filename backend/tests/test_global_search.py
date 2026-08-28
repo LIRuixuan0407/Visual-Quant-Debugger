@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from time import perf_counter
 
-from test_phase23_discovery import _assets, _request
+from test_discovery import _assets, _request
 
 from app.corporate_actions import (
     CorporateAction,
@@ -12,6 +12,7 @@ from app.corporate_actions import (
     CorporateActionService,
     CreateCorporateActionDataset,
 )
+from app.datasets import DatasetImportRequest
 from app.discovery import ResearchHypothesis
 from app.factors.registry import FactorRegistry
 from app.global_search import (
@@ -255,3 +256,44 @@ def test_document_cache_reuses_results_and_invalidates_from_source_signature(
     assert any(item.title == "缓存失效后的研究标题" for item in refreshed)
     service.invalidate()
     assert service.documents() is not refreshed
+
+
+def test_dataset_search_distinguishes_family_revisions_and_latest(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    preview = service.datasets.preview(
+        "family.csv", b"date,ticker,price\n2025-01-01,AAPL,100\n"
+    )
+    r1 = service.datasets.commit(
+        DatasetImportRequest(
+            preview_id=preview.preview_id,
+            name="US Large Cap Daily",
+            mapping={"timestamp": "date", "symbol": "ticker", "close": "price"},
+            timezone="UTC",
+        )
+    )
+    second_preview = service.datasets.preview(
+        "family.csv",
+        b"date,ticker,price\n2025-01-01,AAPL,100\n2025-01-02,AAPL,101\n",
+    )
+    r2 = service.datasets.commit(
+        DatasetImportRequest(
+            preview_id=second_preview.preview_id,
+            name="US Large Cap Daily",
+            mapping={"timestamp": "date", "symbol": "ticker", "close": "price"},
+            timezone="UTC",
+            dataset_family_id=r1.dataset_family_id,
+        )
+    )
+
+    r1_result = next(
+        item for item in service.search(r1.dataset_id).results if item.entity_id == r1.dataset_id
+    )
+    r2_result = next(
+        item for item in service.search(r2.dataset_id).results if item.entity_id == r2.dataset_id
+    )
+    assert "r1" in r1_result.subtitle
+    assert "latest" not in r1_result.subtitle
+    assert "r2" in r2_result.subtitle
+    assert "latest" in r2_result.subtitle
+    assert r2_result.metadata["family_id"] == r1.dataset_family_id
+    assert r2_result.metadata["revision"] == 2

@@ -201,5 +201,5 @@ it('renders the Strategy Discovery workspace in Chinese without internal phase l
   expect(screen.getByText('基于已有因子证据创建')).toBeInTheDocument()
   expect(screen.getByText('支持证据')).toBeInTheDocument()
   expect(screen.getByText('反对证据')).toBeInTheDocument()
-  expect(screen.queryByText(/PHASE 23/i)).not.toBeInTheDocument()
+  expect(screen.queryByText(/internal build label/i)).not.toBeInTheDocument()
 })

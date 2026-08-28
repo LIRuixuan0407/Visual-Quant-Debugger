@@ -4,7 +4,7 @@ from datetime import timedelta
 from pathlib import Path
 from shutil import rmtree
 
-from test_phase23_discovery import _assets, _request
+from test_discovery import _assets, _request
 
 from app.discovery import CreateHypothesisRevision
 from app.main import app

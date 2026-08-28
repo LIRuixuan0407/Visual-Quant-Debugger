@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react'
 
 import { createCorporateActionDataset, createHistoricalUniverse, getCorporateActionDatasets, getHistoricalUniverses } from '../../api/corporateActions'
-import { getDatasetRows, importDataset, previewDataset } from '../../api/datasets'
+import { compareDatasets, getDatasetFamilies, getDatasetFamilyRevisions, getDatasetRows, importDataset, previewDataset, refreshProviderDataset } from '../../api/datasets'
 import { getStockSnapshot, saveHistoricalDataset, searchStocks } from '../../api/marketData'
+import { getResearchLineage } from '../../api/researchLineage'
 import { useI18n } from '../../i18n/I18nProvider'
-import type { DatasetDefinition, DatasetPreview, StockSecurity, StockSnapshot } from '../../types/dataset'
+import type { DatasetDefinition, DatasetFamily, DatasetPreview, DatasetRevisionDiff, StockSecurity, StockSnapshot } from '../../types/dataset'
+import type { LineageNode } from '../../types/researchLineage'
 import type { CorporateActionDataset, CreateCorporateActionDataset, CreateHistoricalUniverse, HistoricalUniverse } from '../../types/corporateAction'
 import { formatTimestamp } from '../replay/utils/format'
 
 const requiredFields = ['timestamp', 'symbol', 'close'] as const
+const revisionNumber = (dataset: DatasetDefinition) => dataset.revision ?? 1
 
 function readableTimestamp(value: string | number): string {
   const formatted = formatTimestamp(String(value))
@@ -50,13 +53,29 @@ export default function DataPage({ datasets, onImported }: DataPageProps) {
   const [universes, setUniverses] = useState<HistoricalUniverse[]>([])
   const [selectedActionId, setSelectedActionId] = useState(requestedActionId ?? '')
   const [selectedUniverseId, setSelectedUniverseId] = useState(requestedUniverseId ?? '')
+  const [families, setFamilies] = useState<DatasetFamily[]>([])
+  const [familyRevisions, setFamilyRevisions] = useState<DatasetDefinition[]>([])
+  const [revisionFamilyId, setRevisionFamilyId] = useState('')
+  const [revisionReason, setRevisionReason] = useState('')
+  const [comparison, setComparison] = useState<DatasetRevisionDiff | null>(null)
+  const [usageNodes, setUsageNodes] = useState<LineageNode[]>([])
+  const [refreshEnd, setRefreshEnd] = useState('')
   const selected = datasets.find((item) => item.dataset_id === selectedId) ?? datasets[0]
   const selectedActions = corporateActions.find((item) => item.corporate_action_dataset_id === selectedActionId) ?? corporateActions[0]
   const selectedUniverse = universes.find((item) => item.universe_id === selectedUniverseId) ?? universes[0]
+  const familyById = new Map(families.map((family) => [family.dataset_family_id, family]))
+  const familyFor = (dataset: DatasetDefinition) => dataset.dataset_family_id ? familyById.get(dataset.dataset_family_id) : undefined
+  const isLatest = (dataset: DatasetDefinition) => {
+    const family = familyFor(dataset)
+    if (family) return family.latest_dataset_id === dataset.dataset_id
+    if (!dataset.dataset_family_id) return true
+    const local = datasets.filter((item) => item.dataset_family_id === dataset.dataset_family_id)
+    return revisionNumber(dataset) === Math.max(...local.map(revisionNumber))
+  }
 
   useEffect(() => {
     let active = true
-    void Promise.allSettled([getCorporateActionDatasets(), getHistoricalUniverses()]).then(([actions, historical]) => {
+    void Promise.allSettled([getCorporateActionDatasets(), getHistoricalUniverses(), getDatasetFamilies()]).then(([actions, historical, datasetFamilies]) => {
       if (!active) return
       if (actions.status === 'fulfilled') {
         setCorporateActions(actions.value)
@@ -66,6 +85,7 @@ export default function DataPage({ datasets, onImported }: DataPageProps) {
         setUniverses(historical.value)
         if (historical.value[0]) setSelectedUniverseId((current) => current || historical.value[0].universe_id)
       }
+      if (datasetFamilies.status === 'fulfilled') setFamilies(datasetFamilies.value)
     })
     return () => { active = false }
   }, [])
@@ -73,11 +93,25 @@ export default function DataPage({ datasets, onImported }: DataPageProps) {
   useEffect(() => {
     if (!selected) return
     let active = true
+    setComparison(null)
+    setRefreshEnd(selected.provenance?.requested_end.slice(0, 10) ?? '')
+    const localRevisions = selected.dataset_family_id
+      ? datasets.filter((item) => item.dataset_family_id === selected.dataset_family_id).sort((left, right) => revisionNumber(left) - revisionNumber(right))
+      : [selected]
+    setFamilyRevisions(localRevisions)
     void getDatasetRows(selected.dataset_id)
       .then((next) => { if (active) setRows(next) })
       .catch((reason) => { if (active) setError(reason instanceof Error ? reason.message : 'Dataset preview failed.') })
+    if (selected.dataset_family_id) {
+      void getDatasetFamilyRevisions(selected.dataset_family_id)
+        .then((next) => { if (active) setFamilyRevisions(next) })
+        .catch(() => undefined)
+    }
+    void getResearchLineage({ root_type: 'DATASET', root_id: selected.dataset_id, direction: 'DOWNSTREAM', max_depth: 8 })
+      .then((graph) => { if (active) setUsageNodes(graph.nodes.filter((node) => node.node_type !== 'DATASET')) })
+      .catch(() => { if (active) setUsageNodes([]) })
     return () => { active = false }
-  }, [selected])
+  }, [datasets, selected])
 
   async function chooseFile(file: File | undefined) {
     if (!file) return
@@ -85,7 +119,7 @@ export default function DataPage({ datasets, onImported }: DataPageProps) {
     try {
       const next = await previewDataset(file)
       setPreview(next); setMapping(next.candidate_mapping); setName(file.name.replace(/\.csv$/i, ''))
-      setTimezone(next.detected_timezone ?? '')
+      setTimezone(next.detected_timezone ?? ''); setRevisionFamilyId(''); setRevisionReason('')
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'CSV preview failed.') }
     finally { setBusy(false) }
   }
@@ -99,8 +133,11 @@ export default function DataPage({ datasets, onImported }: DataPageProps) {
         name,
         mapping,
         timezone: timezone || null,
+        dataset_family_id: revisionFamilyId || null,
+        revision_reason: revisionReason || null,
       })
       onImported(imported); setSelectedId(imported.dataset_id); setPreview(null)
+      void getDatasetFamilies().then(setFamilies).catch(() => undefined)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Dataset import failed.') }
     finally { setBusy(false) }
   }
@@ -135,6 +172,25 @@ export default function DataPage({ datasets, onImported }: DataPageProps) {
       onImported(saved); setSelectedId(saved.dataset_id)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Historical download failed.') }
     finally { setMarketBusy(false) }
+  }
+
+  async function refreshSelectedProvider() {
+    if (!selected?.provenance || !refreshEnd) return
+    setMarketBusy(true); setError(null)
+    try {
+      const refreshed = await refreshProviderDataset(selected.dataset_id, `${refreshEnd}T23:59:59Z`, revisionReason || undefined)
+      onImported(refreshed); setSelectedId(refreshed.dataset_id)
+      void getDatasetFamilies().then(setFamilies).catch(() => undefined)
+    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Provider refresh failed.') }
+    finally { setMarketBusy(false) }
+  }
+
+  async function compareWithSelected(datasetId: string) {
+    if (!selected || datasetId === selected.dataset_id) return
+    setBusy(true); setError(null)
+    try { setComparison(await compareDatasets(datasetId, selected.dataset_id)) }
+    catch (reason) { setError(reason instanceof Error ? reason.message : 'Dataset comparison failed.') }
+    finally { setBusy(false) }
   }
 
   async function importCorporateActions(file: File | undefined) {
@@ -177,19 +233,23 @@ export default function DataPage({ datasets, onImported }: DataPageProps) {
     </section>
     {preview && <section className="workspace-panel import-inspector">
       <div className="section-heading"><h2>{tr('Import preview')} · {preview.filename}</h2><span>{preview.rows.length} {tr('preview rows')}</span></div>
-      <div className="import-grid"><label>{tr('Dataset name')}<input aria-label={tr('Dataset name')} value={name} onChange={(event) => setName(event.target.value)} /></label><label>{tr('Source timezone')}<input aria-label={tr('Source timezone')} placeholder="Asia/Hong_Kong" value={timezone} onChange={(event) => setTimezone(event.target.value)} /></label>{requiredFields.map((field) => <label key={field}>{tr(field)}<select aria-label={`${tr('Map')} ${tr(field)}`} value={mapping[field] ?? ''} onChange={(event) => setMapping((current) => ({ ...current, [field]: event.target.value }))}><option value="">{tr('Select column')}</option>{preview.columns.map((column) => <option key={column} value={column}>{column} · {tr(preview.detected_types[column])}</option>)}</select></label>)}</div>
+      <div className="import-grid"><label>{tr('Dataset name')}<input aria-label={tr('Dataset name')} value={name} onChange={(event) => setName(event.target.value)} /></label><label>{tr('Source timezone')}<input aria-label={tr('Source timezone')} placeholder="Asia/Hong_Kong" value={timezone} onChange={(event) => setTimezone(event.target.value)} /></label><label>{tr('Import mode')}<select aria-label={tr('Import mode')} value={revisionFamilyId} onChange={(event) => setRevisionFamilyId(event.target.value)}><option value="">{tr('Create new dataset')}</option>{families.filter((family) => family.dataset_family_id !== 'dataset-family-pairs-sample').map((family) => <option key={family.dataset_family_id} value={family.dataset_family_id}>{tr('Create new revision')} · {family.name}</option>)}</select></label><label>{tr('Revision reason')}<input aria-label={tr('Revision reason')} value={revisionReason} onChange={(event) => setRevisionReason(event.target.value)} disabled={!revisionFamilyId} /></label>{requiredFields.map((field) => <label key={field}>{tr(field)}<select aria-label={`${tr('Map')} ${tr(field)}`} value={mapping[field] ?? ''} onChange={(event) => setMapping((current) => ({ ...current, [field]: event.target.value }))}><option value="">{tr('Select column')}</option>{preview.columns.map((column) => <option key={column} value={column}>{column} · {tr(preview.detected_types[column])}</option>)}</select></label>)}</div>
       <div className="dataset-preview-table"><div className="dense-row header">{preview.columns.map((column) => <span key={column}>{column}</span>)}</div>{preview.rows.slice(0, 5).map((row, index) => <div className="dense-row" key={index}>{preview.columns.map((column) => <code key={column}>{row[column]}</code>)}</div>)}</div>
       <div className="toolbar end"><button className="primary-button" disabled={busy || requiredFields.some((field) => !mapping[field]) || !timezone && !preview.detected_timezone} onClick={() => void commit()}>{tr(busy ? 'Validating…' : 'Validate & Import')}</button></div>
     </section>}
     <section className="workspace-panel dataset-library">
       <div className="section-heading"><h2>{tr('Datasets')}</h2><span>{datasets.length} {tr('saved definitions')}</span></div>
-      <div className="dataset-table" role="table"><div className="dataset-row header"><span>{tr('Name')}</span><span>{tr('Symbols')}</span><span>{tr('Dataset period')}</span><span>{tr('Rows')}</span><span>{tr('Quality')}</span></div>{datasets.map((dataset) => <button className={`dataset-row ${selected?.dataset_id === dataset.dataset_id ? 'selected' : ''}`} key={dataset.dataset_id} onClick={() => setSelectedId(dataset.dataset_id)}><strong>{tr(dataset.name)}</strong><code>{dataset.symbols.length}</code><span>{formatTimestamp(dataset.start_time).date} — {formatTimestamp(dataset.end_time).date}</span><code>{dataset.row_count}</code><span className={`status-badge ${dataset.quality.status === 'VALID' ? 'ok' : 'warning'}`}>{tr(dataset.quality.status)}</span></button>)}</div>
+      <div className="dataset-table" role="table"><div className="dataset-row dataset-version-row header"><span>{tr('Family')}</span><span>{tr('Revision')}</span><span>{tr('Status')}</span><span>{tr('Created')}</span><span>{tr('Coverage')}</span><span>{tr('Symbols')}</span><span>{tr('Rows')}</span><span>{tr('Fingerprint')}</span></div>{datasets.map((dataset) => <button className={`dataset-row dataset-version-row ${selected?.dataset_id === dataset.dataset_id ? 'selected' : ''}`} key={dataset.dataset_id} onClick={() => setSelectedId(dataset.dataset_id)}><strong>{familyFor(dataset)?.name ?? tr(dataset.name)}</strong><code>r{revisionNumber(dataset)}</code><span className={`status-badge ${isLatest(dataset) ? 'ok' : ''}`}>{tr(isLatest(dataset) ? 'Latest' : 'Historical')}</span><time dateTime={dataset.created_at}>{formatTimestamp(dataset.created_at).date}</time><span>{formatTimestamp(dataset.start_time).date} — {formatTimestamp(dataset.end_time).date}</span><code>{dataset.symbols.length}</code><code>{dataset.row_count}</code><code title={dataset.content_fingerprint}>{dataset.content_fingerprint.slice(0, 12)}…</code></button>)}</div>
     </section>
     {selected && <section className="workspace-panel dataset-inspector">
-      <div className="section-heading"><h2>{tr('Selected Dataset')} · {tr(selected.name)}</h2><code>{selected.dataset_id}</code></div>
-      <div className="dataset-facts"><div><span>{tr('Schema')}</span><strong>{selected.fields.map(tr).join(' · ')}</strong><small>{selected.symbols.join(', ')}</small></div><div><span>{tr('Quality')}</span><strong>{tr(selected.quality.status)}</strong><small>{selected.quality.duplicates} {tr('duplicates')} · {selected.quality.missing_required_values} {tr('missing')} · {selected.quality.rows_reordered} {tr('reordered')} · {selected.quality.alignment_gaps} {tr('alignment gaps')}</small></div><div><span>{tr('Source')}</span><strong>{selected.provenance ? `${selected.provenance.provider.toUpperCase()} · ${selected.provenance.feed.toUpperCase()}` : tr(selected.source_type)}</strong><small>{selected.frequency} · {selected.timezone}</small></div><div><span>{tr('Revision')}</span><strong>{selected.content_fingerprint.slice(0, 20)}…</strong><small>{selected.synchronized_bar_count} {tr('synchronized bars')}</small></div></div>
+      <div className="section-heading"><div><h2>{tr('Selected Dataset')} · {familyFor(selected)?.name ?? tr(selected.name)} · r{revisionNumber(selected)}</h2><code>{selected.dataset_id}</code></div><span className={`status-badge ${isLatest(selected) ? 'ok' : ''}`}>{tr(isLatest(selected) ? 'Latest' : 'Historical')}</span></div>
+      <div className="dataset-facts"><div><span>{tr('Family')}</span><strong>{selected.dataset_family_id ?? tr('Legacy identity')}</strong><small>{familyFor(selected)?.name ?? tr(selected.name)}</small></div><div><span>{tr('Revision')}</span><strong>r{revisionNumber(selected)}</strong><small>{selected.parent_dataset_id ? `${tr('Parent')} · ${selected.parent_dataset_id}` : tr('First revision')}</small></div><div><span>{tr('Source')}</span><strong>{selected.provenance ? `${selected.provenance.provider.toUpperCase()} · ${selected.provenance.feed.toUpperCase()}` : tr(selected.source_type)}</strong><small>{selected.frequency} · {selected.timezone}</small></div><div><span>{tr('Fingerprint')}</span><code>{selected.content_fingerprint.slice(0, 20)}…</code><small>{selected.synchronized_bar_count} {tr('synchronized bars')}</small></div></div>
       {selected.provenance && <div className="dataset-provenance"><span>{tr('Market period')} <strong>{readableTimestamp(selected.provenance.market_timestamp_start)} — {readableTimestamp(selected.provenance.market_timestamp_end)}</strong></span><span>{tr('Retrieved')} <strong>{readableTimestamp(selected.provenance.retrieved_at)}</strong></span></div>}
+      {selected.provenance && <div className="dataset-refresh-bar"><label>{tr('Refresh end date')}<input aria-label={tr('Refresh end date')} type="date" value={refreshEnd} onChange={(event) => setRefreshEnd(event.target.value)} /></label><label>{tr('Revision reason')}<input aria-label={`${tr('Revision reason')} · ${tr('Provider refresh')}`} value={revisionReason} onChange={(event) => setRevisionReason(event.target.value)} /></label><button className="secondary-button" disabled={marketBusy || !refreshEnd} onClick={() => void refreshSelectedProvider()}>{tr(marketBusy ? 'Working…' : 'Refresh provider')}</button></div>}
       {selected.quality.issues.map((issue) => <p className="inline-warning" key={issue}>{tr(issue)}</p>)}
+      <section className="dataset-version-section"><div className="section-heading"><h3>{tr('Revision History')}</h3><span>{familyRevisions.length}</span></div><ol className="dataset-revision-history">{familyRevisions.map((revision) => <li key={revision.dataset_id} className={revision.dataset_id === selected.dataset_id ? 'selected' : ''}><div><strong>r{revisionNumber(revision)}</strong><span className={`status-badge ${isLatest(revision) ? 'ok' : ''}`}>{tr(isLatest(revision) ? 'Latest' : 'Historical')}</span></div><span>{formatTimestamp(revision.start_time).date} — {formatTimestamp(revision.end_time).date}</span><code>{revision.row_count} {tr('Rows')} · {revision.content_fingerprint.slice(0, 14)}…</code><div className="revision-actions"><button onClick={() => setSelectedId(revision.dataset_id)}>{tr('Open')}</button><a href={`/data-audits?root_type=DATASET&root_id=${encodeURIComponent(revision.dataset_id)}`}>{tr('Audit')}</a>{revision.dataset_id !== selected.dataset_id && <button disabled={busy} onClick={() => void compareWithSelected(revision.dataset_id)}>{tr('Compare')}</button>}</div></li>)}</ol></section>
+      {comparison && <section className="dataset-version-section dataset-diff"><div className="section-heading"><h3>{tr('Revision Compare')}</h3><code>{comparison.left_dataset_id} → {comparison.right_dataset_id}</code></div><div className="dataset-diff-grid"><div><span>{tr('Fingerprint changed')}</span><strong>{tr(comparison.fingerprint_changed ? 'Yes' : 'No')}</strong></div><div><span>{tr('Start changed')}</span><strong>{tr(comparison.start_changed ? 'Yes' : 'No')}</strong></div><div><span>{tr('End changed')}</span><strong>{tr(comparison.end_changed ? 'Yes' : 'No')}</strong></div><div><span>{tr('Rows delta')}</span><strong>{comparison.rows_delta >= 0 ? '+' : ''}{comparison.rows_delta}</strong></div><div><span>{tr('Synchronized bars delta')}</span><strong>{comparison.synchronized_bars_delta >= 0 ? '+' : ''}{comparison.synchronized_bars_delta}</strong></div><div><span>{tr('Symbols added')}</span><strong>{comparison.symbols_added.join(', ') || '—'}</strong></div><div><span>{tr('Symbols removed')}</span><strong>{comparison.symbols_removed.join(', ') || '—'}</strong></div><div><span>{tr('Fields added')}</span><strong>{comparison.fields_added.join(', ') || '—'}</strong></div><div><span>{tr('Fields removed')}</span><strong>{comparison.fields_removed.join(', ') || '—'}</strong></div><div><span>{tr('Quality changes')}</span><strong>{comparison.quality_changes.map(tr).join(' · ') || '—'}</strong></div><div><span>{tr('Provenance changes')}</span><strong>{comparison.provenance_changes.map(tr).join(' · ') || '—'}</strong></div><div><span>{tr('Data-view changes')}</span><strong>{comparison.data_view_changes.map(tr).join(' · ') || '—'}</strong></div></div></section>}
+      <section className="dataset-version-section"><div className="section-heading"><h3>{tr('Used By')}</h3><span>{usageNodes.length}</span></div>{usageNodes.length === 0 ? <p className="empty-state">{tr('No explicit usages recorded.')}</p> : <div className="dataset-usage-list">{usageNodes.map((node) => node.route ? <a key={node.node_id} href={node.route}><strong>{tr(node.node_type.replaceAll('_', ' '))}</strong><span>{node.label}</span></a> : <div key={node.node_id}><strong>{tr(node.node_type.replaceAll('_', ' '))}</strong><span>{node.label}</span></div>)}</div>}</section>
       <div className="dataset-preview-table dataset-market-preview"><div className="dense-row header dataset-market-row"><span>{tr('Timestamp')}</span><span>{tr('Symbol')}</span><span>{tr('Close price')}</span></div>{rows.slice(0, 12).map((row, index) => <div className="dense-row dataset-market-row" key={index}><time dateTime={String(row.timestamp)}>{readableTimestamp(row.timestamp)}</time><code>{String(row.symbol)}</code><code>{String(row.close ?? '')}</code></div>)}</div>
     </section>}
     <section className="workspace-panel evidence-library" id="corporate-actions">

@@ -1,13 +1,15 @@
 from typing import Annotated
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel, ConfigDict
 
 from app.datasets import (
     CompatibilityCheck,
     DatasetDefinition,
+    DatasetFamily,
     DatasetImportRequest,
     DatasetPreview,
+    DatasetRevisionDiff,
     DatasetValidationError,
     dataset_registry,
 )
@@ -27,6 +29,44 @@ class CompatibilityRequest(BaseModel):
 class DatasetRowsPreview(BaseModel):
     dataset_id: str
     rows: tuple[dict[str, str | float], ...]
+
+
+@router.get("/dataset-families", response_model=tuple[DatasetFamily, ...])
+def list_dataset_families() -> tuple[DatasetFamily, ...]:
+    return dataset_registry.families()
+
+
+@router.get("/dataset-families/{dataset_family_id}", response_model=DatasetFamily)
+def get_dataset_family(dataset_family_id: str) -> DatasetFamily:
+    family = dataset_registry.get_family(dataset_family_id)
+    if family is None:
+        raise HTTPException(
+            status_code=404, detail=f"Dataset family '{dataset_family_id}' was not found"
+        )
+    return family
+
+
+@router.get(
+    "/dataset-families/{dataset_family_id}/revisions",
+    response_model=tuple[DatasetDefinition, ...],
+)
+def list_dataset_family_revisions(dataset_family_id: str) -> tuple[DatasetDefinition, ...]:
+    family = dataset_registry.get_family(dataset_family_id)
+    if family is None:
+        raise HTTPException(
+            status_code=404, detail=f"Dataset family '{dataset_family_id}' was not found"
+        )
+    return dataset_registry.revisions(dataset_family_id)
+
+
+@router.get("/datasets/compare", response_model=DatasetRevisionDiff)
+def compare_dataset_revisions(
+    left: str = Query(min_length=1), right: str = Query(min_length=1)
+) -> DatasetRevisionDiff:
+    try:
+        return dataset_registry.compare(left, right)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc.args[0])) from exc
 
 
 @router.get("/datasets", response_model=tuple[DatasetDefinition, ...])

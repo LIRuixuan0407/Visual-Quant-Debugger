@@ -63,13 +63,13 @@ def _provider_dataset(registry: DatasetRegistry) -> str:
             volume=1_000_000,
             provider="alpaca",
             feed="iex",
-            provider_event_id=f"phase19:{symbol}:{day}",
+            provider_event_id=f"factor-sdk:{symbol}:{day}",
         )
         for day in range(45)
         for rank, symbol in enumerate(symbols)
     )
     return registry.commit_provider_bars(
-        name="Phase 19 provider contract",
+        name="Factor SDK provider contract",
         bars=bars,
         provenance=DatasetProvenance(
             provider="alpaca",

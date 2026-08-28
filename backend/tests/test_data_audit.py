@@ -765,3 +765,53 @@ def test_api_create_list_detail_verify_and_errors(tmp_path: Path, monkeypatch) -
         == 422
     )
     assert asyncio.run(_request("GET", "/api/data-audits/not-an-audit")).status_code == 422
+
+
+def test_newer_dataset_revision_does_not_change_old_audit_source_state(tmp_path: Path) -> None:
+    datasets = DatasetRegistry(tmp_path)
+    preview = datasets.preview("audit-r1.csv", _csv())
+    r1 = datasets.commit(
+        DatasetImportRequest(
+            preview_id=preview.preview_id,
+            name="Versioned audit dataset",
+            mapping={"timestamp": "timestamp", "symbol": "symbol", "close": "close"},
+        )
+    )
+    engine = DataAuditEngine(
+        datasets,
+        FactorResearchRepository(tmp_path),
+        StubFactorEngine(()),
+        FundamentalRepository(tmp_path),
+        UniverseRepository(tmp_path),
+        StubRunRepository(_run_manifest(datasets), _trace()),
+        DataAuditRepository(tmp_path),
+    )
+    audit = engine.create(CreateDataAudit(root_type="DATASET", root_id=r1.dataset_id))
+
+    extended = _csv().replace(
+        b"2025-01-03T00:00:00+00:00,MSFT,102\n",
+        (
+            b"2025-01-03T00:00:00+00:00,MSFT,102\n"
+            b"2025-01-04T00:00:00+00:00,AAPL,103\n"
+            b"2025-01-04T00:00:00+00:00,MSFT,103\n"
+        ),
+    )
+    second_preview = datasets.preview("audit-r2.csv", extended)
+    r2 = datasets.commit(
+        DatasetImportRequest(
+            preview_id=second_preview.preview_id,
+            name="Versioned audit dataset",
+            mapping={"timestamp": "timestamp", "symbol": "symbol", "close": "close"},
+            dataset_family_id=r1.dataset_family_id,
+            revision_reason="Extend audit coverage",
+        )
+    )
+
+    verification = engine.verify_source(audit.audit_id)
+    assert verification.source_state == "MATCHES"
+    assert verification.newer_dataset_revision_available is True
+    assert verification.latest_dataset_id == r2.dataset_id
+    assert verification.latest_dataset_revision == 2
+    detail = engine.detail(audit.audit_id)
+    assert detail.source_state == "MATCHES"
+    assert detail.newer_dataset_revision_available is True

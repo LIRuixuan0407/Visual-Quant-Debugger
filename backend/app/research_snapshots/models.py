@@ -116,6 +116,8 @@ class SnapshotEnvironment(SnapshotModel):
 
 class SnapshotLineage(SnapshotModel):
     dataset_id: str
+    dataset_family_id: str | None = None
+    dataset_revision: int = Field(default=1, ge=1)
     universe_ids: tuple[str, ...] = ()
     corporate_action_dataset_ids: tuple[str, ...] = ()
     factor_research_ids: tuple[str, ...]
@@ -181,6 +183,8 @@ class ResearchSnapshotSummary(SnapshotModel):
     hypothesis_id: str
     hypothesis_revision: int
     dataset_id: str
+    dataset_family_id: str | None = None
+    dataset_revision: int = Field(default=1, ge=1)
     factor_count: int
     strategy_id: str
     run_count: int

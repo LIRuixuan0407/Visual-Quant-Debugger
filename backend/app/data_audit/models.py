@@ -77,6 +77,9 @@ class DataAuditDetail(DataAuditModel):
     audit: DataAuditRecord
     source_state: AuditSourceState
     current_source_fingerprints: dict[str, str]
+    newer_dataset_revision_available: bool = False
+    latest_dataset_id: str | None = None
+    latest_dataset_revision: int | None = None
 
 
 class DataAuditSourceVerification(DataAuditModel):
@@ -84,3 +87,6 @@ class DataAuditSourceVerification(DataAuditModel):
     source_state: AuditSourceState
     recorded_source_fingerprints: dict[str, str]
     current_source_fingerprints: dict[str, str]
+    newer_dataset_revision_available: bool = False
+    latest_dataset_id: str | None = None
+    latest_dataset_revision: int | None = None

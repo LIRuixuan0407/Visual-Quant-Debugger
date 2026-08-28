@@ -16,12 +16,17 @@ from app.market_data.models import MarketBar
 from app.models import MarketFrame
 from app.workspace import default_workspace_root
 
+from .diff import compare_datasets
+from .families import DatasetFamilyRepository
 from .models import (
     DataQualityReport,
     DatasetDefinition,
+    DatasetFamily,
+    DatasetFamilyHistory,
     DatasetImportRequest,
     DatasetPreview,
     DatasetProvenance,
+    DatasetRevisionDiff,
 )
 
 CANONICAL_FIELDS = ("timestamp", "symbol", "open", "high", "low", "close", "volume")
@@ -63,7 +68,132 @@ class DatasetRegistry:
             else Path(workspace_root).expanduser().resolve()
         )
         self.datasets_root = self.workspace_root / ".vqd" / "datasets"
+        self.family_repository = DatasetFamilyRepository(self.workspace_root)
         self._previews: dict[str, _PreviewContent] = {}
+        self._migrate_legacy_datasets()
+
+    @staticmethod
+    def _write_metadata(path: Path, definition: DatasetDefinition) -> None:
+        temporary = path.with_suffix(".json.tmp")
+        temporary.write_text(definition.model_dump_json(indent=2) + "\n", encoding="utf-8")
+        temporary.replace(path)
+
+    def _migrate_legacy_datasets(self) -> None:
+        if not self.datasets_root.exists():
+            return
+        records = [
+            (
+                metadata_path,
+                DatasetDefinition.model_validate_json(metadata_path.read_text(encoding="utf-8")),
+            )
+            for metadata_path in sorted(self.datasets_root.glob("*/metadata.json"))
+        ]
+        known_families = {
+            family.latest_dataset_id: family for family in self.family_repository.list()
+        }
+        migrated_records: list[tuple[Path, DatasetDefinition]] = []
+        for metadata_path, definition in records:
+            if definition.dataset_family_id is None:
+                family = known_families.get(definition.dataset_id)
+                if family is None:
+                    family = DatasetFamily(
+                        dataset_family_id=self.family_repository.new_id(),
+                        name=definition.name,
+                        created_at=definition.created_at,
+                        latest_dataset_id=definition.dataset_id,
+                        revision_count=1,
+                    )
+                    self.family_repository.create(family)
+                    known_families[definition.dataset_id] = family
+                definition = definition.model_copy(
+                    update={
+                        "dataset_family_id": family.dataset_family_id,
+                        "revision": 1,
+                        "parent_dataset_id": None,
+                        "revision_reason": definition.revision_reason
+                        or "Legacy dataset assigned to a version family",
+                    }
+                )
+                self._write_metadata(metadata_path, definition)
+            migrated_records.append((metadata_path, definition))
+
+        revisions_by_family: dict[str, list[DatasetDefinition]] = defaultdict(list)
+        for _, definition in migrated_records:
+            if definition.dataset_family_id is not None:
+                revisions_by_family[definition.dataset_family_id].append(definition)
+        for family_id, revisions in revisions_by_family.items():
+            revisions.sort(key=lambda item: (item.revision, item.created_at, item.dataset_id))
+            latest = revisions[-1]
+            family = self.family_repository.get(family_id)
+            if family is None:
+                self.family_repository.create(
+                    DatasetFamily(
+                        dataset_family_id=family_id,
+                        name=revisions[0].name,
+                        created_at=min(item.created_at for item in revisions),
+                        latest_dataset_id=latest.dataset_id,
+                        revision_count=len(revisions),
+                    )
+                )
+            elif (
+                family.latest_dataset_id != latest.dataset_id
+                or family.revision_count != len(revisions)
+            ):
+                self.family_repository.save(
+                    family.model_copy(
+                        update={
+                            "latest_dataset_id": latest.dataset_id,
+                            "revision_count": len(revisions),
+                        }
+                    )
+                )
+
+    def _family_context(
+        self, dataset_family_id: str | None
+    ) -> tuple[str, int, str | None, DatasetFamily | None]:
+        if dataset_family_id is None:
+            return self.family_repository.new_id(), 1, None, None
+        if dataset_family_id == "dataset-family-pairs-sample":
+            raise DatasetValidationError(
+                "The built-in sample Dataset Family is immutable and cannot accept revisions"
+            )
+        family = self.family_repository.get(dataset_family_id)
+        if family is None:
+            raise DatasetValidationError(
+                f"Dataset family '{dataset_family_id}' was not found; select an existing family"
+            )
+        revisions = self.revisions(dataset_family_id)
+        if not revisions:
+            raise DatasetValidationError(
+                f"Dataset family '{dataset_family_id}' has no registered revisions"
+            )
+        latest = revisions[-1]
+        return family.dataset_family_id, latest.revision + 1, latest.dataset_id, family
+
+    def _finish_family_write(
+        self, definition: DatasetDefinition, previous: DatasetFamily | None
+    ) -> None:
+        if definition.dataset_family_id is None:
+            raise DatasetValidationError("Dataset revision is missing a family id")
+        if previous is None:
+            self.family_repository.create(
+                DatasetFamily(
+                    dataset_family_id=definition.dataset_family_id,
+                    name=definition.name,
+                    created_at=definition.created_at,
+                    latest_dataset_id=definition.dataset_id,
+                    revision_count=1,
+                )
+            )
+            return
+        self.family_repository.save(
+            previous.model_copy(
+                update={
+                    "latest_dataset_id": definition.dataset_id,
+                    "revision_count": definition.revision,
+                }
+            )
+        )
 
     @staticmethod
     def _read_csv(content: bytes) -> tuple[tuple[str, ...], list[dict[str, str]]]:
@@ -279,10 +409,21 @@ class DatasetRegistry:
         dataset_id = f"dataset-{fingerprint.removeprefix('sha256:')[:16]}"
         existing = self.get(dataset_id)
         if existing is not None:
+            if (
+                request.dataset_family_id is not None
+                and existing.dataset_family_id != request.dataset_family_id
+            ):
+                raise DatasetValidationError(
+                    "This exact content is already registered in another Dataset Family; "
+                    "an immutable revision cannot belong to two families"
+                )
             return existing
+        family_id, revision, parent_dataset_id, family = self._family_context(
+            request.dataset_family_id
+        )
         definition = DatasetDefinition(
             dataset_id=dataset_id,
-            name=request.name.strip() or preview.filename,
+            name=family.name if family is not None else request.name.strip() or preview.filename,
             source_type="CSV",
             timezone="UTC",
             frequency=request.frequency or self._infer_frequency(rows),
@@ -294,11 +435,16 @@ class DatasetRegistry:
             end_time=rows[-1].timestamp,
             created_at=datetime.now(UTC),
             content_fingerprint=fingerprint,
+            dataset_family_id=family_id,
+            revision=revision,
+            parent_dataset_id=parent_dataset_id,
+            revision_reason=(request.revision_reason.strip() if request.revision_reason else None),
             source_timezone=request.timezone or "embedded offset",
             column_mapping=dict(request.mapping),
             quality=quality,
         )
         self._write_dataset(definition, rows)
+        self._finish_family_write(definition, family)
         return definition
 
     def _write_dataset(self, definition: DatasetDefinition, rows: list[_NormalizedRow]) -> None:
@@ -317,9 +463,7 @@ class DatasetRegistry:
                         **{field: row.fields.get(field, "") for field in fields},
                     }
                 )
-        (target / "metadata.json").write_text(
-            definition.model_dump_json(indent=2) + "\n", encoding="utf-8"
-        )
+        self._write_metadata(target / "metadata.json", definition)
 
     def commit_provider_bars(
         self,
@@ -328,6 +472,8 @@ class DatasetRegistry:
         bars: tuple[MarketBar, ...],
         provenance: DatasetProvenance,
         security_names: dict[str, str] | None = None,
+        dataset_family_id: str | None = None,
+        revision_reason: str | None = None,
     ) -> DatasetDefinition:
         if not bars:
             raise DatasetValidationError("The provider returned no bars for this request")
@@ -388,10 +534,21 @@ class DatasetRegistry:
         dataset_id = f"dataset-{fingerprint.removeprefix('sha256:')[:16]}"
         existing = self.get(dataset_id)
         if existing is not None:
+            if dataset_family_id is not None and existing.dataset_family_id != dataset_family_id:
+                raise DatasetValidationError(
+                    "This exact provider content is already registered in another Dataset Family"
+                )
             return existing
+        family_id, revision, parent_dataset_id, family = self._family_context(
+            dataset_family_id
+        )
         definition = DatasetDefinition(
             dataset_id=dataset_id,
-            name=name.strip() or f"{' + '.join(symbols)} · {bars[0].timeframe}",
+            name=(
+                family.name
+                if family is not None
+                else name.strip() or f"{' + '.join(symbols)} · {bars[0].timeframe}"
+            ),
             source_type="PROVIDER",
             timezone="UTC",
             frequency=bars[0].timeframe,
@@ -403,6 +560,10 @@ class DatasetRegistry:
             end_time=rows[-1].timestamp,
             created_at=datetime.now(UTC),
             content_fingerprint=fingerprint,
+            dataset_family_id=family_id,
+            revision=revision,
+            parent_dataset_id=parent_dataset_id,
+            revision_reason=revision_reason.strip() if revision_reason else None,
             source_timezone="UTC",
             column_mapping={field: field for field in CANONICAL_FIELDS},
             quality=quality,
@@ -410,6 +571,7 @@ class DatasetRegistry:
             security_names=security_names or {},
         )
         self._write_dataset(definition, rows)
+        self._finish_family_write(definition, family)
         return definition
 
     def _user_definitions(self) -> tuple[DatasetDefinition, ...]:
@@ -475,6 +637,8 @@ class DatasetRegistry:
             end_time=frames[-1].timestamp,
             created_at=datetime(2024, 1, 1, tzinfo=UTC),
             content_fingerprint=fingerprint,
+            dataset_family_id="dataset-family-pairs-sample",
+            revision=1,
             source_timezone="UTC",
             column_mapping={
                 "timestamp": "timestamp",
@@ -483,6 +647,60 @@ class DatasetRegistry:
             },
             quality=quality,
         )
+
+    def families(self) -> tuple[DatasetFamily, ...]:
+        self._migrate_legacy_datasets()
+        built_in = DatasetFamily(
+            dataset_family_id="dataset-family-pairs-sample",
+            name="Pairs Daily Sample",
+            created_at=datetime(2024, 1, 1, tzinfo=UTC),
+            latest_dataset_id="pairs-sample-v1",
+            revision_count=1,
+        )
+        return (built_in, *self.family_repository.list())
+
+    def get_family(self, dataset_family_id: str) -> DatasetFamily | None:
+        if dataset_family_id == "dataset-family-pairs-sample":
+            return self.families()[0]
+        self._migrate_legacy_datasets()
+        return self.family_repository.get(dataset_family_id)
+
+    def revisions(self, dataset_family_id: str) -> tuple[DatasetDefinition, ...]:
+        if dataset_family_id == "dataset-family-pairs-sample":
+            return (self._built_in_definition(),)
+        self._migrate_legacy_datasets()
+        revisions = [
+            definition
+            for definition in self._user_definitions()
+            if definition.dataset_family_id == dataset_family_id
+        ]
+        return tuple(
+            sorted(revisions, key=lambda item: (item.revision, item.created_at, item.dataset_id))
+        )
+
+    def family_history(self, dataset_family_id: str) -> DatasetFamilyHistory | None:
+        family = self.get_family(dataset_family_id)
+        if family is None:
+            return None
+        return DatasetFamilyHistory(family=family, revisions=self.revisions(dataset_family_id))
+
+    def newer_revision(self, dataset_id: str) -> DatasetDefinition | None:
+        definition = self.get(dataset_id)
+        if definition is None or definition.dataset_family_id is None:
+            return None
+        family = self.get_family(definition.dataset_family_id)
+        if family is None or family.latest_dataset_id == dataset_id:
+            return None
+        return self.get(family.latest_dataset_id)
+
+    def compare(self, left_dataset_id: str, right_dataset_id: str) -> DatasetRevisionDiff:
+        left = self.get(left_dataset_id)
+        right = self.get(right_dataset_id)
+        if left is None:
+            raise KeyError(f"Dataset '{left_dataset_id}' was not found")
+        if right is None:
+            raise KeyError(f"Dataset '{right_dataset_id}' was not found")
+        return compare_datasets(left, right)
 
     def load_frames(
         self,

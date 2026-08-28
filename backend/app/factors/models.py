@@ -214,6 +214,8 @@ class FactorResearchRecord(FactorModel):
     dataset_id: str
     dataset_name: str
     dataset_revision: str
+    dataset_family_id: str | None = None
+    dataset_revision_number: int = Field(default=1, ge=1)
     factor: FactorDefinition
     parameters: dict[str, int | float]
     components: tuple[FactorComponent, ...] = ()

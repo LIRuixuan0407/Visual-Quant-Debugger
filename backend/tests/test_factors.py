@@ -159,3 +159,55 @@ def test_historical_market_and_factor_strategy_use_existing_runtime(tmp_path: Pa
     assert result.trace is not None
     assert result.trace.strategy.strategy_id == artifact.strategy_id
     assert any(event.feature_snapshots for event in result.trace.timeline)
+
+
+def test_factor_research_keeps_exact_dataset_revision_after_family_refresh(tmp_path: Path) -> None:
+    registry = DatasetRegistry(tmp_path)
+    r1_id = _real_provider_dataset(registry)
+    r1 = registry.get(r1_id)
+    assert r1 is not None and r1.dataset_family_id is not None
+
+    record = FactorResearchEngine(registry).create(_request(r1_id))
+    timestamp = datetime(2023, 5, 1, tzinfo=UTC)
+    symbols = ("AAPL", "MSFT", "AMZN", "NVDA", "META")
+    bars = tuple(
+        MarketBar(
+            symbol=symbol,
+            timeframe="1Day",
+            event_time=timestamp,
+            available_at=timestamp,
+            received_at=timestamp,
+            open=100 + index,
+            high=101 + index,
+            low=99 + index,
+            close=100.5 + index,
+            volume=1_000_000 + index,
+            provider="alpaca",
+            feed="iex",
+            provider_event_id=f"refresh:{symbol}",
+        )
+        for index, symbol in enumerate(symbols)
+    )
+    r2 = registry.commit_provider_bars(
+        name=r1.name,
+        bars=bars,
+        provenance=DatasetProvenance(
+            provider="alpaca",
+            feed="iex",
+            requested_symbols=symbols,
+            requested_start=timestamp,
+            requested_end=timestamp,
+            retrieved_at=timestamp,
+            market_timestamp_start=timestamp,
+            market_timestamp_end=timestamp,
+        ),
+        dataset_family_id=r1.dataset_family_id,
+        revision_reason="Provider refresh",
+    )
+
+    assert r2.revision == 2
+    assert registry.get_family(r1.dataset_family_id).latest_dataset_id == r2.dataset_id
+    assert record.dataset_id == r1.dataset_id
+    assert record.dataset_revision == r1.content_fingerprint
+    assert record.dataset_family_id == r1.dataset_family_id
+    assert record.dataset_revision_number == 1

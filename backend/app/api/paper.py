@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
-from pydantic import ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 from app.datasets import (
     DatasetDefinition,
@@ -40,12 +40,27 @@ from app.settings import integration_vault
 market_router = APIRouter(prefix="/api/market-data", tags=["market-data"])
 router = APIRouter(prefix="/api/paper-sessions", tags=["paper-sessions"])
 account_router = APIRouter(prefix="/api/paper-accounts", tags=["paper-accounts"])
+dataset_refresh_router = APIRouter(prefix="/api/datasets", tags=["datasets"])
 
 
 class HistoricalDatasetRequest(HistoricalBarsRequest):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     name: str = ""
+
+
+class ProviderDatasetRefreshRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    end: datetime
+    revision_reason: str | None = None
+
+    @field_validator("end")
+    @classmethod
+    def aware_end(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Refresh end must be timezone-aware")
+        return value
 
 
 def stock_reference_client() -> AlpacaStockReferenceClient:
@@ -155,6 +170,69 @@ async def create_historical_dataset(request: HistoricalDatasetRequest) -> Datase
                 market_timestamp_end=max(item.event_time for item in bars),
             ),
             security_names=security_names,
+        )
+    except (httpx.HTTPError, RuntimeError, ValueError, DatasetValidationError) as exc:
+        raise _market_error(exc) from exc
+
+
+@dataset_refresh_router.post("/{dataset_id}/refresh", response_model=DatasetDefinition)
+async def refresh_provider_dataset(
+    dataset_id: str, request: ProviderDatasetRefreshRequest
+) -> DatasetDefinition:
+    dataset = dataset_registry.get(dataset_id)
+    if dataset is None:
+        raise HTTPException(status_code=404, detail=f"Dataset '{dataset_id}' was not found")
+    if dataset.source_type != "PROVIDER" or dataset.provenance is None:
+        raise HTTPException(
+            status_code=422, detail="Only provider-backed datasets with provenance can be refreshed"
+        )
+    if dataset.dataset_family_id is None:
+        raise HTTPException(status_code=422, detail="Dataset is not assigned to a version family")
+    family = dataset_registry.get_family(dataset.dataset_family_id)
+    if family is None:
+        raise HTTPException(status_code=422, detail="Dataset version family is missing")
+    if family.latest_dataset_id != dataset.dataset_id:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Only the latest provider revision can be refreshed; "
+                f"latest is '{family.latest_dataset_id}'"
+            ),
+        )
+    start = dataset.provenance.requested_start
+    if request.end <= start:
+        raise HTTPException(status_code=422, detail="Refresh end must be after the original start")
+    try:
+        retrieved = datetime.now(UTC)
+        client = stock_reference_client()
+        bars = await client.historical_bars(
+            dataset.provenance.requested_symbols or dataset.symbols,
+            start,
+            request.end,
+            timeframe=dataset.frequency,
+            feed=dataset.provenance.feed,
+        )
+        if not bars:
+            raise DatasetValidationError("The provider returned no bars for this refresh")
+        return dataset_registry.commit_provider_bars(
+            name=dataset.name,
+            bars=bars,
+            provenance=DatasetProvenance(
+                provider=dataset.provenance.provider,
+                feed=dataset.provenance.feed,
+                requested_symbols=dataset.provenance.requested_symbols or dataset.symbols,
+                requested_start=start,
+                requested_end=request.end,
+                retrieved_at=retrieved,
+                market_timestamp_start=min(item.event_time for item in bars),
+                market_timestamp_end=max(item.event_time for item in bars),
+            ),
+            security_names=dataset.security_names,
+            dataset_family_id=dataset.dataset_family_id,
+            revision_reason=(
+                request.revision_reason
+                or f"Provider refresh through {request.end.date().isoformat()}"
+            ),
         )
     except (httpx.HTTPError, RuntimeError, ValueError, DatasetValidationError) as exc:
         raise _market_error(exc) from exc

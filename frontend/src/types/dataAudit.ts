@@ -44,6 +44,9 @@ export interface DataAuditDetail {
   audit: DataAuditRecord
   source_state: AuditSourceState
   current_source_fingerprints: Record<string, string>
+  newer_dataset_revision_available?: boolean
+  latest_dataset_id?: string | null
+  latest_dataset_revision?: number | null
 }
 
 export interface DataAuditSourceVerification {
@@ -51,4 +54,7 @@ export interface DataAuditSourceVerification {
   source_state: AuditSourceState
   recorded_source_fingerprints: Record<string, string>
   current_source_fingerprints: Record<string, string>
+  newer_dataset_revision_available?: boolean
+  latest_dataset_id?: string | null
+  latest_dataset_revision?: number | null
 }

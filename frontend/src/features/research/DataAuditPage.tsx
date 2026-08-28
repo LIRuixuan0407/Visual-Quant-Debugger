@@ -142,7 +142,7 @@ export default function DataAuditPage({ services }: DataAuditPageProps) {
     setError(null)
     try {
       const verification = await verifySource(detail.audit.audit_id)
-      setDetail({ ...detail, source_state: verification.source_state, current_source_fingerprints: verification.current_source_fingerprints })
+      setDetail({ ...detail, source_state: verification.source_state, current_source_fingerprints: verification.current_source_fingerprints, newer_dataset_revision_available: verification.newer_dataset_revision_available, latest_dataset_id: verification.latest_dataset_id, latest_dataset_revision: verification.latest_dataset_revision })
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason))
     } finally {
@@ -184,6 +184,7 @@ export default function DataAuditPage({ services }: DataAuditPageProps) {
         {detail && <>
           <section className="workspace-panel audit-identity">
             <div className="section-heading"><div><span className="section-kicker">{tr('AUDIT RECORD')}</span><h2>{tr(detail.audit.root_type.replaceAll('_', ' '))} · {shortId(detail.audit.root_id)}</h2></div><button className="secondary-button" disabled={busy} onClick={() => void verify()}>{tr(busy ? 'Verifying…' : 'Verify current source')}</button></div>
+            {detail.newer_dataset_revision_available && <div className="audit-revision-notice"><strong>{tr('NEWER REVISION AVAILABLE')}</strong><span>{detail.latest_dataset_revision ? `r${detail.latest_dataset_revision}` : ''} · {detail.latest_dataset_id}</span><small>{tr('The recorded source still matches; a newer immutable revision is available separately.')}</small></div>}
             <div className="audit-counts"><div><span>{tr('Observations')}</span><strong>{detail.audit.checked_observations}</strong></div><div><span>{tr('Dependencies')}</span><strong>{detail.audit.checked_dependencies}</strong></div><div><span>{tr('Future returns')}</span><strong>{detail.audit.checked_future_returns}</strong></div><div><span>{tr('Fundamental inputs')}</span><strong>{detail.audit.checked_fundamental_inputs}</strong></div></div>
             <dl className="audit-source-facts"><div><dt>{tr('Audit ID')}</dt><dd><code>{detail.audit.audit_id}</code></dd></div><div><dt>{tr('Created')}</dt><dd>{dateTime(detail.audit.created_at)}</dd></div>{Object.entries(detail.audit.source_fingerprints).map(([source, fingerprint]) => <div key={source}><dt>{source}</dt><dd><span>{tr('Recorded')}</span><code title={fingerprint}>{shortId(fingerprint)}</code></dd><dd><span>{tr('Current')}</span><code title={detail.current_source_fingerprints[source] ?? tr('MISSING')}>{shortId(detail.current_source_fingerprints[source] ?? tr('MISSING'))}</code></dd></div>)}</dl>
           </section>

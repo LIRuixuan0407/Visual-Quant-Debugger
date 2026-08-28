@@ -40,12 +40,12 @@ def _dataset(registry: DatasetRegistry) -> str:
                     volume=800_000 + rank * 120_000 + day * 350,
                     provider="alpaca",
                     feed="iex",
-                    provider_event_id=f"phase22:{symbol}:{day}",
+                    provider_event_id=f"factor-relationships:{symbol}:{day}",
                 )
             )
     end = start + timedelta(days=179)
     return registry.commit_provider_bars(
-        name="Phase 22 provider-backed contract",
+        name="Factor relationships provider-backed contract",
         bars=tuple(bars),
         provenance=DatasetProvenance(
             provider="alpaca",
@@ -117,7 +117,7 @@ def _assets(
 
 def _request(research_ids: tuple[str, ...]) -> CreateFactorRelationship:
     return CreateFactorRelationship(
-        name="Phase 22 relationship contract",
+        name="Factor relationships contract",
         factor_research_ids=research_ids,
         stage="HOLDOUT",
         horizon=5,
@@ -137,13 +137,13 @@ def _cell(record: object, field: str, left_id: str, right_id: str) -> object:
     )
 
 
-def test_phase22_router_is_registered_in_native_api() -> None:
+def test_factor_relationships_router_is_registered_in_native_api() -> None:
     paths = set(app.openapi()["paths"])
     assert "/api/factor-relationships" in paths
     assert "/api/factor-relationships/{relationship_id}" in paths
 
 
-def test_phase22_separates_correlations_and_builds_rolling_series(tmp_path: Path) -> None:
+def test_factor_relationships_separates_correlations_and_builds_rolling_series(tmp_path: Path) -> None:
     engine, _, research_ids = _assets(tmp_path)
     record = engine.create(_request(research_ids))
 
@@ -178,7 +178,7 @@ def test_phase22_separates_correlations_and_builds_rolling_series(tmp_path: Path
     assert all(point.observations == 10 for point in series.points)
 
 
-def test_phase22_reports_overlap_redundancy_incremental_clusters_and_ledger(
+def test_factor_relationships_reports_overlap_redundancy_incremental_clusters_and_ledger(
     tmp_path: Path,
 ) -> None:
     engine, ledger, research_ids = _assets(tmp_path)
@@ -234,7 +234,7 @@ def test_phase22_reports_overlap_redundancy_incremental_clusters_and_ledger(
     assert entries[0].factor_revisions == record.factor_revisions
 
 
-def test_phase22_keeps_unrevealed_stages_sealed(tmp_path: Path) -> None:
+def test_factor_relationships_keeps_unrevealed_stages_sealed(tmp_path: Path) -> None:
     engine, _, research_ids = _assets(tmp_path, reveal=False)
     with pytest.raises(ValueError, match="HOLDOUT is still sealed"):
         engine.create(_request(research_ids))

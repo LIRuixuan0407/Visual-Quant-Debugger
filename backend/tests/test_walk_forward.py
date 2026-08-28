@@ -53,12 +53,12 @@ def _dataset(registry: DatasetRegistry) -> str:
                     volume=900_000 + rank * 100_000 + day * 250,
                     provider="alpaca",
                     feed="iex",
-                    provider_event_id=f"phase21:{symbol}:{day}",
+                    provider_event_id=f"walk-forward:{symbol}:{day}",
                 )
             )
     end = start + timedelta(days=219)
     return registry.commit_provider_bars(
-        name="Phase 21 provider-backed contract",
+        name="Walk-forward provider-backed contract",
         bars=tuple(bars),
         provenance=DatasetProvenance(
             provider="alpaca",
@@ -90,7 +90,7 @@ def _assets(
     start = datetime(2022, 1, 3, tzinfo=UTC)
     factor = factor_engine.create(
         CreateFactorResearch(
-            name="Phase 21 momentum",
+            name="Walk-forward momentum",
             dataset_id=dataset_id,
             factor_id="momentum",
             parameters={"lookback": 10},
@@ -127,17 +127,17 @@ def _assets(
     return engine, factors, ledger, factor.research_id, strategy.strategy_id
 
 
-def test_phase21_router_is_registered_in_native_api() -> None:
+def test_walk_forward_router_is_registered_in_native_api() -> None:
     paths = set(app.openapi()["paths"])
     assert "/api/walk-forward" in paths
     assert "/api/walk-forward/{walk_forward_id}" in paths
 
 
-def test_phase21_builds_pit_safe_windows_and_slices_one_native_trace(tmp_path: Path) -> None:
+def test_walk_forward_builds_pit_safe_windows_and_slices_one_native_trace(tmp_path: Path) -> None:
     engine, _, ledger, factor_id, strategy_id = _assets(tmp_path)
     record = engine.create(
         CreateWalkForwardResearch(
-            name="Phase 21 stability contract",
+            name="Walk-forward stability contract",
             factor_research_id=factor_id,
             strategy_id=strategy_id,
             config=WalkForwardConfig(
@@ -204,7 +204,7 @@ def _factor_metrics(*, rank_ic: float, monotonic: bool, turnover: float) -> Fact
     )
 
 
-def test_phase21_first_degradation_is_deterministic_and_replayable() -> None:
+def test_walk_forward_first_degradation_is_deterministic_and_replayable() -> None:
     start = datetime(2024, 1, 1, tzinfo=UTC)
     definitions = tuple(
         WalkForwardWindowDefinition(

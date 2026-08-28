@@ -199,6 +199,8 @@ export default function ResearchSnapshotsPage({
         hypothesis_id: created.lineage.hypothesis_id,
         hypothesis_revision: created.lineage.hypothesis_revision,
         dataset_id: created.lineage.dataset_id,
+        dataset_family_id: created.lineage.dataset_family_id,
+        dataset_revision: created.lineage.dataset_revision,
         factor_count: created.lineage.factor_research_ids.length,
         strategy_id: created.lineage.strategy_id,
         run_count: created.lineage.run_ids.length,
@@ -255,7 +257,7 @@ export default function ResearchSnapshotsPage({
         {summaries.length === 0 && <p className="empty-copy">{tr('No Research Snapshots yet.')}</p>}
         {summaries.map((item) => <article key={item.snapshot_id} className="snapshot-ledger-item">
           <button className={`snapshot-detail-button ${snapshot?.snapshot_id === item.snapshot_id ? 'selected' : ''}`} onClick={() => void selectSnapshot(item.snapshot_id)}>
-            <strong>{tr(item.name)}</strong><span>{tr('Hypothesis')} r{item.hypothesis_revision} · {item.factor_count} {tr('Factors')}</span><code>{shortHash(item.content_fingerprint)}</code>
+            <strong>{tr(item.name)}</strong><span>{tr('Hypothesis')} r{item.hypothesis_revision} · {tr('Dataset')} r{item.dataset_revision ?? 1} · {item.factor_count} {tr('Factors')}</span><code>{shortHash(item.content_fingerprint)}</code>
           </button>
           <label className="snapshot-compare-toggle"><input type="checkbox" aria-label={`${tr('Select')} ${tr(item.name)} ${tr('for comparison')}`} checked={compareIds.includes(item.snapshot_id)} disabled={!compareIds.includes(item.snapshot_id) && compareIds.length >= 4} onChange={() => toggleCompare(item.snapshot_id)} /><span>{tr('Select for comparison')}</span></label>
         </article>)}
@@ -285,7 +287,7 @@ export default function ResearchSnapshotsPage({
 
           <section className="workspace-panel snapshot-lineage">
             <div className="section-heading"><div><span className="section-kicker">{tr('Frozen dependency chain')}</span><h2>{tr('Research lineage')}</h2></div><span>{artifacts.length} {tr('artifacts')}</span></div>
-            <div className="lineage-chain"><article><span>{tr('Dataset')}</span><code>{shortId(snapshot.lineage.dataset_id)}</code></article><i>→</i><article><span>{tr('Factors')}</span><code>{snapshot.lineage.factor_ids.join(' · ')}</code><small>{snapshot.lineage.factor_research_ids.length} {tr('revisions')}</small></article><i>→</i><article><span>{tr('Hypothesis')}</span><code>r{snapshot.lineage.hypothesis_revision}</code><small>{shortId(snapshot.lineage.hypothesis_id)}</small></article><i>→</i><article><span>{tr('Portfolio')}</span><code>{shortId(snapshot.lineage.portfolio_research_id)}</code></article><i>→</i><article><span>{tr('Strategy')}</span><code>{shortId(snapshot.lineage.strategy_id)}</code></article><i>→</i><article><span>{tr('Runs / Traces')}</span><code>{snapshot.lineage.run_ids.length} / {snapshot.lineage.trace_ids.length}</code></article></div>
+            <div className="lineage-chain"><article><span>{tr('Dataset')}</span><code>{shortId(snapshot.lineage.dataset_id)}</code><small>r{snapshot.lineage.dataset_revision ?? 1}{snapshot.lineage.dataset_family_id ? ` · ${shortId(snapshot.lineage.dataset_family_id)}` : ''}</small></article><i>→</i><article><span>{tr('Factors')}</span><code>{snapshot.lineage.factor_ids.join(' · ')}</code><small>{snapshot.lineage.factor_research_ids.length} {tr('revisions')}</small></article><i>→</i><article><span>{tr('Hypothesis')}</span><code>r{snapshot.lineage.hypothesis_revision}</code><small>{shortId(snapshot.lineage.hypothesis_id)}</small></article><i>→</i><article><span>{tr('Portfolio')}</span><code>{shortId(snapshot.lineage.portfolio_research_id)}</code></article><i>→</i><article><span>{tr('Strategy')}</span><code>{shortId(snapshot.lineage.strategy_id)}</code></article><i>→</i><article><span>{tr('Runs / Traces')}</span><code>{snapshot.lineage.run_ids.length} / {snapshot.lineage.trace_ids.length}</code></article></div>
             <div className="snapshot-links"><button onClick={() => onOpenRuns(snapshot.lineage.run_ids[0])}>{tr('Open frozen Run')}</button><button onClick={() => onOpenReplay(snapshot.lineage.trace_ids[0])}>{tr('Open frozen Replay')}</button></div>
           </section>
 

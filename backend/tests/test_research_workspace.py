@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from test_phase23_discovery import _assets, _request
+from test_discovery import _assets, _request
 
 from app.datasets import DatasetRegistry
 from app.discovery import DiscoveryEngine, HypothesisRepository
@@ -16,7 +16,7 @@ from app.research_workspace import ResearchWorkspaceEngine
 from app.runs import RunLedger, run_store
 from app.sdk.registry import StrategyRegistry
 
-type Phase23Assets = tuple[
+type DiscoveryAssets = tuple[
     DiscoveryEngine,
     FactorResearchEngine,
     FactorResearchRepository,
@@ -28,7 +28,7 @@ type Phase23Assets = tuple[
 ]
 
 
-def _engine(tmp_path: Path) -> tuple[ResearchWorkspaceEngine, Phase23Assets]:
+def _engine(tmp_path: Path) -> tuple[ResearchWorkspaceEngine, DiscoveryAssets]:
     assets = _assets(tmp_path)
     discovery, _, factors, hypotheses, ledger, datasets, strategies, _ = assets
     integrity = ResearchIntegrityEngine(
@@ -78,12 +78,12 @@ def test_workspace_projects_existing_research_without_new_persistence(tmp_path: 
         hypothesis.lineage.relationship_ids
     )
     assert all(item.status == "AVAILABLE" for item in detail.relationships)
-    assert detail.relationships[0].name == "Phase 23 source relationship"
+    assert detail.relationships[0].name == "Discovery source relationship"
     assert [item.walk_forward_id for item in detail.walk_forward] == list(
         hypothesis.lineage.walk_forward_ids
     )
     assert all(item.status == "AVAILABLE" for item in detail.walk_forward)
-    assert detail.walk_forward[0].name == "Phase 23 source walk-forward"
+    assert detail.walk_forward[0].name == "Discovery source walk-forward"
     assert detail.walk_forward[0].window_count > 0
     assert detail.portfolio is None
     assert detail.next_action.action == "BUILD_CANDIDATE"

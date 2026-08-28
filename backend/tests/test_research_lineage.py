@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from test_phase23_discovery import _assets, _request
+from test_discovery import _assets, _request
 
 from app.corporate_actions import (
     CorporateAction,
@@ -10,6 +10,7 @@ from app.corporate_actions import (
     CorporateActionService,
     CreateCorporateActionDataset,
 )
+from app.datasets import DatasetImportRequest
 from app.discovery import CreateHypothesisRevision
 from app.main import app
 from app.research_lineage import (
@@ -448,3 +449,41 @@ def test_explicit_strategy_run_mismatch_preserves_edge_and_marks_integrity(
         and edge.source_field == "ResearchHypothesis.lineage.run_ids"
         for edge in graph.edges
     )
+
+
+def test_dataset_revisions_remain_distinct_lineage_nodes(tmp_path: Path) -> None:
+    assets = _assets(tmp_path)
+    datasets = assets[5]
+    preview = datasets.preview(
+        "lineage.csv", b"date,ticker,price\n2025-01-01,AAPL,100\n"
+    )
+    r1 = datasets.commit(
+        DatasetImportRequest(
+            preview_id=preview.preview_id,
+            name="Versioned lineage dataset",
+            mapping={"timestamp": "date", "symbol": "ticker", "close": "price"},
+            timezone="UTC",
+        )
+    )
+    second_preview = datasets.preview(
+        "lineage.csv",
+        b"date,ticker,price\n2025-01-01,AAPL,100\n2025-01-02,AAPL,101\n",
+    )
+    r2 = datasets.commit(
+        DatasetImportRequest(
+            preview_id=second_preview.preview_id,
+            name="Versioned lineage dataset",
+            mapping={"timestamp": "date", "symbol": "ticker", "close": "price"},
+            timezone="UTC",
+            dataset_family_id=r1.dataset_family_id,
+        )
+    )
+    graph = _service(assets, ResearchSnapshotRepository(tmp_path)).graph()
+    n1 = _node(graph, "DATASET", r1.dataset_id)
+    n2 = _node(graph, "DATASET", r2.dataset_id)
+    assert n1.node_id != n2.node_id
+    assert n1.revision == r1.content_fingerprint
+    assert n2.revision == r2.content_fingerprint
+    assert n1.metadata["family_id"] == n2.metadata["family_id"] == r1.dataset_family_id
+    assert n1.metadata["revision"] == 1
+    assert n2.metadata["revision"] == 2

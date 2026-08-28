@@ -63,6 +63,10 @@ class DatasetDefinition(DatasetModel):
     end_time: datetime
     created_at: datetime
     content_fingerprint: str
+    dataset_family_id: str | None = None
+    revision: int = Field(default=1, ge=1)
+    parent_dataset_id: str | None = None
+    revision_reason: str | None = None
     source_timezone: str
     column_mapping: dict[str, str]
     quality: DataQualityReport
@@ -72,6 +76,39 @@ class DatasetDefinition(DatasetModel):
     _aware_times = field_validator("start_time", "end_time", "created_at")(
         lambda value: require_aware(value)
     )
+
+
+class DatasetFamily(DatasetModel):
+    dataset_family_id: str
+    name: str
+    created_at: datetime
+    latest_dataset_id: str
+    revision_count: int = Field(ge=1)
+
+    _aware_created = field_validator("created_at")(lambda value: require_aware(value))
+
+
+class DatasetFamilyHistory(DatasetModel):
+    family: DatasetFamily
+    revisions: tuple[DatasetDefinition, ...]
+
+
+class DatasetRevisionDiff(DatasetModel):
+    left_dataset_id: str
+    right_dataset_id: str
+    same_family: bool
+    fingerprint_changed: bool
+    symbols_added: tuple[str, ...]
+    symbols_removed: tuple[str, ...]
+    fields_added: tuple[str, ...]
+    fields_removed: tuple[str, ...]
+    start_changed: bool
+    end_changed: bool
+    rows_delta: int
+    synchronized_bars_delta: int
+    quality_changes: tuple[str, ...]
+    provenance_changes: tuple[str, ...]
+    data_view_changes: tuple[str, ...] = ()
 
 
 class DatasetPreview(DatasetModel):
@@ -90,6 +127,8 @@ class DatasetImportRequest(DatasetModel):
     mapping: dict[str, str]
     timezone: str | None = None
     frequency: str | None = None
+    dataset_family_id: str | None = None
+    revision_reason: str | None = None
 
 
 class CompatibilityCheck(DatasetModel):

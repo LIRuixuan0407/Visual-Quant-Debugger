@@ -118,6 +118,8 @@ export interface FactorResearchRecord {
   dataset_id: string
   dataset_name: string
   dataset_revision: string
+  dataset_family_id?: string | null
+  dataset_revision_number?: number
   factor: FactorDefinition
   parameters: Record<string, number>
   components: FactorComponent[]

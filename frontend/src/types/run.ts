@@ -16,6 +16,8 @@ export interface DatasetRevision {
   dataset_id: string
   name: string
   content_fingerprint: string
+  dataset_family_id?: string | null
+  revision?: number
   source_timezone: string
   symbols?: string[]
 }

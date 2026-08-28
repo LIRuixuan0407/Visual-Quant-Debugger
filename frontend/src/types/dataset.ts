@@ -26,6 +26,10 @@ export interface DatasetDefinition {
   end_time: string
   created_at: string
   content_fingerprint: string
+  dataset_family_id?: string | null
+  revision?: number
+  parent_dataset_id?: string | null
+  revision_reason?: string | null
   source_timezone: string
   column_mapping: Record<string, string>
   quality: DataQualityReport
@@ -86,4 +90,31 @@ export interface CompatibilityCheck {
   minimum_history: number
   synchronized_bar_count: number
   reasons: string[]
+}
+
+
+export interface DatasetFamily {
+  dataset_family_id: string
+  name: string
+  created_at: string
+  latest_dataset_id: string
+  revision_count: number
+}
+
+export interface DatasetRevisionDiff {
+  left_dataset_id: string
+  right_dataset_id: string
+  same_family: boolean
+  fingerprint_changed: boolean
+  symbols_added: string[]
+  symbols_removed: string[]
+  fields_added: string[]
+  fields_removed: string[]
+  start_changed: boolean
+  end_changed: boolean
+  rows_delta: number
+  synchronized_bars_delta: number
+  quality_changes: string[]
+  provenance_changes: string[]
+  data_view_changes: string[]
 }

@@ -69,14 +69,14 @@ export type SnapshotArtifactKind = 'DATASET' | 'UNIVERSE' | 'CORPORATE_ACTION_DA
 export interface FrozenArtifact { kind: SnapshotArtifactKind; artifact_id: string; source_revision: string; payload_sha256: string; payload_json: string }
 export interface SnapshotParameterSet { owner_type: 'HYPOTHESIS' | 'FACTOR' | 'PORTFOLIO' | 'STRATEGY' | 'RUN'; owner_id: string; values: Array<{ key: string; value: string | number | boolean | null }> }
 export interface SnapshotPeriod { label: string; source_id: string; start: string | null; end: string | null; cutoff: string | null }
-export interface ResearchSnapshotSummary { snapshot_id: string; name: string; created_at: string; content_fingerprint: string; hypothesis_id: string; hypothesis_revision: number; dataset_id: string; factor_count: number; strategy_id: string; run_count: number; trace_count: number }
+export interface ResearchSnapshotSummary { snapshot_id: string; name: string; created_at: string; content_fingerprint: string; hypothesis_id: string; hypothesis_revision: number; dataset_id: string; dataset_family_id?: string | null; dataset_revision?: number; factor_count: number; strategy_id: string; run_count: number; trace_count: number }
 export interface ResearchSnapshot {
   snapshot_version: '1.0'
   snapshot_id: string
   name: string
   created_at: string
   content_fingerprint: string
-  lineage: { dataset_id: string; universe_ids: string[]; corporate_action_dataset_ids: string[]; factor_research_ids: string[]; factor_ids: string[]; relationship_ids: string[]; walk_forward_ids: string[]; hypothesis_id: string; hypothesis_revision: number; portfolio_research_id: string; strategy_id: string; run_ids: string[]; trace_ids: string[] }
+  lineage: { dataset_id: string; dataset_family_id?: string | null; dataset_revision?: number; universe_ids: string[]; corporate_action_dataset_ids: string[]; factor_research_ids: string[]; factor_ids: string[]; relationship_ids: string[]; walk_forward_ids: string[]; hypothesis_id: string; hypothesis_revision: number; portfolio_research_id: string; strategy_id: string; run_ids: string[]; trace_ids: string[] }
   dataset: FrozenArtifact
   universes: FrozenArtifact[]
   corporate_actions: FrozenArtifact[]

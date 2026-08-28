@@ -45,12 +45,12 @@ def _market_dataset(registry: DatasetRegistry) -> str:
                     volume=850_000 + rank * 120_000 + day * 500,
                     provider="alpaca",
                     feed="iex",
-                    provider_event_id=f"phase20:{symbol}:{day}",
+                    provider_event_id=f"portfolio-lab:{symbol}:{day}",
                 )
             )
     end = start + timedelta(days=179)
     return registry.commit_provider_bars(
-        name="Phase 20 six-stock provider contract",
+        name="Portfolio Lab six-stock provider contract",
         bars=tuple(bars),
         provenance=DatasetProvenance(
             provider="alpaca",
@@ -83,7 +83,7 @@ def _fundamental_dataset(repository: FundamentalRepository) -> str:
         ):
             observations.append(
                 FundamentalObservation(
-                    observation_id=f"phase20-{symbol}-{field}",
+                    observation_id=f"portfolio-lab-{symbol}-{field}",
                     symbol=symbol,
                     field=field,
                     value=value,
@@ -99,14 +99,14 @@ def _fundamental_dataset(repository: FundamentalRepository) -> str:
                     available_at=filed,
                     retrieved_at=datetime(2022, 8, 1, tzinfo=UTC),
                     form="10-K",
-                    accession=f"phase20-{symbol}-2021",
+                    accession=f"portfolio-lab-{symbol}-2021",
                     source="sec-companyfacts",
-                    source_concepts=(f"Phase20{field.title()}",),
+                    source_concepts=(f"PortfolioLab{field.title()}",),
                     is_restatement=False,
                 )
             )
     return repository.create_dataset(
-        name="Phase 20 SEC point-in-time contract",
+        name="Portfolio Lab SEC point-in-time contract",
         provider="sec-companyfacts",
         observations=tuple(observations),
         start=datetime(2021, 1, 1, tzinfo=UTC),
@@ -114,7 +114,7 @@ def _fundamental_dataset(repository: FundamentalRepository) -> str:
         retrieved_at=datetime(2022, 8, 1, tzinfo=UTC),
         point_in_time_safe=True,
         restatement_safe=False,
-        disclosure="NOT RESTATEMENT-SAFE: deterministic Phase 20 contract fixture.",
+        disclosure="NOT RESTATEMENT-SAFE: deterministic Portfolio Lab contract fixture.",
     ).fundamental_dataset_id
 
 
@@ -195,13 +195,13 @@ def _portfolio_engine(
     return engine, datasets, repository, ids
 
 
-def test_phase20_router_is_registered_in_the_native_api() -> None:
+def test_portfolio_lab_router_is_registered_in_the_native_api() -> None:
     paths = set(app.openapi()["paths"])
     assert "/api/portfolio-research" in paths
     assert "/api/portfolio-research/{research_id}/strategy" in paths
 
 
-def test_phase20_validates_explicit_weights_and_symbol_filters() -> None:
+def test_portfolio_lab_validates_explicit_weights_and_symbol_filters() -> None:
     with pytest.raises(ValidationError, match="sum to 1.0"):
         CreatePortfolioResearch(
             name="invalid weights",
@@ -217,7 +217,7 @@ def test_phase20_validates_explicit_weights_and_symbol_filters() -> None:
         PortfolioFilters(include_symbols=("AAPL",), exclude_symbols=("aapl",))
 
 
-def test_phase20_combines_market_and_sec_factors_with_backend_lineage(tmp_path: Path) -> None:
+def test_portfolio_lab_combines_market_and_sec_factors_with_backend_lineage(tmp_path: Path) -> None:
     engine, _, _, ids = _portfolio_engine(tmp_path)
     request = CreatePortfolioResearch(
         name="Quality momentum portfolio",
@@ -285,7 +285,7 @@ def test_phase20_combines_market_and_sec_factors_with_backend_lineage(tmp_path: 
     )
 
 
-def test_phase20_all_four_combination_methods_are_backend_computed(tmp_path: Path) -> None:
+def test_portfolio_lab_all_four_combination_methods_are_backend_computed(tmp_path: Path) -> None:
     engine, _, _, ids = _portfolio_engine(tmp_path)
     for combination in (
         "EQUAL_WEIGHT",
@@ -324,7 +324,7 @@ def test_phase20_all_four_combination_methods_are_backend_computed(tmp_path: Pat
         assert sum(position.target_weight for position in snapshot.positions) <= 0.75 + 1e-9
 
 
-def test_phase20_creates_native_strategy_and_uses_existing_execution_runtime(
+def test_portfolio_lab_creates_native_strategy_and_uses_existing_execution_runtime(
     tmp_path: Path,
 ) -> None:
     engine, datasets, factor_repository, ids = _portfolio_engine(tmp_path)

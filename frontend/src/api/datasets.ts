@@ -1,5 +1,5 @@
 import { readJson } from './client'
-import type { CompatibilityCheck, DatasetDefinition, DatasetPreview } from '../types/dataset'
+import type { CompatibilityCheck, DatasetDefinition, DatasetFamily, DatasetPreview, DatasetRevisionDiff } from '../types/dataset'
 import type { StrategyParameters } from '../types/strategy'
 
 function isDataset(value: unknown): value is DatasetDefinition {
@@ -18,6 +18,36 @@ export async function getDatasets(): Promise<DatasetDefinition[]> {
   if (!Array.isArray(body) || !body.every(isDataset)) {
     throw new Error('GET /api/datasets returned a malformed Dataset Library.')
   }
+  return body
+}
+
+export async function getDatasetFamilies(): Promise<DatasetFamily[]> {
+  const response = await fetch('/api/dataset-families')
+  const body = await readJson(response, 'GET /api/dataset-families')
+  if (!Array.isArray(body)) throw new Error('GET /api/dataset-families returned malformed data.')
+  return body as DatasetFamily[]
+}
+
+export async function getDatasetFamilyRevisions(datasetFamilyId: string): Promise<DatasetDefinition[]> {
+  const endpoint = `/api/dataset-families/${encodeURIComponent(datasetFamilyId)}/revisions`
+  const body = await readJson(await fetch(endpoint), `GET ${endpoint}`)
+  if (!Array.isArray(body) || !body.every(isDataset)) throw new Error(`GET ${endpoint} returned malformed revisions.`)
+  return body
+}
+
+export async function compareDatasets(left: string, right: string): Promise<DatasetRevisionDiff> {
+  const endpoint = `/api/datasets/compare?left=${encodeURIComponent(left)}&right=${encodeURIComponent(right)}`
+  return readJson(await fetch(endpoint), `GET ${endpoint}`) as Promise<DatasetRevisionDiff>
+}
+
+export async function refreshProviderDataset(datasetId: string, end: string, revisionReason?: string): Promise<DatasetDefinition> {
+  const endpoint = `/api/datasets/${encodeURIComponent(datasetId)}/refresh`
+  const body = await readJson(await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ end, revision_reason: revisionReason || null }),
+  }), `POST ${endpoint}`)
+  if (!isDataset(body)) throw new Error(`POST ${endpoint} returned malformed metadata.`)
   return body
 }
 
@@ -41,6 +71,8 @@ export async function importDataset(input: {
   name: string
   mapping: Record<string, string>
   timezone: string | null
+  dataset_family_id?: string | null
+  revision_reason?: string | null
 }): Promise<DatasetDefinition> {
   const response = await fetch('/api/datasets/import', {
     method: 'POST',

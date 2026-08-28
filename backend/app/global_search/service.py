@@ -225,18 +225,28 @@ class GlobalSearchService:
     def _build_documents(self) -> tuple[SearchDocument, ...]:
         documents: list[SearchDocument] = []
         datasets = {dataset.dataset_id: dataset for dataset in self.datasets.list()}
+        families = {family.dataset_family_id: family for family in self.datasets.families()}
         for dataset in datasets.values():
             provider = dataset.provenance.provider if dataset.provenance is not None else None
+            family = families.get(dataset.dataset_family_id or "")
+            latest = family is not None and family.latest_dataset_id == dataset.dataset_id
+            revision_label = f"r{dataset.revision}" + (" · latest" if latest else "")
             documents.append(
                 SearchDocument(
                     entity_type="DATASET",
                     entity_id=dataset.dataset_id,
                     title=dataset.name,
-                    subtitle=f"{dataset.source_type} · {', '.join(dataset.symbols)}",
+                    subtitle=(
+                        f"{revision_label} · {dataset.source_type} · {', '.join(dataset.symbols)}"
+                    ),
                     aliases=(
                         *dataset.symbols,
                         dataset.source_type,
                         provider or "",
+                        dataset.dataset_id,
+                        dataset.dataset_family_id or "",
+                        family.name if family is not None else dataset.name,
+                        f"r{dataset.revision}",
                         dataset.content_fingerprint,
                     ),
                     created_at=dataset.created_at,
@@ -245,6 +255,9 @@ class GlobalSearchService:
                         "source_type": dataset.source_type,
                         "provider": provider,
                         "fingerprint": dataset.content_fingerprint,
+                        "family_id": dataset.dataset_family_id,
+                        "revision": dataset.revision,
+                        "latest": latest,
                     },
                 )
             )

@@ -196,9 +196,83 @@ test('renders the Data workspace in Chinese by default', async () => {
   expect(screen.getByRole('heading', { name: '数据集' })).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: '公司行动' })).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: '历史股票池' })).toBeInTheDocument()
-  expect(screen.getByText('名称')).toBeInTheDocument()
-  expect(screen.getByText('时间范围')).toBeInTheDocument()
-  expect(screen.getAllByText('数据质量').length).toBeGreaterThan(0)
-  expect(screen.getByText('当前数据集 · Existing research.csv')).toBeInTheDocument()
+  expect(screen.getAllByText('数据族').length).toBeGreaterThan(0)
+  expect(screen.getAllByText('修订版本').length).toBeGreaterThan(0)
+  expect(screen.getByText('覆盖率')).toBeInTheDocument()
+  expect(screen.getByText('当前数据集 · Existing research.csv · r1')).toBeInTheDocument()
   expect((await screen.findAllByText('收盘价')).length).toBeGreaterThan(0)
+})
+
+test('shows immutable revision history, factual comparison, and explicit usages', async () => {
+  window.localStorage.setItem('vqd-language', 'en')
+  const r1: DatasetDefinition = {
+    ...dataset,
+    dataset_id: 'dataset-r1',
+    name: 'US Large Cap Daily',
+    dataset_family_id: 'dataset-family-us-large-cap',
+    revision: 1,
+    content_fingerprint: 'sha256:r1',
+  }
+  const r2: DatasetDefinition = {
+    ...r1,
+    dataset_id: 'dataset-r2',
+    revision: 2,
+    parent_dataset_id: r1.dataset_id,
+    row_count: 3,
+    synchronized_bar_count: 3,
+    end_time: '2025-01-03T00:00:00Z',
+    content_fingerprint: 'sha256:r2',
+  }
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const url = String(input)
+    if (url === '/api/dataset-families') return response([{ dataset_family_id: r1.dataset_family_id, name: 'US Large Cap Daily', created_at: r1.created_at, latest_dataset_id: r2.dataset_id, revision_count: 2 }])
+    if (url === `/api/dataset-families/${r1.dataset_family_id}/revisions`) return response([r1, r2])
+    if (url.includes('/api/datasets/dataset-r') && url.endsWith('/preview')) return response({ rows: [] })
+    if (url.startsWith('/api/research-lineage?')) return response({ graph_version: '1.0', root_type: 'DATASET', root_id: r1.dataset_id, direction: 'DOWNSTREAM', max_depth: 8, nodes: [{ node_id: 'DATASET:r1', node_type: 'DATASET', artifact_id: r1.dataset_id, revision: 'sha256:r1', label: r1.name, created_at: r1.created_at, status: 'RESOLVED', route: '/data?dataset_id=dataset-r1', metadata: {} }, { node_id: 'FACTOR_RESEARCH:momentum', node_type: 'FACTOR_RESEARCH', artifact_id: 'factor-research-momentum', revision: 1, label: 'Momentum study', created_at: r1.created_at, status: 'RESOLVED', route: '/factor-lab?research_id=factor-research-momentum', metadata: {} }], edges: [], disclosure: 'Explicit references only.' })
+    if (url === '/api/datasets/compare?left=dataset-r2&right=dataset-r1') return response({ left_dataset_id: r2.dataset_id, right_dataset_id: r1.dataset_id, same_family: true, fingerprint_changed: true, symbols_added: [], symbols_removed: [], fields_added: [], fields_removed: [], start_changed: false, end_changed: true, rows_delta: -1, synchronized_bars_delta: -1, quality_changes: [], provenance_changes: [], data_view_changes: [] })
+    if (url === '/api/corporate-actions' || url === '/api/universes') return response([])
+    throw new Error(`Unexpected ${url}`)
+  })
+
+  render(<I18nProvider><DataPage datasets={[r1, r2]} onImported={() => undefined} /></I18nProvider>)
+
+  expect(await screen.findByRole('heading', { name: 'Revision History' })).toBeInTheDocument()
+  expect(screen.getAllByText('r1').length).toBeGreaterThan(0)
+  expect(screen.getAllByText('r2').length).toBeGreaterThan(0)
+  expect(screen.getAllByText('Latest').length).toBeGreaterThan(0)
+  expect(screen.getAllByText('Historical').length).toBeGreaterThan(0)
+  expect(await screen.findByText('Momentum study')).toBeInTheDocument()
+
+  fireEvent.click(screen.getByRole('button', { name: 'Compare' }))
+  expect(await screen.findByRole('heading', { name: 'Revision Compare' })).toBeInTheDocument()
+  expect(screen.getByText('-1')).toBeInTheDocument()
+  expect(screen.getByText('End changed')).toBeInTheDocument()
+  expect(screen.getByText('Synchronized bars delta')).toBeInTheDocument()
+  expect(screen.getByText('Data-view changes')).toBeInTheDocument()
+})
+
+test('CSV import only joins an existing family after explicit selection', async () => {
+  window.localStorage.setItem('vqd-language', 'en')
+  const family = { dataset_family_id: 'dataset-family-explicit', name: 'Explicit family', created_at: dataset.created_at, latest_dataset_id: dataset.dataset_id, revision_count: 1 }
+  const imported = { ...dataset, dataset_id: 'dataset-r2', dataset_family_id: family.dataset_family_id, revision: 2, parent_dataset_id: dataset.dataset_id }
+  const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const url = String(input)
+    if (url === '/api/dataset-families') return response([family])
+    if (url.includes('dataset-existing') && url.endsWith('/preview')) return response({ rows: [] })
+    if (url.startsWith('/api/research-lineage?')) return response({ graph_version: '1.0', root_type: 'DATASET', root_id: dataset.dataset_id, direction: 'DOWNSTREAM', max_depth: 8, nodes: [], edges: [], disclosure: '' })
+    if (url === '/api/corporate-actions' || url === '/api/universes') return response([])
+    if (url === '/api/datasets/import/preview') return response({ preview_id: 'preview-version', filename: 'revision.csv', columns: ['date', 'ticker', 'price'], rows: [{ date: '2025-01-03', ticker: 'AAPL', price: '102' }], detected_types: { date: 'datetime', ticker: 'string', price: 'number' }, detected_timezone: 'UTC', candidate_mapping: { timestamp: 'date', symbol: 'ticker', close: 'price' } })
+    if (url === '/api/datasets/import') return response(imported, 201)
+    throw new Error(`Unexpected ${url}`)
+  })
+  const onImported = vi.fn()
+  render(<I18nProvider><DataPage datasets={[dataset]} onImported={onImported} /></I18nProvider>)
+  fireEvent.change(screen.getByLabelText('Choose CSV'), { target: { files: [new File(['date,ticker,price\n2025-01-03,AAPL,102\n'], 'revision.csv', { type: 'text/csv' })] } })
+  await screen.findByRole('heading', { name: 'Import preview · revision.csv' })
+  fireEvent.change(screen.getByLabelText('Import mode'), { target: { value: family.dataset_family_id } })
+  fireEvent.change(screen.getByLabelText('Revision reason'), { target: { value: 'Extend coverage' } })
+  fireEvent.click(screen.getByRole('button', { name: 'Validate & Import' }))
+  await waitFor(() => expect(onImported).toHaveBeenCalledWith(imported))
+  const request = fetchMock.mock.calls.find(([url]) => url === '/api/datasets/import')
+  expect(JSON.parse(String(request?.[1]?.body))).toMatchObject({ dataset_family_id: family.dataset_family_id, revision_reason: 'Extend coverage' })
 })

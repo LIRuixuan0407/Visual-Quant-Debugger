@@ -53,12 +53,12 @@ def _dataset(registry: DatasetRegistry) -> str:
                     volume=900_000 + rank * 125_000 + day * 300,
                     provider="alpaca",
                     feed="iex",
-                    provider_event_id=f"phase23:{symbol}:{day}",
+                    provider_event_id=f"discovery:{symbol}:{day}",
                 )
             )
     end = start + timedelta(days=219)
     return registry.commit_provider_bars(
-        name="Phase 23 provider-backed contract",
+        name="Discovery provider-backed contract",
         bars=tuple(bars),
         provenance=DatasetProvenance(
             provider="alpaca",
@@ -134,7 +134,7 @@ def _assets(
     relationships.save(
         relationship_engine.create(
             CreateFactorRelationship(
-                name="Phase 23 source relationship",
+                name="Discovery source relationship",
                 factor_research_ids=tuple(research_ids),
                 stage="RESEARCH",
                 horizon=5,
@@ -156,7 +156,7 @@ def _assets(
     walk_forward.save(
         walk_engine.create(
             CreateWalkForwardResearch(
-                name="Phase 23 source walk-forward",
+                name="Discovery source walk-forward",
                 factor_research_id=research_ids[0],
                 config=WalkForwardConfig(
                     research_months=1,
@@ -212,7 +212,7 @@ def _request(ids: tuple[str, ...]) -> CreateHypothesis:
     )
 
 
-def test_phase23_router_is_registered_in_native_api() -> None:
+def test_discovery_router_is_registered_in_native_api() -> None:
     paths = set(app.openapi()["paths"])
     assert "/api/hypotheses" in paths
     assert "/api/hypotheses/suggestions" in paths
@@ -221,7 +221,7 @@ def test_phase23_router_is_registered_in_native_api() -> None:
     assert "/api/hypotheses/{hypothesis_id}/revisions" in paths
 
 
-def test_phase23_complete_hypothesis_to_native_run_with_revision_discipline(
+def test_discovery_complete_hypothesis_to_native_run_with_revision_discipline(
     tmp_path: Path,
 ) -> None:
     (
@@ -352,7 +352,7 @@ def test_phase23_complete_hypothesis_to_native_run_with_revision_discipline(
     )
 
 
-def test_phase23_suggestions_never_use_holdout_relationships(tmp_path: Path) -> None:
+def test_discovery_suggestions_never_use_holdout_relationships(tmp_path: Path) -> None:
     engine, _, _, _, _, _, _, _ = _assets(tmp_path)
     assert all(item.label == "RESEARCH IDEA" for item in engine.suggestions())
     assert all("recommendation" in item.rationale for item in engine.suggestions())

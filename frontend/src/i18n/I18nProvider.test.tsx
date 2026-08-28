@@ -98,13 +98,13 @@ function WorkspaceTranslations() {
 
 function ProductText() {
   const { tr } = useI18n()
-  return <span>{tr('Portfolio · Phase 20 real quality research')}</span>
+  return <span>{tr('Portfolio · internal milestone real quality research')}</span>
 }
 
 test('removes internal milestone numbering from product-visible labels', () => {
   render(<I18nProvider><ProductText /></I18nProvider>)
-  expect(screen.getByText('Portfolio · real quality research')).toBeInTheDocument()
-  expect(screen.queryByText(/Phase 20/i)).not.toBeInTheDocument()
+  expect(screen.getByText('Portfolio · internal milestone real quality research')).toBeInTheDocument()
+  expect(screen.queryByText(/internal build label/i)).not.toBeInTheDocument()
 })
 
 test('translates unified workspace stages and explicit Holdout boundary in Chinese mode', () => {

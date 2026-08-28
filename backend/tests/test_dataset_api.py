@@ -102,3 +102,62 @@ def test_dataset_api_reports_file_and_registry_errors(
         )
     )
     assert missing_strategy.status_code == 404
+
+
+def test_dataset_family_history_and_compare_api(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    registry = DatasetRegistry(tmp_path)
+    monkeypatch.setattr(datasets_api, "dataset_registry", registry)
+
+    first_preview = registry.preview(
+        "prices.csv", b"date,ticker,price\n2025-01-01,AAPL,100\n"
+    )
+    first = registry.commit(
+        datasets_api.DatasetImportRequest(
+            preview_id=first_preview.preview_id,
+            name="API family",
+            mapping={"timestamp": "date", "symbol": "ticker", "close": "price"},
+            timezone="UTC",
+        )
+    )
+    second_preview = registry.preview(
+        "prices.csv",
+        b"date,ticker,price\n2025-01-01,AAPL,100\n2025-01-02,AAPL,101\n",
+    )
+    second = registry.commit(
+        datasets_api.DatasetImportRequest(
+            preview_id=second_preview.preview_id,
+            name="Ignored revision display name",
+            mapping={"timestamp": "date", "symbol": "ticker", "close": "price"},
+            timezone="UTC",
+            dataset_family_id=first.dataset_family_id,
+            revision_reason="Extended coverage",
+        )
+    )
+
+    families = asyncio.run(_request("GET", "/api/dataset-families"))
+    assert families.status_code == 200
+    assert first.dataset_family_id in {item["dataset_family_id"] for item in families.json()}
+
+    family = asyncio.run(_request("GET", f"/api/dataset-families/{first.dataset_family_id}"))
+    assert family.status_code == 200
+    assert family.json()["latest_dataset_id"] == second.dataset_id
+    assert family.json()["revision_count"] == 2
+
+    revisions = asyncio.run(
+        _request("GET", f"/api/dataset-families/{first.dataset_family_id}/revisions")
+    )
+    assert revisions.status_code == 200
+    assert [item["revision"] for item in revisions.json()] == [1, 2]
+
+    compared = asyncio.run(
+        _request(
+            "GET",
+            "/api/datasets/compare",
+            params={"left": first.dataset_id, "right": second.dataset_id},
+        )
+    )
+    assert compared.status_code == 200
+    assert compared.json()["same_family"] is True
+    assert compared.json()["rows_delta"] == 1

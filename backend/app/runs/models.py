@@ -41,6 +41,8 @@ class DatasetRevision(RunModel):
     dataset_id: str
     name: str
     content_fingerprint: str
+    dataset_family_id: str | None = None
+    revision: int = Field(default=1, ge=1)
     source_timezone: str
     symbols: tuple[str, ...] = ()
 

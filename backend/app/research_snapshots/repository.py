@@ -91,6 +91,8 @@ class ResearchSnapshotRepository:
             hypothesis_id=lineage.hypothesis_id,
             hypothesis_revision=lineage.hypothesis_revision,
             dataset_id=lineage.dataset_id,
+            dataset_family_id=lineage.dataset_family_id,
+            dataset_revision=lineage.dataset_revision,
             factor_count=len(lineage.factor_research_ids),
             strategy_id=lineage.strategy_id,
             run_count=len(lineage.run_ids),

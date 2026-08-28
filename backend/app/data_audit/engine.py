@@ -1203,11 +1203,21 @@ class DataAuditEngine:
             current.get(key) != value for key, value in record.source_fingerprints.items()
         )
         state: AuditSourceState = "MISSING" if missing else "CHANGED" if changed else "MATCHES"
+        newer = None
+        for key in record.source_fingerprints:
+            kind, separator, artifact_id = key.partition(":")
+            if separator and kind == "dataset":
+                candidate = self.datasets.newer_revision(artifact_id)
+                if candidate is not None and (newer is None or candidate.revision > newer.revision):
+                    newer = candidate
         return DataAuditSourceVerification(
             audit_id=record.audit_id,
             source_state=state,
             recorded_source_fingerprints=record.source_fingerprints,
             current_source_fingerprints=dict(sorted(current.items())),
+            newer_dataset_revision_available=newer is not None,
+            latest_dataset_id=None if newer is None else newer.dataset_id,
+            latest_dataset_revision=None if newer is None else newer.revision,
         )
 
     def detail(self, audit_id: str) -> DataAuditDetail:
@@ -1219,4 +1229,7 @@ class DataAuditEngine:
             audit=record,
             source_state=verification.source_state,
             current_source_fingerprints=verification.current_source_fingerprints,
+            newer_dataset_revision_available=verification.newer_dataset_revision_available,
+            latest_dataset_id=verification.latest_dataset_id,
+            latest_dataset_revision=verification.latest_dataset_revision,
         )

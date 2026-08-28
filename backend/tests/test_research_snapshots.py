@@ -4,13 +4,14 @@ import json
 from pathlib import Path
 
 import pytest
-from test_phase23_discovery import _assets, _request
+from test_discovery import _assets, _request
 
 from app.corporate_actions import (
     CorporateAction,
     CorporateActionService,
     CreateCorporateActionDataset,
 )
+from app.datasets import DatasetImportRequest
 from app.main import app
 from app.research_snapshots import (
     CreateResearchSnapshot,
@@ -349,3 +350,44 @@ def test_experiment_compare_uses_frozen_context_treatments_results_and_traces(
         ),
     )
     assert descriptive.comparability == "DESCRIPTIVE_ONLY"
+
+
+def test_snapshot_keeps_exact_historical_dataset_revision_when_family_advances(
+    tmp_path: Path,
+) -> None:
+    engine, _, _, _, hypothesis = _complete_hypothesis(tmp_path)
+    snapshot = engine.create(
+        CreateResearchSnapshot(
+            name="Historical revision snapshot", hypothesis_id=hypothesis.hypothesis_id
+        )
+    )
+    r1 = engine.datasets.get(hypothesis.dataset_id)
+    assert r1 is not None
+    assert r1.dataset_family_id is not None
+    assert snapshot.lineage.dataset_id == r1.dataset_id
+    assert snapshot.lineage.dataset_family_id == r1.dataset_family_id
+    assert snapshot.lineage.dataset_revision == r1.revision == 1
+
+    preview = engine.datasets.preview(
+        "later.csv",
+        b"date,ticker,price\n2027-01-01,AAPL,100\n2027-01-02,AAPL,101\n",
+    )
+    r2 = engine.datasets.commit(
+        DatasetImportRequest(
+            preview_id=preview.preview_id,
+            name="Ignored later name",
+            mapping={"timestamp": "date", "symbol": "ticker", "close": "price"},
+            timezone="UTC",
+            dataset_family_id=r1.dataset_family_id,
+            revision_reason="Explicit later revision for snapshot verification",
+        )
+    )
+    assert r2.revision == 2
+    assert engine.datasets.get_family(r1.dataset_family_id).latest_dataset_id == r2.dataset_id
+
+    restored = engine.snapshots.get(snapshot.snapshot_id)
+    assert restored is not None
+    assert restored.lineage.dataset_id == r1.dataset_id
+    assert restored.lineage.dataset_revision == 1
+    assert restored.dataset.artifact_id == r1.dataset_id
+    assert restored.dataset.source_revision == r1.content_fingerprint

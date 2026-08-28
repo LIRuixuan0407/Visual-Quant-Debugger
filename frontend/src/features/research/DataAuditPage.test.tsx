@@ -59,6 +59,9 @@ it('renders immutable audit counts, grouped findings, severity, evidence, and so
     source_state: 'CHANGED',
     recorded_source_fingerprints: detail.audit.source_fingerprints,
     current_source_fingerprints: { 'dataset:market-dataset': 'sha256:new' },
+    newer_dataset_revision_available: true,
+    latest_dataset_id: 'market-dataset-r2',
+    latest_dataset_revision: 2,
   })
   render(<I18nProvider><DataAuditPage services={{
     list: vi.fn().mockResolvedValue([summary]),
@@ -79,6 +82,8 @@ it('renders immutable audit counts, grouped findings, severity, evidence, and so
   fireEvent.click(screen.getByRole('button', { name: 'Verify current source' }))
   await waitFor(() => expect(verify).toHaveBeenCalledWith(summary.audit_id))
   expect(await screen.findByText('CHANGED')).toBeInTheDocument()
+  expect(screen.getByText('NEWER REVISION AVAILABLE')).toBeInTheDocument()
+  expect(screen.getByText(/r2 · market-dataset-r2/)).toBeInTheDocument()
 })
 
 it('creates an audit for an explicit recorded root', async () => {

@@ -388,6 +388,8 @@ class ResearchLineageBuilder:
                     "source_type": dataset.source_type,
                     "symbols": len(dataset.symbols),
                     "frequency": dataset.frequency,
+                    "family_id": dataset.dataset_family_id,
+                    "revision": dataset.revision,
                 },
             )
         )

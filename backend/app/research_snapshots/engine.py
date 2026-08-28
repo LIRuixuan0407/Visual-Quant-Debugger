@@ -428,6 +428,8 @@ class ResearchSnapshotEngine:
             content_fingerprint="sha256:" + "0" * 64,
             lineage=SnapshotLineage(
                 dataset_id=hypothesis.dataset_id,
+                dataset_family_id=dataset.dataset_family_id,
+                dataset_revision=dataset.revision,
                 universe_ids=universe_ids,
                 corporate_action_dataset_ids=corporate_action_dataset_ids,
                 factor_research_ids=lineage.factor_research_ids,
