@@ -402,9 +402,7 @@ def test_runtime_uses_point_in_time_universe_for_strategy_visibility() -> None:
             UniverseSnapshot(
                 effective_date=NOW + timedelta(days=1),
                 symbols=("NEW",),
-                membership_provenance=(
-                    _provenance("NEW", NOW + timedelta(days=1)),
-                ),
+                membership_provenance=(_provenance("NEW", NOW + timedelta(days=1)),),
             ),
         ),
         survivorship_bias_free=True,

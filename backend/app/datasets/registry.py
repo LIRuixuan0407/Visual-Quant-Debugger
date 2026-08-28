@@ -135,9 +135,8 @@ class DatasetRegistry:
                         revision_count=len(revisions),
                     )
                 )
-            elif (
-                family.latest_dataset_id != latest.dataset_id
-                or family.revision_count != len(revisions)
+            elif family.latest_dataset_id != latest.dataset_id or family.revision_count != len(
+                revisions
             ):
                 self.family_repository.save(
                     family.model_copy(
@@ -539,9 +538,7 @@ class DatasetRegistry:
                     "This exact provider content is already registered in another Dataset Family"
                 )
             return existing
-        family_id, revision, parent_dataset_id, family = self._family_context(
-            dataset_family_id
-        )
+        family_id, revision, parent_dataset_id, family = self._family_context(dataset_family_id)
         definition = DatasetDefinition(
             dataset_id=dataset_id,
             name=(

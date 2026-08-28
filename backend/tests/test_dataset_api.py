@@ -110,9 +110,7 @@ def test_dataset_family_history_and_compare_api(
     registry = DatasetRegistry(tmp_path)
     monkeypatch.setattr(datasets_api, "dataset_registry", registry)
 
-    first_preview = registry.preview(
-        "prices.csv", b"date,ticker,price\n2025-01-01,AAPL,100\n"
-    )
+    first_preview = registry.preview("prices.csv", b"date,ticker,price\n2025-01-01,AAPL,100\n")
     first = registry.commit(
         datasets_api.DatasetImportRequest(
             preview_id=first_preview.preview_id,

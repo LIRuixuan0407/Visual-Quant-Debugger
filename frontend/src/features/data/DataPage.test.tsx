@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, expect, test, vi } from 'vitest'
 
 import type { DatasetDefinition } from '../../types/dataset'
@@ -36,7 +36,7 @@ test('lists datasets, previews CSV mapping, declares timezone, and imports quali
   })
   const onImported = vi.fn()
   render(<DataPage datasets={[dataset]} onImported={onImported} />)
-  expect(screen.getByText('Existing research.csv')).toBeInTheDocument()
+  expect(screen.getAllByText('Existing research.csv')).not.toHaveLength(0)
   expect(await screen.findByText('100')).toBeInTheDocument()
   const timestamp = screen.getByText('Jan 01, 2025 · 00:00 UTC')
   expect(timestamp).toHaveAttribute('datetime', '2025-01-01T00:00:00Z')
@@ -245,7 +245,9 @@ test('shows immutable revision history, factual comparison, and explicit usages'
 
   fireEvent.click(screen.getByRole('button', { name: 'Compare' }))
   expect(await screen.findByRole('heading', { name: 'Revision Compare' })).toBeInTheDocument()
-  expect(screen.getByText('-1')).toBeInTheDocument()
+  const comparisonSection = screen.getByRole('heading', { name: 'Revision Compare' }).closest('section')
+  expect(comparisonSection).not.toBeNull()
+  expect(within(comparisonSection as HTMLElement).getAllByText('-1')).toHaveLength(2)
   expect(screen.getByText('End changed')).toBeInTheDocument()
   expect(screen.getByText('Synchronized bars delta')).toBeInTheDocument()
   expect(screen.getByText('Data-view changes')).toBeInTheDocument()

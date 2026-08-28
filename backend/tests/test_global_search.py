@@ -260,9 +260,7 @@ def test_document_cache_reuses_results_and_invalidates_from_source_signature(
 
 def test_dataset_search_distinguishes_family_revisions_and_latest(tmp_path: Path) -> None:
     service = _service(tmp_path)
-    preview = service.datasets.preview(
-        "family.csv", b"date,ticker,price\n2025-01-01,AAPL,100\n"
-    )
+    preview = service.datasets.preview("family.csv", b"date,ticker,price\n2025-01-01,AAPL,100\n")
     r1 = service.datasets.commit(
         DatasetImportRequest(
             preview_id=preview.preview_id,

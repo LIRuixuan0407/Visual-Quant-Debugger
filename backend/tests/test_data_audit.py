@@ -610,9 +610,7 @@ def test_run_audit_includes_universe_and_corporate_action_evidence(tmp_path: Pat
     assert _finding(audit, "CORPORATE_ACTION_TRACE_CONSISTENCY").severity == "PASS"
     assert audit.source_fingerprints[f"universe:{universe.universe_id}"].startswith("sha256:")
     assert (
-        audit.source_fingerprints[
-            f"corporate_action_dataset:{actions.corporate_action_dataset_id}"
-        ]
+        audit.source_fingerprints[f"corporate_action_dataset:{actions.corporate_action_dataset_id}"]
         == actions.content_fingerprint
     )
 

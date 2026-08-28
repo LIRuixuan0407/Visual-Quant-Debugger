@@ -454,9 +454,7 @@ def test_explicit_strategy_run_mismatch_preserves_edge_and_marks_integrity(
 def test_dataset_revisions_remain_distinct_lineage_nodes(tmp_path: Path) -> None:
     assets = _assets(tmp_path)
     datasets = assets[5]
-    preview = datasets.preview(
-        "lineage.csv", b"date,ticker,price\n2025-01-01,AAPL,100\n"
-    )
+    preview = datasets.preview("lineage.csv", b"date,ticker,price\n2025-01-01,AAPL,100\n")
     r1 = datasets.commit(
         DatasetImportRequest(
             preview_id=preview.preview_id,

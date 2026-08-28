@@ -43,8 +43,7 @@ def compare_datasets(left: DatasetDefinition, right: DatasetDefinition) -> Datas
         left_dataset_id=left.dataset_id,
         right_dataset_id=right.dataset_id,
         same_family=(
-            left.dataset_family_id is not None
-            and left.dataset_family_id == right.dataset_family_id
+            left.dataset_family_id is not None and left.dataset_family_id == right.dataset_family_id
         ),
         fingerprint_changed=left.content_fingerprint != right.content_fingerprint,
         symbols_added=tuple(sorted(set(right.symbols) - set(left.symbols))),
