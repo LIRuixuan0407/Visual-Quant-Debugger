@@ -70,7 +70,10 @@ def test_new_dataset_creates_family_and_explicit_revision_chain(tmp_path: Path) 
     restarted = DatasetRegistry(tmp_path)
     restarted_history = restarted.family_history(r1.dataset_family_id)
     assert restarted_history is not None
-    assert [item.dataset_id for item in restarted_history.revisions] == [r1.dataset_id, r2.dataset_id]
+    assert [item.dataset_id for item in restarted_history.revisions] == [
+        r1.dataset_id,
+        r2.dataset_id,
+    ]
     assert restarted_history.family.latest_dataset_id == r2.dataset_id
     assert restarted_history.family.revision_count == 2
 
@@ -85,7 +88,9 @@ def test_same_fingerprint_does_not_create_fake_revision(tmp_path: Path) -> None:
     assert registry.get_family(r1.dataset_family_id or "").revision_count == 1
 
 
-def test_csv_revision_requires_explicit_family_and_never_guesses_from_filename(tmp_path: Path) -> None:
+def test_csv_revision_requires_explicit_family_and_never_guesses_from_filename(
+    tmp_path: Path,
+) -> None:
     registry = DatasetRegistry(tmp_path)
     first = _import_csv(
         registry,

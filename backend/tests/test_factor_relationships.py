@@ -143,7 +143,9 @@ def test_factor_relationships_router_is_registered_in_native_api() -> None:
     assert "/api/factor-relationships/{relationship_id}" in paths
 
 
-def test_factor_relationships_separates_correlations_and_builds_rolling_series(tmp_path: Path) -> None:
+def test_factor_relationships_separates_correlations_and_builds_rolling_series(
+    tmp_path: Path,
+) -> None:
     engine, _, research_ids = _assets(tmp_path)
     record = engine.create(_request(research_ids))
 
