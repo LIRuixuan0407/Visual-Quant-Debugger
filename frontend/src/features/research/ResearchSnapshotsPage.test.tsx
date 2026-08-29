@@ -209,3 +209,68 @@ it('compares frozen experiment context, treatment, results, and Run / Trace beha
   expect(onOpenRuns).toHaveBeenCalledWith('run-fedcba9876543210fedcba98')
   expect(onOpenReplay).toHaveBeenCalledWith('trace-b')
 })
+
+it('validates bundle conflicts before importing and reports unavailable dependencies', async () => {
+  window.localStorage.setItem('vqd-language', 'en')
+  const preview = {
+    preview_id: 'bundle-preview-0123456789abcdef0123',
+    manifest: {
+      bundle_format_version: '1.0',
+      bundle_id: 'research-bundle-0123456789abcdef01234567',
+      created_at: '2026-08-29T09:00:00Z',
+      app_version: '0.30.0',
+      mode: 'REFERENCE_ONLY',
+      root_objects: [{ kind: 'SNAPSHOT', object_id: snapshot.snapshot_id }],
+      objects: [
+        { kind: 'SNAPSHOT', object_id: snapshot.snapshot_id, fingerprint: snapshot.content_fingerprint, path: `objects/snapshots/${snapshot.snapshot_id}.json`, portable: true },
+        { kind: 'DATASET', object_id: 'dataset-real', fingerprint: 'sha256:dataset', path: 'objects/datasets/dataset-real/metadata.json', portable: false },
+        { kind: 'RUN', object_id: snapshot.lineage.run_ids[0], fingerprint: 'sha256:run', path: `objects/runs/${snapshot.lineage.run_ids[0]}/manifest.json`, portable: false },
+      ],
+      object_count: 3,
+      frozen_artifact_count: 8,
+      checksums: {},
+      external_dependencies: [],
+    },
+    valid: true,
+    conflicts: [
+      { kind: 'SNAPSHOT', object_id: snapshot.snapshot_id, status: 'REUSE', detail: 'Same Snapshot ID and content fingerprint already exist; reuse is safe.' },
+      { kind: 'DATASET', object_id: 'dataset-real', status: 'UNAVAILABLE', detail: 'Dataset rows are not embedded in this bundle and are not available locally.' },
+      { kind: 'RUN', object_id: snapshot.lineage.run_ids[0], status: 'UNAVAILABLE', detail: 'Run replay artifacts are incomplete; missing trace.json' },
+    ],
+    external_dependencies: [
+      { kind: 'DATASET', object_id: 'dataset-real', reason: 'Dataset rows are not embedded in this bundle and are not available locally.' },
+    ],
+    errors: [],
+  }
+  const fetchMock = vi.fn((input: string | URL | Request) => {
+    const url = String(input)
+    let body: unknown
+    if (url === '/api/research-snapshots') body = [summary]
+    else if (url === '/api/hypotheses') body = [hypothesis]
+    else if (url === '/api/dataset-families') body = []
+    else if (url === '/api/research-bundles/preview') body = preview
+    else if (url.startsWith('/api/research-bundles/import/')) body = { bundle_id: preview.manifest.bundle_id, imported: [], reused: [`SNAPSHOT:${snapshot.snapshot_id}`], unavailable: ['DATASET:dataset-real', `RUN:${snapshot.lineage.run_ids[0]}`] }
+    else body = snapshot
+    return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+  })
+  vi.stubGlobal('fetch', fetchMock)
+
+  render(<I18nProvider><ResearchSnapshotsPage onOpenRuns={() => undefined} onOpenReplay={() => undefined} /></I18nProvider>)
+
+  const fileInput = await screen.findByLabelText('Bundle file')
+  const file = new File(['bundle'], 'research.vqd-bundle.zip', { type: 'application/zip' })
+  fireEvent.change(fileInput, { target: { files: [file] } })
+
+  expect(await screen.findByRole('heading', { name: preview.manifest.bundle_id })).toBeInTheDocument()
+  expect(screen.getByText('Bundle Contents')).toBeInTheDocument()
+  expect(screen.getByText(/Checksum inventory/)).toBeInTheDocument()
+  expect(screen.getByText('Unavailable dependencies')).toBeInTheDocument()
+  expect(screen.getAllByText('UNAVAILABLE').length).toBeGreaterThan(0)
+
+  fireEvent.click(screen.getByRole('button', { name: 'Import validated Bundle' }))
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+    `/api/research-bundles/import/${preview.preview_id}`,
+    { method: 'POST' },
+  ))
+  expect(await screen.findByText(/Bundle import complete/)).toBeInTheDocument()
+})

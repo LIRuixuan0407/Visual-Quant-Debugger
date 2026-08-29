@@ -140,3 +140,25 @@ test('translates attribution labels and evidence boundaries in Chinese mode', ()
   expect(screen.getByText('已记录行情事件：42')).toBeInTheDocument()
   expect(screen.getByText('已记录费用在参考运行与虚拟盘之间存在差异')).toBeInTheDocument()
 })
+
+function ResearchBundleTranslations() {
+  const { tr } = useI18n()
+  return <div>
+    <span>{tr('Research Bundle')}</span>
+    <span>{tr('Import Preview')}</span>
+    <span>{tr('Bundle Contents')}</span>
+    <span>{tr('Checksum inventory')}</span>
+    <span>{tr('Immutable research record can be imported.')}</span>
+    <span>{tr('Any Python source carried by a Bundle is treated as inert evidence. Bundle import never executes or automatically registers custom code.')}</span>
+  </div>
+}
+
+test('translates Research Bundle portability and safety boundaries in Chinese mode', () => {
+  render(<I18nProvider><ResearchBundleTranslations /></I18nProvider>)
+  expect(screen.getByText('研究包')).toBeInTheDocument()
+  expect(screen.getByText('导入预览')).toBeInTheDocument()
+  expect(screen.getByText('研究包内容')).toBeInTheDocument()
+  expect(screen.getByText('校验和清单')).toBeInTheDocument()
+  expect(screen.getByText('可以导入这份不可变研究记录。')).toBeInTheDocument()
+  expect(screen.getByText(/绝不会执行或自动注册自定义代码/)).toBeInTheDocument()
+})

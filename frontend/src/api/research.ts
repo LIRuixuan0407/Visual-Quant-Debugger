@@ -35,3 +35,34 @@ export async function getHypothesisIntegrity(id: string): Promise<HypothesisInte
 
 export async function getResearchWorkspaces(): Promise<ResearchWorkspaceSummary[]> { return readJson(await fetch('/api/research-workspaces'), 'GET /api/research-workspaces') as Promise<ResearchWorkspaceSummary[]> }
 export async function getResearchWorkspace(id: string): Promise<ResearchWorkspace> { return readJson(await fetch(`/api/research-workspaces/${encodeURIComponent(id)}`), 'GET research workspace') as Promise<ResearchWorkspace> }
+
+export async function exportResearchBundle(input: { mode: import('../types/research').ResearchBundleMode; root_objects: import('../types/research').ResearchBundleRootObject[] }): Promise<{ blob: Blob; filename: string }> {
+  const response = await fetch('/api/research-bundles/export', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  })
+  if (!response.ok) {
+    await readJson(response, 'POST /api/research-bundles/export')
+    throw new Error('Research Bundle export failed')
+  }
+  const disposition = response.headers.get('Content-Disposition') ?? ''
+  const match = /filename="([^"]+)"/.exec(disposition)
+  return { blob: await response.blob(), filename: match?.[1] ?? 'research-bundle.vqd-bundle.zip' }
+}
+
+export async function previewResearchBundle(file: File): Promise<import('../types/research').ResearchBundleImportPreview> {
+  const response = await fetch('/api/research-bundles/preview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/zip' },
+    body: file,
+  })
+  return readJson(response, 'POST /api/research-bundles/preview') as Promise<import('../types/research').ResearchBundleImportPreview>
+}
+
+export async function importResearchBundle(previewId: string): Promise<import('../types/research').ResearchBundleImportResult> {
+  return readJson(
+    await fetch(`/api/research-bundles/import/${encodeURIComponent(previewId)}`, { method: 'POST' }),
+    'POST research bundle import',
+  ) as Promise<import('../types/research').ResearchBundleImportResult>
+}

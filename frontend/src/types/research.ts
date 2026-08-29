@@ -186,3 +186,26 @@ export interface ResearchWorkspace {
   next_action: WorkspaceNextAction
   disclosure: string
 }
+
+export type ResearchBundleMode = 'REFERENCE_ONLY' | 'PORTABLE'
+export type ResearchBundleObjectKind = 'SNAPSHOT' | 'DATASET' | 'UNIVERSE' | 'CORPORATE_ACTION_DATASET' | 'FACTOR_RESEARCH' | 'FACTOR_RELATIONSHIP' | 'WALK_FORWARD' | 'HYPOTHESIS' | 'PORTFOLIO_RESEARCH' | 'RUN' | 'DRIFT_REPORT' | 'ATTRIBUTION_REPORT'
+export type ResearchBundleConflictStatus = 'IMPORT' | 'REUSE' | 'REJECT' | 'UNAVAILABLE'
+export interface ResearchBundleRootObject { kind: 'SNAPSHOT' | 'RUN'; object_id: string }
+export interface ResearchBundleObject { kind: ResearchBundleObjectKind; object_id: string; fingerprint: string; path: string; portable: boolean }
+export interface ResearchBundleExternalDependency { kind: string; object_id: string; reason: string }
+export interface ResearchBundleManifest {
+  bundle_format_version: '1.0'
+  bundle_id: string
+  created_at: string
+  app_version: string
+  mode: ResearchBundleMode
+  root_objects: ResearchBundleRootObject[]
+  objects: ResearchBundleObject[]
+  object_count: number
+  frozen_artifact_count: number
+  checksums: Record<string, string>
+  external_dependencies: ResearchBundleExternalDependency[]
+}
+export interface ResearchBundleConflict { kind: ResearchBundleObjectKind; object_id: string; status: ResearchBundleConflictStatus; detail: string }
+export interface ResearchBundleImportPreview { preview_id: string; manifest: ResearchBundleManifest; valid: boolean; conflicts: ResearchBundleConflict[]; external_dependencies: ResearchBundleExternalDependency[]; errors: string[] }
+export interface ResearchBundleImportResult { bundle_id: string; imported: string[]; reused: string[]; unavailable: string[] }

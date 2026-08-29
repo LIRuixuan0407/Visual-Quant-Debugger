@@ -3,9 +3,12 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   compareResearchSnapshots,
   createResearchSnapshot,
+  exportResearchBundle,
   getHypotheses,
   getResearchSnapshot,
   getResearchSnapshots,
+  importResearchBundle,
+  previewResearchBundle,
 } from '../../api/research'
 import { getDatasetFamilies } from '../../api/datasets'
 import { useI18n } from '../../i18n/I18nProvider'
@@ -15,6 +18,9 @@ import type {
   FrozenArtifact,
   ResearchHypothesis,
   ResearchSnapshot,
+  ResearchBundleImportPreview,
+  ResearchBundleImportResult,
+  ResearchBundleMode,
   ResearchSnapshotSummary,
   SnapshotPeriod,
 } from '../../types/research'
@@ -138,7 +144,20 @@ export default function ResearchSnapshotsPage({
   const [compareIds, setCompareIds] = useState<string[]>([])
   const [comparison, setComparison] = useState<ExperimentComparisonReport | null>(null)
   const [datasetFamilies, setDatasetFamilies] = useState<DatasetFamily[]>([])
+  const [bundleMode, setBundleMode] = useState<ResearchBundleMode>('REFERENCE_ONLY')
+  const [bundleBusy, setBundleBusy] = useState(false)
+  const [bundlePreview, setBundlePreview] = useState<ResearchBundleImportPreview | null>(null)
+  const [bundleResult, setBundleResult] = useState<ResearchBundleImportResult | null>(null)
+  const [bundleFilename, setBundleFilename] = useState('')
   const [error, setError] = useState<string | null>(null)
+
+  function bundleMessage(value: string) {
+    const missingPrefix = 'Run replay artifacts are incomplete; missing '
+    if (value.startsWith(missingPrefix)) {
+      return `${tr('Run replay artifacts are incomplete; missing')} ${value.slice(missingPrefix.length)}`
+    }
+    return tr(value)
+  }
 
   const eligible = useMemo(() => hypotheses.filter((item) => (
     item.lineage.portfolio_research_id != null
@@ -221,6 +240,58 @@ export default function ResearchSnapshotsPage({
     }
   }
 
+  async function exportBundle() {
+    if (snapshot == null) return
+    setBundleBusy(true)
+    setError(null)
+    try {
+      const exported = await exportResearchBundle({
+        mode: bundleMode,
+        root_objects: [{ kind: 'SNAPSHOT', object_id: snapshot.snapshot_id }],
+      })
+      const href = URL.createObjectURL(exported.blob)
+      const anchor = document.createElement('a')
+      anchor.href = href
+      anchor.download = exported.filename
+      anchor.click()
+      URL.revokeObjectURL(href)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setBundleBusy(false)
+    }
+  }
+
+  async function previewBundle(file: File | null) {
+    if (file == null) return
+    setBundleBusy(true)
+    setBundleFilename(file.name)
+    setBundlePreview(null)
+    setBundleResult(null)
+    setError(null)
+    try { setBundlePreview(await previewResearchBundle(file)) }
+    catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setBundleBusy(false) }
+  }
+
+  async function commitBundleImport() {
+    if (bundlePreview == null || !bundlePreview.valid) return
+    setBundleBusy(true)
+    setError(null)
+    try {
+      const result = await importResearchBundle(bundlePreview.preview_id)
+      setBundleResult(result)
+      const rows = await getResearchSnapshots()
+      setSummaries(rows)
+      const importedSnapshot = result.imported.find((item) => item.startsWith('SNAPSHOT:'))
+      if (importedSnapshot) setSnapshot(await getResearchSnapshot(importedSnapshot.slice('SNAPSHOT:'.length)))
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason))
+    } finally {
+      setBundleBusy(false)
+    }
+  }
+
   function toggleCompare(id: string) {
     setCompareIds((current) => current.includes(id) ? current.filter((item) => item !== id) : current.length < 4 ? [...current, id] : current)
     setComparison(null)
@@ -275,6 +346,35 @@ export default function ResearchSnapshotsPage({
       </aside>
 
       <div className="snapshot-stack">
+        <section className="workspace-panel research-bundle-panel">
+          <div className="section-heading"><div><span className="section-kicker">{tr('Portable research archive')}</span><h2>{tr('Research Bundle')}</h2></div><span>{tr('Validate before import')}</span></div>
+          <div className="research-bundle-grid">
+            <div className="research-bundle-export">
+              <h3>{tr('Export selected Snapshot')}</h3>
+              <p>{tr('REFERENCE_ONLY preserves exact object references. PORTABLE also embeds Dataset rows and replay artifacts required for local reproduction.')}</p>
+              <label><span>{tr('Bundle portability')}</span><select value={bundleMode} onChange={(event) => setBundleMode(event.target.value as ResearchBundleMode)}><option value="REFERENCE_ONLY">REFERENCE_ONLY</option><option value="PORTABLE">PORTABLE</option></select></label>
+              <button className="primary-button" disabled={bundleBusy || snapshot == null} onClick={() => void exportBundle()}>{tr(bundleBusy ? 'Working…' : 'Export Research Bundle')}</button>
+            </div>
+            <div className="research-bundle-import">
+              <h3>{tr('Import Research Bundle')}</h3>
+              <p>{tr('Upload first to validate checksums, inspect dependencies, and detect immutable ID conflicts. Nothing is imported until you confirm the preview.')}</p>
+              <label className="research-bundle-file"><span>{tr('Bundle file')}</span><input aria-label={tr('Bundle file')} type="file" accept=".zip,.vqd-bundle.zip,application/zip" onChange={(event) => void previewBundle(event.target.files?.[0] ?? null)} /></label>
+              {bundleFilename && <small>{bundleFilename}</small>}
+            </div>
+          </div>
+          {bundlePreview && <div className="research-bundle-preview">
+            <div className="section-heading"><div><span className="section-kicker">{tr('Import Preview')}</span><h3>{bundlePreview.manifest.bundle_id}</h3></div><b className={bundlePreview.valid ? 'same' : 'different'}>{tr(bundlePreview.valid ? 'VALID' : 'CONFLICT')}</b></div>
+            <div className="research-bundle-summary"><span>{tr('Mode')} · <strong>{bundlePreview.manifest.mode}</strong></span><span>{tr('Objects')} · <strong>{bundlePreview.manifest.object_count}</strong></span><span>{tr('Frozen artifacts')} · <strong>{bundlePreview.manifest.frozen_artifact_count}</strong></span><span>{tr('Checksums')} · <strong>{Object.keys(bundlePreview.manifest.checksums).length}</strong></span><span>{tr('External dependencies')} · <strong>{bundlePreview.external_dependencies.length}</strong></span></div>
+            <h4>{tr('Bundle Contents')}</h4>
+            <div className="research-bundle-conflicts">{bundlePreview.conflicts.map((item) => <article key={`${item.kind}:${item.object_id}`}><span>{tr(item.kind)}</span><code>{shortId(item.object_id)}</code><b className={item.status.toLowerCase()}>{tr(item.status)}</b><small>{bundleMessage(item.detail)}</small></article>)}</div>
+            <details className="research-bundle-checksums"><summary>{tr('Checksum inventory')} · {Object.keys(bundlePreview.manifest.checksums).length}</summary>{Object.entries(bundlePreview.manifest.checksums).map(([path, checksum]) => <p key={path}><code>{path}</code><code title={checksum}>{shortHash(checksum)}</code></p>)}</details>
+            {bundlePreview.external_dependencies.length > 0 && <div className="research-bundle-dependencies"><h4>{tr('Unavailable dependencies')}</h4>{bundlePreview.external_dependencies.map((item, index) => <p key={`${item.kind}:${item.object_id}:${index}`}><strong>{tr(item.kind)}</strong> · <code>{shortId(item.object_id)}</code> · {bundleMessage(item.reason)}</p>)}</div>}
+            <button className="primary-button" disabled={bundleBusy || !bundlePreview.valid} onClick={() => void commitBundleImport()}>{tr(bundleBusy ? 'Working…' : 'Import validated Bundle')}</button>
+          </div>}
+          {bundleResult && <p className="research-bundle-result">{tr('Bundle import complete')} · {bundleResult.imported.length} {tr('imported')} · {bundleResult.reused.length} {tr('reused')} · {bundleResult.unavailable.length} {tr('unavailable')}</p>}
+          <p className="workspace-disclosure">{tr('Any Python source carried by a Bundle is treated as inert evidence. Bundle import never executes or automatically registers custom code.')}</p>
+        </section>
+
         <section className="workspace-panel snapshot-builder">
           <div className="section-heading"><div><span className="section-kicker">{tr('Freeze completed research')}</span><h2>{tr('Create immutable Snapshot')}</h2></div><span>{tr('Backend verified')}</span></div>
           <p>{tr('Only hypotheses with a Portfolio, Native Strategy, and matched Run / Trace can be frozen.')}</p>

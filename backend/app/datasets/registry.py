@@ -467,6 +467,135 @@ class DatasetRegistry:
                 )
         self._write_metadata(target / "metadata.json", definition)
 
+    def import_exact(
+        self, definition: DatasetDefinition, data_csv: bytes | None
+    ) -> DatasetDefinition:
+        existing = self.get(definition.dataset_id)
+        if existing is not None:
+            if existing == definition:
+                return existing
+            if existing.content_fingerprint == definition.content_fingerprint:
+                return existing
+            raise DatasetValidationError(
+                f"Dataset '{definition.dataset_id}' already exists with different content"
+            )
+        if definition.dataset_id == "pairs-sample-v1":
+            built_in = self._built_in_definition()
+            if built_in.content_fingerprint != definition.content_fingerprint:
+                raise DatasetValidationError(
+                    "Built-in Dataset fingerprint does not match this bundle"
+                )
+            return built_in
+        if data_csv is None:
+            raise DatasetValidationError(
+                f"Dataset '{definition.dataset_id}' rows are required for portable import"
+            )
+
+        columns, raw_rows = self._read_csv(data_csv)
+        expected_columns = ("timestamp", "symbol", *definition.fields)
+        if columns != expected_columns:
+            raise DatasetValidationError(
+                f"Dataset '{definition.dataset_id}' canonical CSV columns do not match metadata"
+            )
+        rows: list[_NormalizedRow] = []
+        for index, raw in enumerate(raw_rows):
+            timestamp = _parse_datetime(raw["timestamp"], index + 2)
+            if timestamp.tzinfo is None or timestamp.utcoffset() is None:
+                raise DatasetValidationError("Portable Dataset timestamps must include a timezone")
+            fields = {
+                field: float(raw[field])
+                for field in definition.fields
+                if raw.get(field, "").strip()
+            }
+            rows.append(
+                _NormalizedRow(
+                    original_index=index,
+                    timestamp=timestamp.astimezone(UTC),
+                    symbol=raw["symbol"].strip(),
+                    fields=fields,
+                )
+            )
+        rows.sort(key=lambda item: (item.timestamp, item.symbol))
+        fingerprint = f"sha256:{hashlib.sha256(self._semantic_content(rows).encode()).hexdigest()}"
+        expected_dataset_id = f"dataset-{fingerprint.removeprefix('sha256:')[:16]}"
+        if definition.dataset_id != expected_dataset_id:
+            raise DatasetValidationError(
+                f"Dataset '{definition.dataset_id}' ID does not match its content fingerprint"
+            )
+        if fingerprint != definition.content_fingerprint:
+            raise DatasetValidationError(
+                f"Dataset '{definition.dataset_id}' rows do not match its content fingerprint"
+            )
+        if len(rows) != definition.row_count:
+            raise DatasetValidationError(
+                f"Dataset '{definition.dataset_id}' row count does not match its metadata"
+            )
+        symbols = tuple(sorted({row.symbol for row in rows}))
+        if symbols != definition.symbols:
+            raise DatasetValidationError(
+                f"Dataset '{definition.dataset_id}' symbols do not match its metadata"
+            )
+        timestamps_by_symbol = {
+            symbol: {row.timestamp for row in rows if row.symbol == symbol} for symbol in symbols
+        }
+        synchronized = (
+            len(set.intersection(*(timestamps_by_symbol[symbol] for symbol in symbols)))
+            if symbols
+            else 0
+        )
+        if synchronized != definition.synchronized_bar_count:
+            raise DatasetValidationError(
+                f"Dataset '{definition.dataset_id}' synchronized bar count does not match metadata"
+            )
+        if rows[0].timestamp != definition.start_time or rows[-1].timestamp != definition.end_time:
+            raise DatasetValidationError(
+                f"Dataset '{definition.dataset_id}' time range does not match its metadata"
+            )
+
+        family_id = definition.dataset_family_id
+        existing_family = None if family_id is None else self.family_repository.get(family_id)
+        if (
+            family_id is not None
+            and existing_family is None
+            and (definition.revision != 1 or definition.parent_dataset_id is not None)
+        ):
+            raise DatasetValidationError(
+                f"Dataset '{definition.dataset_id}' cannot create a family at revision "
+                f"{definition.revision}"
+            )
+        if existing_family is not None and definition.revision > existing_family.revision_count:
+            if definition.revision != existing_family.revision_count + 1:
+                raise DatasetValidationError(
+                    f"Dataset '{definition.dataset_id}' would create a gap in its revision chain"
+                )
+            if definition.parent_dataset_id != existing_family.latest_dataset_id:
+                raise DatasetValidationError(
+                    f"Dataset '{definition.dataset_id}' does not extend the local family head"
+                )
+
+        self._write_dataset(definition, rows)
+        if family_id is not None:
+            if existing_family is None:
+                self.family_repository.create(
+                    DatasetFamily(
+                        dataset_family_id=family_id,
+                        name=definition.name,
+                        created_at=definition.created_at,
+                        latest_dataset_id=definition.dataset_id,
+                        revision_count=definition.revision,
+                    )
+                )
+            elif definition.revision > existing_family.revision_count:
+                self.family_repository.save(
+                    existing_family.model_copy(
+                        update={
+                            "latest_dataset_id": definition.dataset_id,
+                            "revision_count": definition.revision,
+                        }
+                    )
+                )
+        return definition
+
     def commit_provider_bars(
         self,
         *,

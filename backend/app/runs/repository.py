@@ -277,6 +277,105 @@ class RunRepository:
                 raise RuntimeError(f"Run '{manifest.run_id}' was not in RUNNING state")
             connection.commit()
 
+    def import_completed(
+        self,
+        manifest: RunManifest,
+        artifacts: dict[str, bytes],
+        *,
+        annotations_json: bytes | None = None,
+    ) -> RunManifest:
+        if manifest.status == "RUNNING":
+            raise ArtifactIntegrityError("Portable import requires a finalized Run")
+        if self._exists(manifest.run_id):
+            existing = self.get_manifest(manifest.run_id)
+            if existing == manifest:
+                return existing
+            raise ArtifactIntegrityError(
+                f"Run '{manifest.run_id}' already exists with different content"
+            )
+
+        expected = {
+            "strategy.py": manifest.artifacts.strategy_source_sha256,
+            "trace.json": manifest.artifacts.trace_sha256,
+            "diagnostics.json": manifest.artifacts.diagnostics_sha256,
+            "pnl-autopsy.json": manifest.artifacts.pnl_autopsy_sha256,
+            "adapter-manifest.json": manifest.artifacts.adapter_manifest_sha256,
+            "market-events.jsonl": manifest.artifacts.recorded_market_events_sha256,
+            "runtime-consistency.json": manifest.artifacts.runtime_consistency_sha256,
+            "broker-events.jsonl": manifest.artifacts.broker_events_sha256,
+        }
+        for filename, fingerprint in expected.items():
+            if fingerprint is None:
+                continue
+            payload = artifacts.get(filename)
+            if payload is None:
+                raise ArtifactIntegrityError(
+                    f"Portable Run '{manifest.run_id}' is missing '{filename}'"
+                )
+            if sha256_bytes(payload) != fingerprint:
+                raise ArtifactIntegrityError(
+                    f"Portable Run '{manifest.run_id}' has a hash mismatch for '{filename}'"
+                )
+
+        target = self._run_directory(manifest.run_id)
+        target.mkdir(parents=True, exist_ok=False)
+        try:
+            for filename, payload in artifacts.items():
+                if filename not in expected:
+                    continue
+                self._atomic_write(target / filename, payload)
+            self._atomic_write(
+                target / "manifest.json", (manifest.model_dump_json(indent=2) + "\n").encode()
+            )
+            with self._connection() as connection:
+                self._insert_manifest(connection, manifest)
+                connection.execute(
+                    """
+                    UPDATE runs SET
+                        completed_at = ?, period_start = ?, period_end = ?,
+                        metrics_json = ?, trace_id = ?, runtime_json = ?
+                    WHERE run_id = ?
+                    """,
+                    (
+                        (
+                            None
+                            if manifest.completed_at is None
+                            else manifest.completed_at.isoformat()
+                        ),
+                        (
+                            None
+                            if manifest.period.start is None
+                            else manifest.period.start.isoformat()
+                        ),
+                        None if manifest.period.end is None else manifest.period.end.isoformat(),
+                        None
+                        if manifest.metrics is None
+                        else _json(manifest.metrics.model_dump(mode="json")),
+                        manifest.trace_id,
+                        _json(manifest.runtime.model_dump(mode="json")),
+                        manifest.run_id,
+                    ),
+                )
+                connection.commit()
+            self._verify_artifacts(manifest)
+            if annotations_json is not None:
+                annotations = RunAnnotations.model_validate_json(annotations_json)
+                self.update_annotations(
+                    manifest.run_id,
+                    AnnotationUpdate(
+                        display_name=annotations.display_name,
+                        note=annotations.note,
+                        tags=annotations.tags,
+                    ),
+                )
+        except Exception:
+            with self._connection() as connection:
+                connection.execute("DELETE FROM runs WHERE run_id = ?", (manifest.run_id,))
+                connection.commit()
+            shutil.rmtree(target, ignore_errors=True)
+            raise
+        return manifest
+
     def _manifest_path(self, run_id: str) -> Path:
         return self._run_directory(run_id) / "manifest.json"
 
