@@ -1345,7 +1345,7 @@ class ResearchLineageBuilder:
         self._add_runs()
         for hypothesis_record in self.hypotheses.list():
             self._add_hypothesis(hypothesis_record)
-        for snapshot_summary in self.snapshots.list():
+        for snapshot_summary in self.snapshots.list_available():
             snapshot = self.snapshots.get(snapshot_summary.snapshot_id)
             if snapshot is not None:
                 self._add_snapshot(snapshot)

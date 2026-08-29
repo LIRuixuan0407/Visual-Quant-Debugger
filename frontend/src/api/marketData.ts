@@ -1,5 +1,6 @@
 import { readJson } from './client'
 import type { DatasetDefinition, StockSecurity, StockSnapshot } from '../types/dataset'
+import { addCreatedObjectToCurrentWorkspace } from './workspaces'
 
 export async function searchStocks(query: string): Promise<StockSecurity[]> {
   const endpoint = `/api/market-data/stocks/search?q=${encodeURIComponent(query)}`
@@ -28,5 +29,7 @@ export async function saveHistoricalDataset(input: {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
   })
-  return readJson(response, 'POST /api/market-data/historical-datasets') as Promise<DatasetDefinition>
+  const created = await readJson(response, 'POST /api/market-data/historical-datasets') as DatasetDefinition
+  await addCreatedObjectToCurrentWorkspace('DATASET', created.dataset_id)
+  return created
 }

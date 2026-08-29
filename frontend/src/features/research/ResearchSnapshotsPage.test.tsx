@@ -249,7 +249,7 @@ it('validates bundle conflicts before importing and reports unavailable dependen
     else if (url === '/api/hypotheses') body = [hypothesis]
     else if (url === '/api/dataset-families') body = []
     else if (url === '/api/research-bundles/preview') body = preview
-    else if (url.startsWith('/api/research-bundles/import/')) body = { bundle_id: preview.manifest.bundle_id, imported: [], reused: [`SNAPSHOT:${snapshot.snapshot_id}`], unavailable: ['DATASET:dataset-real', `RUN:${snapshot.lineage.run_ids[0]}`] }
+    else if (url.startsWith('/api/research-bundles/import/')) body = { bundle_id: preview.manifest.bundle_id, imported: [], reused: [`SNAPSHOT:${snapshot.snapshot_id}`], unavailable: ['DATASET:dataset-real', `RUN:${snapshot.lineage.run_ids[0]}`], target_workspace_id: 'workspace-default' }
     else body = snapshot
     return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }))
   })
@@ -270,7 +270,7 @@ it('validates bundle conflicts before importing and reports unavailable dependen
   fireEvent.click(screen.getByRole('button', { name: 'Import validated Bundle' }))
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
     `/api/research-bundles/import/${preview.preview_id}`,
-    { method: 'POST' },
+    { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ target_workspace_id: 'workspace-default' }) },
   ))
   expect(await screen.findByText(/Bundle import complete/)).toBeInTheDocument()
 })

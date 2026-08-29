@@ -12,6 +12,7 @@ import {
 } from '../../api/research'
 import { getDatasetFamilies } from '../../api/datasets'
 import { useI18n } from '../../i18n/I18nProvider'
+import { useWorkspace } from '../workspaces/WorkspaceContext'
 import type { DatasetFamily } from '../../types/dataset'
 import type {
   ExperimentComparisonReport,
@@ -134,6 +135,7 @@ export default function ResearchSnapshotsPage({
   onOpenReplay,
 }: ResearchSnapshotsPageProps) {
   const { tr } = useI18n()
+  const { workspaces, currentWorkspace, refresh: refreshWorkspaces } = useWorkspace()
   const [summaries, setSummaries] = useState<ResearchSnapshotSummary[]>([])
   const [hypotheses, setHypotheses] = useState<ResearchHypothesis[]>([])
   const [snapshot, setSnapshot] = useState<ResearchSnapshot | null>(null)
@@ -149,7 +151,9 @@ export default function ResearchSnapshotsPage({
   const [bundlePreview, setBundlePreview] = useState<ResearchBundleImportPreview | null>(null)
   const [bundleResult, setBundleResult] = useState<ResearchBundleImportResult | null>(null)
   const [bundleFilename, setBundleFilename] = useState('')
+  const [targetWorkspaceId, setTargetWorkspaceId] = useState(currentWorkspace?.workspace_id ?? 'workspace-default')
   const [error, setError] = useState<string | null>(null)
+  const selectedTargetWorkspaceId = targetWorkspaceId || currentWorkspace?.workspace_id || workspaces.find((item) => item.archived_at === null)?.workspace_id || ''
 
   function bundleMessage(value: string) {
     const missingPrefix = 'Run replay artifacts are incomplete; missing '
@@ -275,12 +279,13 @@ export default function ResearchSnapshotsPage({
   }
 
   async function commitBundleImport() {
-    if (bundlePreview == null || !bundlePreview.valid) return
+    if (bundlePreview == null || !bundlePreview.valid || !selectedTargetWorkspaceId) return
     setBundleBusy(true)
     setError(null)
     try {
-      const result = await importResearchBundle(bundlePreview.preview_id)
+      const result = await importResearchBundle(bundlePreview.preview_id, selectedTargetWorkspaceId)
       setBundleResult(result)
+      await refreshWorkspaces()
       const rows = await getResearchSnapshots()
       setSummaries(rows)
       const importedSnapshot = result.imported.find((item) => item.startsWith('SNAPSHOT:'))
@@ -359,6 +364,7 @@ export default function ResearchSnapshotsPage({
               <h3>{tr('Import Research Bundle')}</h3>
               <p>{tr('Upload first to validate checksums, inspect dependencies, and detect immutable ID conflicts. Nothing is imported until you confirm the preview.')}</p>
               <label className="research-bundle-file"><span>{tr('Bundle file')}</span><input aria-label={tr('Bundle file')} type="file" accept=".zip,.vqd-bundle.zip,application/zip" onChange={(event) => void previewBundle(event.target.files?.[0] ?? null)} /></label>
+              <label><span>{tr('Target Workspace')}</span><select aria-label={tr('Target Workspace')} value={selectedTargetWorkspaceId} onChange={(event) => setTargetWorkspaceId(event.target.value)}>{workspaces.length === 0 && <option value="workspace-default">{tr('Default Workspace')}</option>}{workspaces.filter((item) => item.archived_at === null).map((item) => <option value={item.workspace_id} key={item.workspace_id}>{item.name}</option>)}</select></label>
               {bundleFilename && <small>{bundleFilename}</small>}
             </div>
           </div>
@@ -369,7 +375,7 @@ export default function ResearchSnapshotsPage({
             <div className="research-bundle-conflicts">{bundlePreview.conflicts.map((item) => <article key={`${item.kind}:${item.object_id}`}><span>{tr(item.kind)}</span><code>{shortId(item.object_id)}</code><b className={item.status.toLowerCase()}>{tr(item.status)}</b><small>{bundleMessage(item.detail)}</small></article>)}</div>
             <details className="research-bundle-checksums"><summary>{tr('Checksum inventory')} · {Object.keys(bundlePreview.manifest.checksums).length}</summary>{Object.entries(bundlePreview.manifest.checksums).map(([path, checksum]) => <p key={path}><code>{path}</code><code title={checksum}>{shortHash(checksum)}</code></p>)}</details>
             {bundlePreview.external_dependencies.length > 0 && <div className="research-bundle-dependencies"><h4>{tr('Unavailable dependencies')}</h4>{bundlePreview.external_dependencies.map((item, index) => <p key={`${item.kind}:${item.object_id}:${index}`}><strong>{tr(item.kind)}</strong> · <code>{shortId(item.object_id)}</code> · {bundleMessage(item.reason)}</p>)}</div>}
-            <button className="primary-button" disabled={bundleBusy || !bundlePreview.valid} onClick={() => void commitBundleImport()}>{tr(bundleBusy ? 'Working…' : 'Import validated Bundle')}</button>
+            <button className="primary-button" disabled={bundleBusy || !bundlePreview.valid || !selectedTargetWorkspaceId} onClick={() => void commitBundleImport()}>{tr(bundleBusy ? 'Working…' : 'Import validated Bundle')}</button>
           </div>}
           {bundleResult && <p className="research-bundle-result">{tr('Bundle import complete')} · {bundleResult.imported.length} {tr('imported')} · {bundleResult.reused.length} {tr('reused')} · {bundleResult.unavailable.length} {tr('unavailable')}</p>}
           <p className="workspace-disclosure">{tr('Any Python source carried by a Bundle is treated as inert evidence. Bundle import never executes or automatically registers custom code.')}</p>

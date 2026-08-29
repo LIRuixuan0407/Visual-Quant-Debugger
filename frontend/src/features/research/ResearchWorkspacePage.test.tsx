@@ -118,7 +118,7 @@ it('renders one Idea as a continuous seven-stage workspace using backend evidenc
 
   expect(await screen.findByRole('heading', { name: 'Research Workspace' })).toBeInTheDocument()
   expect(handlers.onIdeaChange).toHaveBeenCalledWith('hypothesis-idea-27')
-  expect(screen.getAllByText('Stable multi-factor idea').length).toBeGreaterThan(0)
+  expect((await screen.findAllByText('Stable multi-factor idea')).length).toBeGreaterThan(0)
   for (const stage of ['Data', 'Factor', 'Portfolio', 'Validation', 'Hypothesis', 'Strategy', 'Run']) {
     expect(screen.getByText(stage, { selector: '.workspace-stage-rail b' })).toBeInTheDocument()
   }

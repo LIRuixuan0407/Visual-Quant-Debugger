@@ -306,7 +306,7 @@ class ResearchWorkspaceEngine:
         if snapshot_ids is None:
             snapshot_ids = tuple(
                 item.snapshot_id
-                for item in self.snapshots.list()
+                for item in self.snapshots.list_available()
                 if item.hypothesis_id == record.hypothesis_id
             )
         explicit_sources = {*record.lineage.run_ids, *snapshot_ids}
@@ -369,7 +369,7 @@ class ResearchWorkspaceEngine:
 
     def list(self) -> tuple[ResearchWorkspaceSummary, ...]:
         snapshots_by_hypothesis: dict[str, list[str]] = {}
-        for snapshot in self.snapshots.list():
+        for snapshot in self.snapshots.list_available():
             snapshots_by_hypothesis.setdefault(snapshot.hypothesis_id, []).append(
                 snapshot.snapshot_id
             )

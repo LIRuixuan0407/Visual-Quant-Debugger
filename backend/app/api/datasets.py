@@ -14,6 +14,9 @@ from app.datasets import (
     dataset_registry,
 )
 from app.strategies.definition import get_strategy_definition
+from app.workspaces import WorkspaceNotFoundError
+
+from .workspaces import workspace_service
 
 router = APIRouter(prefix="/api", tags=["datasets"])
 
@@ -76,8 +79,21 @@ def compare_dataset_revisions(
 
 
 @router.get("/datasets", response_model=tuple[DatasetDefinition, ...])
-def list_datasets() -> tuple[DatasetDefinition, ...]:
-    return dataset_registry.list()
+def list_datasets(workspace_id: str | None = None) -> tuple[DatasetDefinition, ...]:
+    datasets = dataset_registry.list()
+    if workspace_id is None:
+        return datasets
+    try:
+        allowed = {
+            item.object_id
+            for item in workspace_service().memberships(workspace_id)
+            if item.object_type == "DATASET"
+        }
+    except WorkspaceNotFoundError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"Workspace '{exc.args[0]}' was not found"
+        ) from exc
+    return tuple(item for item in datasets if item.dataset_id in allowed)
 
 
 @router.get("/datasets/{dataset_id}", response_model=DatasetDefinition)

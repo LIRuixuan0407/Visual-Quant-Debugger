@@ -24,10 +24,23 @@ class ResearchLineageService:
         direction: LineageDirection = "BOTH",
         max_depth: int = 8,
         node_types: tuple[LineageNodeType, ...] = (),
+        workspace_members: frozenset[tuple[str, str]] | None = None,
     ) -> ResearchLineageGraph:
         if (root_type is None) != (root_id is None):
             raise ValueError("root_type and root_id must be provided together")
         complete = self.builder.build()
+        if root_type is not None and root_id is not None and workspace_members is not None:
+            roots_in_workspace = tuple(
+                node
+                for node in complete.nodes
+                if node.node_type == root_type
+                and (node.artifact_id == root_id or node.node_id == root_id)
+                and (node.node_type, node.artifact_id) in workspace_members
+            )
+            if not roots_in_workspace:
+                raise ValueError(
+                    f"Lineage root '{root_type}:{root_id}' is outside the selected Workspace"
+                )
         selected_ids = {node.node_id for node in complete.nodes}
         if root_type is not None and root_id is not None:
             roots = tuple(
@@ -62,7 +75,28 @@ class ResearchLineageService:
         if node_types:
             allowed = set(node_types)
             selected_ids &= {node.node_id for node in complete.nodes if node.node_type in allowed}
-        nodes = tuple(node for node in complete.nodes if node.node_id in selected_ids)
+        if workspace_members is not None and root_type is None:
+            selected_ids &= {
+                node.node_id
+                for node in complete.nodes
+                if (node.node_type, node.artifact_id) in workspace_members
+            }
+        nodes = tuple(
+            node.model_copy(
+                update={
+                    "metadata": {
+                        **node.metadata,
+                        "workspace_member": (
+                            (node.node_type, node.artifact_id) in workspace_members
+                        ),
+                    }
+                }
+            )
+            if workspace_members is not None
+            else node
+            for node in complete.nodes
+            if node.node_id in selected_ids
+        )
         edges = tuple(
             edge
             for edge in complete.edges

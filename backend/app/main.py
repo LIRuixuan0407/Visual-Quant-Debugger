@@ -9,11 +9,13 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api import router as replay_router
+from app.api.workspaces import workspace_service
 from app.paper import paper_store
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    workspace_service().ensure_default_workspace()
     await paper_store.service.start_recovered_tasks()
     yield
     await paper_store.service.shutdown()

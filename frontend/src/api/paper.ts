@@ -1,5 +1,6 @@
 import { readJson } from './client'
 import type { CreatePaperSessionInput, MarketDataProviderStatus, PaperAccount, PaperOperationalHealth, PaperOperationEvent, PaperRecoveryReport, PaperSessionSnapshot, PaperTrace } from '../types/paper'
+import { addCreatedObjectToCurrentWorkspace } from './workspaces'
 
 async function requestJson(endpoint: string, init?: RequestInit): Promise<unknown> {
   const response = await fetch(endpoint, init)
@@ -47,7 +48,9 @@ export async function createPaperAccount(name: string, initialCash: number): Pro
 
 export async function createPaperSession(input: CreatePaperSessionInput): Promise<PaperSessionSnapshot> {
   const endpoint = '/api/paper-sessions'
-  return requireSession(await requestJson(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) }), endpoint)
+  const created = requireSession(await requestJson(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input) }), endpoint)
+  await addCreatedObjectToCurrentWorkspace('PAPER_SESSION', created.session_id)
+  return created
 }
 
 export async function getPaperSession(sessionId: string): Promise<PaperSessionSnapshot> {
@@ -57,7 +60,9 @@ export async function getPaperSession(sessionId: string): Promise<PaperSessionSn
 
 export async function transitionPaperSession(sessionId: string, action: 'start' | 'pause' | 'resume' | 'stop'): Promise<PaperSessionSnapshot> {
   const endpoint = `/api/paper-sessions/${encodeURIComponent(sessionId)}/${action}`
-  return requireSession(await requestJson(endpoint, { method: 'POST' }), endpoint)
+  const updated = requireSession(await requestJson(endpoint, { method: 'POST' }), endpoint)
+  if (updated.research_run_id) await addCreatedObjectToCurrentWorkspace('RUN', updated.research_run_id)
+  return updated
 }
 
 export async function cancelPaperOrder(sessionId: string, orderId: string): Promise<PaperSessionSnapshot> {

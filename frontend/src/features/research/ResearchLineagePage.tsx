@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as
 
 import { getResearchLineage, getResearchLineageSummary } from '../../api/researchLineage'
 import { useI18n } from '../../i18n/I18nProvider'
+import { useWorkspace } from '../workspaces/WorkspaceContext'
 import type { LineageDirection, LineageEdge, LineageNode, LineageNodeType, ResearchLineageGraph, ResearchLineageSummary } from '../../types/researchLineage'
 
 const NODE_TYPES: LineageNodeType[] = ['DATASET', 'UNIVERSE', 'CORPORATE_ACTION_DATASET', 'FACTOR', 'FACTOR_RESEARCH', 'FACTOR_RELATIONSHIP', 'WALK_FORWARD', 'PORTFOLIO_RESEARCH', 'HYPOTHESIS', 'STRATEGY', 'RUN', 'TRACE', 'SNAPSHOT', 'FORWARD_SESSION', 'PAPER_SESSION', 'DRIFT_REPORT']
@@ -72,6 +73,7 @@ interface ResearchLineagePageProps { onOpenNode: (node: LineageNode) => void }
 
 export default function ResearchLineagePage({ onOpenNode }: ResearchLineagePageProps) {
   const { tr } = useI18n()
+  const { currentWorkspace } = useWorkspace()
   const [root, setRoot] = useState<LineageRoot | null>(queryRoot)
   const [direction, setDirection] = useState<LineageDirection>(queryDirection)
   const [maxDepth, setMaxDepth] = useState(queryDepth)
@@ -89,7 +91,7 @@ export default function ResearchLineagePage({ onOpenNode }: ResearchLineagePageP
     setLoading(true); setError(null)
     try {
       const [nextGraph, nextSummary] = await Promise.all([
-        getResearchLineage({ root_type: root?.type, root_id: root?.id, direction, max_depth: maxDepth }),
+        getResearchLineage({ root_type: root?.type, root_id: root?.id, direction, max_depth: maxDepth, workspace_id: currentWorkspace?.workspace_id }),
         getResearchLineageSummary(),
       ])
       setGraph(nextGraph); setSummary(nextSummary)
@@ -102,7 +104,7 @@ export default function ResearchLineagePage({ onOpenNode }: ResearchLineagePageP
       })
     } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setLoading(false) }
-  }, [direction, maxDepth, root])
+  }, [currentWorkspace, direction, maxDepth, root])
 
   useEffect(() => {
     const timer = window.setTimeout(() => void load(), 0)
@@ -213,8 +215,8 @@ export default function ResearchLineagePage({ onOpenNode }: ResearchLineagePageP
               if (!source || !target) return null
               return <path key={edge.edge_id} className={edgeClass(edge)} d={`M ${source.x + NODE_WIDTH} ${source.y + NODE_HEIGHT / 2} C ${source.x + NODE_WIDTH + 28} ${source.y + NODE_HEIGHT / 2}, ${target.x - 28} ${target.y + NODE_HEIGHT / 2}, ${target.x} ${target.y + NODE_HEIGHT / 2}`} />
             })}</svg>
-            {positioned.nodes.map((node) => <button key={node.node_id} className={`lineage-node ${node.node_type.toLowerCase()} ${node.status.toLowerCase()} ${nodeClass(node)}`} style={{ left: node.x, top: node.y }} title={`${node.node_type} · ${node.artifact_id}`} onClick={() => setSelectedId(node.node_id)} onMouseEnter={() => setHoveredId(node.node_id)} onMouseLeave={() => setHoveredId(null)}>
-              <span><b>{tr(node.node_type.replaceAll('_', ' '))}</b><em>{tr(node.status)}</em></span><strong>{node.label}</strong><code>{shortId(node.artifact_id)}</code>{node.revision != null && <small>r · {shortId(String(node.revision))}</small>}
+            {positioned.nodes.map((node) => <button key={node.node_id} className={`lineage-node ${node.node_type.toLowerCase()} ${node.status.toLowerCase()} ${node.metadata.workspace_member === false ? 'outside-workspace' : ''} ${nodeClass(node)}`} style={{ left: node.x, top: node.y }} title={`${node.node_type} · ${node.artifact_id}`} onClick={() => setSelectedId(node.node_id)} onMouseEnter={() => setHoveredId(node.node_id)} onMouseLeave={() => setHoveredId(null)}>
+              <span><b>{tr(node.node_type.replaceAll('_', ' '))}</b><em>{tr(node.status)}</em></span><strong>{node.label}</strong><code>{shortId(node.artifact_id)}</code>{node.metadata.workspace_member === false ? <small>{tr('Outside current Workspace')}</small> : node.revision != null && <small>r · {shortId(String(node.revision))}</small>}
             </button>)}
           </div>
         </div>}
@@ -225,6 +227,7 @@ export default function ResearchLineagePage({ onOpenNode }: ResearchLineagePageP
         {!selected && <p className="empty-copy">{tr('Select a node to inspect its recorded identity and edges.')}</p>}
         {selected && <>
           <div className={`lineage-inspector-status ${selected.status.toLowerCase()}`}><span>{tr(selected.node_type.replaceAll('_', ' '))}</span><b>{tr(selected.status)}</b></div>
+          {selected.metadata.workspace_member === false && <p className="lineage-workspace-boundary">{tr('Outside current Workspace')}</p>}
           <h3>{selected.label}</h3>
           <dl><div><dt>{tr('ID')}</dt><dd><code>{selected.artifact_id}</code></dd></div><div><dt>{tr('Revision')}</dt><dd><code>{displayValue(selected.revision)}</code></dd></div><div><dt>{tr('Created at')}</dt><dd>{dateTime(selected.created_at)}</dd></div><div><dt>{tr('Incoming edges')}</dt><dd>{incoming.length}</dd></div><div><dt>{tr('Outgoing edges')}</dt><dd>{outgoing.length}</dd></div></dl>
           {(selected.metadata.integrity_mismatch === true || (selected.metadata.integrity_status != null && selected.metadata.integrity_status !== 'PASS')) && <div className="lineage-integrity-warning"><strong>{tr('Integrity warning')}</strong><p>{selected.metadata.integrity_mismatch === true ? tr('The explicitly attached Run records another Strategy ID. The edge is preserved for inspection.') : `${tr('Research Integrity')} · ${tr(String(selected.metadata.integrity_status))}`}</p></div>}

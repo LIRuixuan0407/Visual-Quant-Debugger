@@ -112,5 +112,30 @@ class ResearchSnapshotRepository:
             for item in sorted(records, key=lambda value: value.created_at, reverse=True)
         )
 
+    def list_ids(self) -> tuple[str, ...]:
+        if not self.root.exists():
+            return ()
+        return tuple(
+            sorted(
+                path.parent.name
+                for path in self.root.glob("research-snapshot-*/snapshot.json")
+                if path.is_file()
+            )
+        )
+
+    def list_available(self) -> tuple[ResearchSnapshotSummary, ...]:
+        records: list[ResearchSnapshot] = []
+        for snapshot_id in self.list_ids():
+            try:
+                record = self.get(snapshot_id)
+            except SnapshotIntegrityError:
+                continue
+            if record is not None:
+                records.append(record)
+        return tuple(
+            self._summary(item)
+            for item in sorted(records, key=lambda value: value.created_at, reverse=True)
+        )
+
 
 research_snapshot_repository = ResearchSnapshotRepository()

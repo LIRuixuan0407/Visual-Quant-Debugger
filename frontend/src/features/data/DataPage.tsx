@@ -5,6 +5,7 @@ import { compareDatasets, getDatasetFamilies, getDatasetFamilyRevisions, getData
 import { getStockSnapshot, saveHistoricalDataset, searchStocks } from '../../api/marketData'
 import { getResearchLineage } from '../../api/researchLineage'
 import { useI18n } from '../../i18n/I18nProvider'
+import { useWorkspace } from '../workspaces/WorkspaceContext'
 import type { DatasetDefinition, DatasetFamily, DatasetPreview, DatasetRevisionDiff, StockSecurity, StockSnapshot } from '../../types/dataset'
 import type { LineageNode } from '../../types/researchLineage'
 import type { CorporateActionDataset, CreateCorporateActionDataset, CreateHistoricalUniverse, HistoricalUniverse } from '../../types/corporateAction'
@@ -25,6 +26,7 @@ interface DataPageProps {
 
 export default function DataPage({ datasets, onImported }: DataPageProps) {
   const { tr } = useI18n()
+  const { currentWorkspace } = useWorkspace()
   const requestedDatasetId = new URLSearchParams(window.location.search).get('dataset_id')
   const requestedActionId = new URLSearchParams(window.location.search).get('corporate_action_dataset_id')
   const requestedUniverseId = new URLSearchParams(window.location.search).get('universe_id')
@@ -118,11 +120,11 @@ export default function DataPage({ datasets, onImported }: DataPageProps) {
         })
         .catch(() => undefined)
     }
-    void getResearchLineage({ root_type: 'DATASET', root_id: selected.dataset_id, direction: 'DOWNSTREAM', max_depth: 8 })
+    void getResearchLineage({ root_type: 'DATASET', root_id: selected.dataset_id, direction: 'DOWNSTREAM', max_depth: 8, workspace_id: currentWorkspace?.workspace_id })
       .then((graph) => { if (active) setUsageNodes(graph.nodes.filter((node) => node.node_type !== 'DATASET')) })
       .catch(() => { if (active) setUsageNodes([]) })
     return () => { active = false }
-  }, [selected])
+  }, [currentWorkspace, selected])
 
   async function chooseFile(file: File | undefined) {
     if (!file) return

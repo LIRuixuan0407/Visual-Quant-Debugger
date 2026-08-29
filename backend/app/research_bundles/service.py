@@ -577,6 +577,15 @@ class ResearchBundleService:
             temporary.unlink(missing_ok=True)
             raise
 
+    def list_archives(self) -> tuple[str, ...]:
+        if not self.archive_root.exists():
+            return ()
+        return tuple(
+            path.stem
+            for path in sorted(self.archive_root.glob("research-bundle-*.zip"))
+            if BUNDLE_ID_PATTERN.fullmatch(path.stem)
+        )
+
     def _conflict(self, item: BundleObject, files: dict[str, bytes]) -> BundleConflict:
         if item.kind == "SNAPSHOT":
             existing_snapshot = self.snapshots.get(item.object_id)

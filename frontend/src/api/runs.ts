@@ -9,8 +9,10 @@ import type {
   StrategySourceArtifact,
 } from '../types/run'
 import { readJson } from './client'
+import { addCreatedObjectToCurrentWorkspace } from './workspaces'
 
 export interface RunFilters {
+  workspace_id?: string
   strategy_id?: string
   dataset_id?: string
   status?: RunStatus | ''
@@ -57,7 +59,9 @@ export async function deleteRun(runId: string): Promise<void> {
 
 export async function rerunExactRevision(runId: string): Promise<BacktestCreated> {
   const endpoint = `/api/runs/${encodeURIComponent(runId)}/rerun`
-  return readJson(await fetch(endpoint, { method: 'POST' }), `POST ${endpoint}`) as Promise<BacktestCreated>
+  const created = await readJson(await fetch(endpoint, { method: 'POST' }), `POST ${endpoint}`) as BacktestCreated
+  await addCreatedObjectToCurrentWorkspace('RUN', created.run_id)
+  return created
 }
 
 export async function compareRuns(runIds: string[]): Promise<RunComparisonReport> {
@@ -77,5 +81,7 @@ export async function validateRuns(backtestRunId: string, paperRunId: string): P
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ backtest_run_id: backtestRunId, paper_run_id: paperRunId }),
   })
-  return readJson(response, `POST ${endpoint}`) as Promise<RunValidationReport>
+  const created = await readJson(response, `POST ${endpoint}`) as RunValidationReport
+  await addCreatedObjectToCurrentWorkspace('ATTRIBUTION_REPORT', created.report_id)
+  return created
 }

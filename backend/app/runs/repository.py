@@ -512,6 +512,7 @@ class RunRepository:
         dataset_id: str | None = None,
         status: RunStatus | None = None,
         search: str | None = None,
+        run_ids: tuple[str, ...] | None = None,
     ) -> RunListResponse:
         predicates: list[str] = []
         values: list[object] = []
@@ -528,6 +529,12 @@ class RunRepository:
             predicates.append("(run_id LIKE ? OR display_name LIKE ? OR tags_json LIKE ?)")
             term = f"%{search}%"
             values.extend((term, term, term))
+        if run_ids is not None:
+            if not run_ids:
+                return RunListResponse(items=(), total=0, limit=limit, offset=offset)
+            placeholders = ",".join("?" for _ in run_ids)
+            predicates.append(f"run_id IN ({placeholders})")
+            values.extend(run_ids)
         where = "" if not predicates else " WHERE " + " AND ".join(predicates)
         with self._connection() as connection:
             total = int(
@@ -630,6 +637,14 @@ class RunRepository:
             return RunValidationReport.model_validate_json(path.read_bytes())
         except ValueError as exc:
             raise ArtifactIntegrityError(f"Validation report '{report_id}' is not valid") from exc
+
+    def list_validations(self) -> tuple[RunValidationReport, ...]:
+        if not self.validations_root.exists():
+            return ()
+        return tuple(
+            self.load_validation(path.stem)
+            for path in sorted(self.validations_root.glob("validation-*.json"))
+        )
 
     def strategy_source(self, run_id: str) -> StrategySourceArtifact:
         manifest = self.get_manifest(run_id)

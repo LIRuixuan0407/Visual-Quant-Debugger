@@ -40,7 +40,7 @@ def _engine() -> ResearchSnapshotEngine:
 
 @router.get("", response_model=tuple[ResearchSnapshotSummary, ...])
 def list_research_snapshots() -> tuple[ResearchSnapshotSummary, ...]:
-    return research_snapshot_repository.list()
+    return research_snapshot_repository.list_available()
 
 
 @router.post("/compare", response_model=ExperimentComparisonReport)

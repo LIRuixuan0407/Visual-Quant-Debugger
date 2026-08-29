@@ -26,6 +26,7 @@ from app.api.strategies import router as strategies_router
 from app.api.strategy_drift import router as strategy_drift_router
 from app.api.universes import router as universes_router
 from app.api.walk_forward import router as walk_forward_router
+from app.api.workspaces import router as workspaces_router
 
 router = APIRouter()
 router.include_router(corporate_actions_router)
@@ -57,5 +58,6 @@ router.include_router(factor_relationships_router)
 router.include_router(fundamentals_router)
 router.include_router(portfolio_lab_router)
 router.include_router(walk_forward_router)
+router.include_router(workspaces_router)
 
 __all__ = ["router"]

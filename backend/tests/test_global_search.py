@@ -173,6 +173,25 @@ def test_type_filter_tie_break_and_metrics_never_affect_ranking() -> None:
     assert [item.entity_id for item in run_only] == ["run-a", "run-b"]
 
 
+def test_workspace_filter_uses_exact_entity_memberships(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+    hypothesis = service.hypotheses.list()[0]
+
+    scoped = service.search(
+        "苹果动量",
+        allowed_entities=frozenset({("HYPOTHESIS", hypothesis.hypothesis_id)}),
+    )
+    excluded = service.search(
+        "苹果动量",
+        allowed_entities=frozenset({("DATASET", hypothesis.dataset_id)}),
+    )
+    global_results = service.search("苹果动量")
+
+    assert [item.entity_id for item in scoped.results] == [hypothesis.hypothesis_id]
+    assert excluded.results == ()
+    assert global_results.results[0].entity_id == hypothesis.hypothesis_id
+
+
 def test_query_time_documents_cover_research_and_never_read_trace_or_secret(
     tmp_path: Path,
     monkeypatch,

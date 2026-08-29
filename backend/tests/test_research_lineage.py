@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from test_discovery import _assets, _request
 
 from app.corporate_actions import (
@@ -485,3 +486,30 @@ def test_dataset_revisions_remain_distinct_lineage_nodes(tmp_path: Path) -> None
     assert n1.metadata["family_id"] == n2.metadata["family_id"] == r1.dataset_family_id
     assert n1.metadata["revision"] == 1
     assert n2.metadata["revision"] == 2
+
+
+def test_workspace_root_keeps_exact_external_dependencies_without_duplicate_nodes(
+    tmp_path: Path,
+) -> None:
+    assets, snapshots, hypothesis, _, _, attached, _ = _complete_chain(tmp_path)
+    service = _service(assets, snapshots)
+
+    graph = service.graph(
+        root_type="RUN",
+        root_id=attached.manifest.run_id,
+        direction="UPSTREAM",
+        workspace_members=frozenset({("RUN", attached.manifest.run_id)}),
+    )
+
+    root = _node(graph, "RUN", attached.manifest.run_id)
+    dataset = _node(graph, "DATASET", hypothesis.dataset_id)
+    assert root.metadata["workspace_member"] is True
+    assert dataset.metadata["workspace_member"] is False
+    assert len({node.node_id for node in graph.nodes}) == len(graph.nodes)
+
+    with pytest.raises(ValueError, match="outside the selected Workspace"):
+        service.graph(
+            root_type="DATASET",
+            root_id=hypothesis.dataset_id,
+            workspace_members=frozenset({("RUN", attached.manifest.run_id)}),
+        )

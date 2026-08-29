@@ -268,6 +268,24 @@ def test_snapshot_repository_never_overwrites_an_existing_identity(tmp_path: Pat
         snapshots.save(changed)
 
 
+def test_read_models_can_list_available_snapshots_while_integrity_stays_strict(
+    tmp_path: Path,
+) -> None:
+    engine, snapshots, _, _, hypothesis = _complete_hypothesis(tmp_path)
+    snapshot = engine.create(
+        CreateResearchSnapshot(name="Integrity boundary", hypothesis_id=hypothesis.hypothesis_id)
+    )
+    path = snapshots.root / snapshot.snapshot_id / "snapshot.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["name"] = "Tampered evidence"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+    assert snapshots.list_ids() == (snapshot.snapshot_id,)
+    assert snapshots.list_available() == ()
+    with pytest.raises(SnapshotIntegrityError, match="content fingerprint does not match"):
+        snapshots.list()
+
+
 def test_snapshot_requires_portfolio_strategy_run_and_trace(tmp_path: Path) -> None:
     discovery, _, _, _, ledger, datasets, strategies, research_ids = _assets(tmp_path)
     hypothesis = discovery.create(_request(research_ids))

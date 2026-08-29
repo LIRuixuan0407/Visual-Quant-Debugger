@@ -25,6 +25,7 @@ import type {
 import type { StrategyDefinition, StrategyParameters } from '../../types/strategy'
 import { useI18n } from '../../i18n/I18nProvider'
 import { runtimeLabel } from '../replay/capabilities'
+import { useWorkspace } from '../workspaces/WorkspaceContext'
 
 export interface LoadedRunConfiguration {
   strategy_id: string
@@ -294,6 +295,7 @@ function RunInspector({ detail, source, annotationDraft, busy, onAnnotationChang
 
 function RunsPage({ strategies, datasets, initialRunId = null, onRunSelection, onOpenReplay, onOpenDiagnose, onOpenAutopsy, onLoadConfiguration, onRunDataAudit, services }: RunsPageProps) {
   const { tr } = useI18n()
+  const { currentWorkspace } = useWorkspace()
   const loadRuns = services?.getRuns ?? getRuns
   const loadRun = services?.getRun ?? getRun
   const persistAnnotations = services?.saveAnnotations ?? saveRunAnnotations
@@ -314,11 +316,27 @@ function RunsPage({ strategies, datasets, initialRunId = null, onRunSelection, o
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const hasAutoSelected = useRef(Boolean(initialRunId))
+  const workspaceId = currentWorkspace?.workspace_id ?? null
+  const previousWorkspaceId = useRef(workspaceId)
+
+  useEffect(() => {
+    if (previousWorkspaceId.current === workspaceId) return
+    previousWorkspaceId.current = workspaceId
+    hasAutoSelected.current = false
+    setLedger(null)
+    setSelectedRunId(null)
+    setDetail(null)
+    setAnnotationDraft({ display_name: '', note: '', tags: [] })
+    setSource(null)
+    setComparisonSelection([])
+    setComparison(null)
+    setValidation(null)
+  }, [workspaceId])
 
   const refresh = useCallback(async () => {
     setError(null)
     try {
-      const next = await loadRuns(filters)
+      const next = await loadRuns(currentWorkspace ? { ...filters, workspace_id: currentWorkspace.workspace_id } : filters)
       setLedger(next)
       if (!hasAutoSelected.current && next.items[0]) {
         hasAutoSelected.current = true
@@ -328,7 +346,7 @@ function RunsPage({ strategies, datasets, initialRunId = null, onRunSelection, o
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : tr('Could not load research runs.'))
     }
-  }, [filters, loadRuns, onRunSelection, tr])
+  }, [currentWorkspace, filters, loadRuns, onRunSelection, tr])
 
   useEffect(() => {
     const timer = window.setTimeout(() => void refresh(), 0)

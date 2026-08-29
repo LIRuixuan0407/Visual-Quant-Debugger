@@ -2,6 +2,8 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { beforeEach, expect, test, vi } from 'vitest'
 
 import type { RunFilters } from '../../api/runs'
+import { WorkspaceProvider, useWorkspace } from '../workspaces/WorkspaceContext'
+import type { Workspace } from '../../types/workspace'
 import { strategyDefinition } from '../../test/fixtures/strategyDefinition'
 import type { BacktestCreated } from '../../types/trace'
 import type { DatasetDefinition } from '../../types/dataset'
@@ -127,7 +129,7 @@ function services() {
   }
 }
 
-beforeEach(() => vi.restoreAllMocks())
+beforeEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); window.localStorage.clear() })
 
 test('lists, filters, selects, annotates, opens historical artifacts, reruns, and deletes', async () => {
   const api = services()
@@ -217,4 +219,45 @@ test('validates one Backtest and one Paper Run against the frozen recorded-feed 
   fireEvent.click(screen.getByRole('button', { name: 'Open Paper Replay' }))
   expect(onReplay).toHaveBeenNthCalledWith(1, 'run-reference', 'trace-reference', 'event-ref')
   expect(onReplay).toHaveBeenNthCalledWith(2, paperRunId, 'trace-paper', 'event-paper')
+})
+
+
+function WorkspaceSwitch({ workspaceId }: { workspaceId: string }) {
+  const { setCurrentWorkspace } = useWorkspace()
+  return <button type="button" onClick={() => setCurrentWorkspace(workspaceId)}>Switch workspace</button>
+}
+
+test('clears stale run state when switching workspaces', async () => {
+  const workspaceA: Workspace = {
+    workspace_id: 'workspace-aaaaaaaaaaaaaaaaaaaaaaaa', name: 'Workspace A', description: null,
+    created_at: '2026-08-29T00:00:00Z', updated_at: '2026-08-29T00:00:00Z', archived_at: null, is_default: true,
+  }
+  const workspaceB: Workspace = {
+    ...workspaceA, workspace_id: 'workspace-bbbbbbbbbbbbbbbbbbbbbbbb', name: 'Workspace B', is_default: false,
+  }
+  window.localStorage.setItem('vqd.currentWorkspaceId', workspaceA.workspace_id)
+  vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request) => {
+    const url = String(input)
+    const body = url.startsWith('/api/workspaces?') ? [workspaceA, workspaceB] : []
+    return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
+  }))
+
+  const api = services()
+  api.getRuns.mockImplementation(async (filters) => {
+    if (filters?.workspace_id === workspaceB.workspace_id) return { items: [runB], total: 1, limit: 100, offset: 0 }
+    return { items: [runA], total: 1, limit: 100, offset: 0 }
+  })
+
+  render(
+    <WorkspaceProvider>
+      <WorkspaceSwitch workspaceId={workspaceB.workspace_id} />
+      <RunsPage strategies={[strategyDefinition]} datasets={[dataset]} onOpenReplay={() => undefined} onOpenDiagnose={() => undefined} onOpenAutopsy={() => undefined} onLoadConfiguration={() => undefined} services={api} />
+    </WorkspaceProvider>,
+  )
+
+  expect(await screen.findByText(runAId, { selector: '.run-inspector code' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Switch workspace' }))
+  expect(await screen.findByText(runBId, { selector: '.run-inspector code' })).toBeInTheDocument()
+  expect(screen.queryByText(runAId, { selector: '.run-inspector code' })).not.toBeInTheDocument()
+  await waitFor(() => expect(api.getRuns).toHaveBeenLastCalledWith(expect.objectContaining({ workspace_id: workspaceB.workspace_id })))
 })

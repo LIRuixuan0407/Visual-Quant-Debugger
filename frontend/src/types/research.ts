@@ -208,4 +208,4 @@ export interface ResearchBundleManifest {
 }
 export interface ResearchBundleConflict { kind: ResearchBundleObjectKind; object_id: string; status: ResearchBundleConflictStatus; detail: string }
 export interface ResearchBundleImportPreview { preview_id: string; manifest: ResearchBundleManifest; valid: boolean; conflicts: ResearchBundleConflict[]; external_dependencies: ResearchBundleExternalDependency[]; errors: string[] }
-export interface ResearchBundleImportResult { bundle_id: string; imported: string[]; reused: string[]; unavailable: string[] }
+export interface ResearchBundleImportResult { bundle_id: string; imported: string[]; reused: string[]; unavailable: string[]; target_workspace_id: string | null }

@@ -21,6 +21,9 @@ from app.runs.comparison import compare_runs
 from app.runs.models import RunAnnotations, RunStatus, StrategySourceArtifact
 from app.runs.validation import validate_backtest_vs_paper
 from app.sdk.registry import strategy_registry
+from app.workspaces import WorkspaceNotFoundError
+
+from .workspaces import workspace_service
 
 router = APIRouter(prefix="/api", tags=["runs"])
 
@@ -41,7 +44,22 @@ def list_runs(
     dataset_id: str | None = None,
     status: RunStatus | None = None,
     search: str | None = None,
+    workspace_id: str | None = None,
 ) -> RunListResponse:
+    try:
+        run_ids = (
+            None
+            if workspace_id is None
+            else tuple(
+                item.object_id
+                for item in workspace_service().memberships(workspace_id)
+                if item.object_type == "RUN"
+            )
+        )
+    except WorkspaceNotFoundError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"Workspace '{exc.args[0]}' was not found"
+        ) from exc
     return run_ledger.repository.list_runs(
         limit=limit,
         offset=offset,
@@ -49,6 +67,7 @@ def list_runs(
         dataset_id=dataset_id,
         status=status,
         search=search,
+        run_ids=run_ids,
     )
 
 

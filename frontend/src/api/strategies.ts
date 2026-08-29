@@ -1,5 +1,6 @@
 import type { StrategyDefinition } from '../types/strategy'
 import { readJson } from './client'
+import { addCreatedObjectToCurrentWorkspace } from './workspaces'
 
 function isStrategyDefinition(value: unknown): value is StrategyDefinition {
   if (typeof value !== 'object' || value === null) return false
@@ -40,6 +41,7 @@ export async function importStrategy(input: { path: string; class_name?: string 
   })
   const body = await readJson(response, 'POST /api/strategies/import')
   if (!isStrategyDefinition(body)) throw new Error('Imported strategy definition is malformed.')
+  await addCreatedObjectToCurrentWorkspace('STRATEGY', body.strategy_id)
   return body
 }
 

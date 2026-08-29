@@ -5,6 +5,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { I18nProvider } from '../i18n/I18nProvider'
 import type { GlobalSearchResponse, SearchOpenTarget, SearchResult } from '../types/search'
 import { readRecentSearches, recordRecentSearch } from '../utils/recentSearches'
+import { WorkspaceProvider } from '../features/workspaces/WorkspaceContext'
 import GlobalSearch from './GlobalSearch'
 
 const result = (entity_type: SearchResult['entity_type'], entity_id: string, title: string, route: string): SearchResult => ({
@@ -112,4 +113,24 @@ it('searches and renders a Chinese hypothesis in the Chinese interface', async (
   expect(await screen.findByText('苹果动量研究')).toBeInTheDocument()
   expect(screen.getByText('确定性本地搜索')).toBeInTheDocument()
   expect(screen.getByText('不搜索 Trace 事件或源码文件。')).toBeInTheDocument()
+})
+
+it('switches between current and all Workspace search scopes', async () => {
+  window.localStorage.setItem('vqd-language', 'en')
+  const fetchMock = vi.fn((input: string | URL | Request) => {
+    const url = new URL(String(input), 'http://localhost')
+    let body: unknown
+    if (url.pathname === '/api/workspaces') body = [{ workspace_id: 'workspace-default', name: 'Default Workspace', description: null, created_at: '2026-08-29T00:00:00Z', updated_at: '2026-08-29T00:00:00Z', archived_at: null, is_default: true }]
+    else if (url.pathname.endsWith('/memberships')) body = [{ workspace_id: 'workspace-default', object_type: 'RUN', object_id: 'run-123', added_at: '2026-08-29T00:00:00Z', reference_status: 'AVAILABLE' }]
+    else body = { query: url.searchParams.get('q') ?? '', normalized_query: 'momentum', results }
+    return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  render(<WorkspaceProvider><Harness onNavigate={vi.fn()} /></WorkspaceProvider>)
+
+  fireEvent.click(screen.getByRole('button', { name: 'Open test search' }))
+  fireEvent.change(screen.getByRole('textbox'), { target: { value: 'momentum' } })
+  await waitFor(() => expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/api/search?') && String(input).includes('workspace_id=workspace-default'))).toBe(true))
+  fireEvent.change(screen.getByLabelText('Search scope'), { target: { value: 'ALL' } })
+  await waitFor(() => expect(fetchMock.mock.calls.filter(([input]) => String(input).includes('/api/search?')).some(([input]) => !String(input).includes('workspace_id='))).toBe(true))
 })

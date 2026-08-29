@@ -632,7 +632,7 @@ class GlobalSearchService:
                     )
                 )
 
-        for snapshot in self.snapshots.list():
+        for snapshot in self.snapshots.list_available():
             documents.append(
                 SearchDocument(
                     entity_type="SNAPSHOT",
@@ -695,13 +695,15 @@ class GlobalSearchService:
         *,
         entity_types: tuple[SearchEntityType, ...] = (),
         limit: int = 20,
+        allowed_entities: frozenset[tuple[SearchEntityType, str]] | None = None,
     ) -> GlobalSearchResponse:
         normalized = normalize_search_text(query)
-        results = (
-            ()
-            if not normalized
-            else rank_search_documents(
-                self.documents(), query, entity_types=entity_types, limit=limit
+        if not normalized:
+            return GlobalSearchResponse(query=query, normalized_query=normalized, results=())
+        documents = self.documents()
+        if allowed_entities is not None:
+            documents = tuple(
+                item for item in documents if (item.entity_type, item.entity_id) in allowed_entities
             )
-        )
+        results = rank_search_documents(documents, query, entity_types=entity_types, limit=limit)
         return GlobalSearchResponse(query=query, normalized_query=normalized, results=results)

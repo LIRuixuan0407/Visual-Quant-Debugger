@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 
 import { globalSearch } from '../api/search'
 import { useI18n } from '../i18n/I18nProvider'
+import { useWorkspace } from '../features/workspaces/WorkspaceContext'
 import { SEARCH_ENTITY_TYPES, type RecentSearchItem, type SearchEntityType, type SearchOpenTarget, type SearchResult } from '../types/search'
 import { readRecentSearches, recordRecentSearch } from '../utils/recentSearches'
 
@@ -35,16 +36,23 @@ function RecentRow({ item, active, onSelect, onHover }: { item: RecentSearchItem
 
 export default function GlobalSearch({ open, onOpenChange, onNavigate }: GlobalSearchProps) {
   const { tr } = useI18n()
+  const { currentWorkspace, memberships } = useWorkspace()
   const inputRef = useRef<HTMLInputElement>(null)
   const [query, setQuery] = useState('')
   const [selectedType, setSelectedType] = useState<SearchEntityType | 'ALL'>('ALL')
+  const [scope, setScope] = useState<'CURRENT' | 'ALL'>('CURRENT')
   const [results, setResults] = useState<SearchResult[]>([])
   const [recent, setRecent] = useState<RecentSearchItem[]>(readRecentSearches)
   const [activeIndex, setActiveIndex] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const hasQuery = query.trim().length > 0
-  const visibleRecent = useMemo(() => selectedType === 'ALL' ? recent : recent.filter((item) => item.entity_type === selectedType), [recent, selectedType])
+  const visibleRecent = useMemo(() => {
+    const typed = selectedType === 'ALL' ? recent : recent.filter((item) => item.entity_type === selectedType)
+    if (scope === 'ALL' || !currentWorkspace) return typed
+    const keys = new Set(memberships.map((item) => `${item.object_type}:${item.object_id}`))
+    return typed.filter((item) => keys.has(`${item.entity_type}:${item.entity_id}`))
+  }, [currentWorkspace, memberships, recent, scope, selectedType])
   const itemCount = hasQuery ? results.length : visibleRecent.length
 
   useEffect(() => {
@@ -76,7 +84,7 @@ export default function GlobalSearch({ open, onOpenChange, onNavigate }: GlobalS
         return
       }
       setLoading(true); setError(null)
-      void globalSearch(query, selectedType === 'ALL' ? [] : [selectedType])
+      void globalSearch(query, selectedType === 'ALL' ? [] : [selectedType], 20, scope === 'CURRENT' ? currentWorkspace?.workspace_id : undefined)
         .then((response) => {
           if (!cancelled) { setResults(response.results); setActiveIndex(0) }
         })
@@ -86,11 +94,11 @@ export default function GlobalSearch({ open, onOpenChange, onNavigate }: GlobalS
         .finally(() => { if (!cancelled) setLoading(false) })
     }, 120)
     return () => { cancelled = true; window.clearTimeout(timer) }
-  }, [open, query, selectedType])
+  }, [currentWorkspace?.workspace_id, open, query, scope, selectedType])
 
   function close() {
     onOpenChange(false)
-    setQuery(''); setSelectedType('ALL'); setResults([]); setError(null); setActiveIndex(0)
+    setQuery(''); setSelectedType('ALL'); setScope('CURRENT'); setResults([]); setError(null); setActiveIndex(0)
   }
 
   function openItem(item: SearchOpenTarget) {
@@ -124,6 +132,10 @@ export default function GlobalSearch({ open, onOpenChange, onNavigate }: GlobalS
         <select aria-label={tr('Search type')} value={selectedType} onChange={(event) => { setSelectedType(event.target.value as SearchEntityType | 'ALL'); setActiveIndex(0) }}>
           <option value="ALL">{tr('All types')}</option>
           {SEARCH_ENTITY_TYPES.map((entityType) => <option value={entityType} key={entityType}>{tr(typeLabel(entityType))}</option>)}
+        </select>
+        <select aria-label={tr('Search scope')} value={scope} onChange={(event) => { setScope(event.target.value as 'CURRENT' | 'ALL'); setActiveIndex(0) }}>
+          <option value="CURRENT">{tr('Current Workspace')}</option>
+          <option value="ALL">{tr('All Workspaces')}</option>
         </select>
         <kbd>ESC</kbd>
       </header>

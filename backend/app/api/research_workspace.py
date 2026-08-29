@@ -17,6 +17,9 @@ from app.runs import run_store
 from app.sdk.registry import strategy_registry
 from app.strategy_drift import strategy_drift_repository
 from app.walk_forward import walk_forward_repository
+from app.workspaces import WorkspaceNotFoundError
+
+from .workspaces import workspace_service
 
 router = APIRouter(prefix="/api/research-workspaces", tags=["research-workspaces"])
 
@@ -50,8 +53,23 @@ def _engine() -> ResearchWorkspaceEngine:
 
 
 @router.get("", response_model=tuple[ResearchWorkspaceSummary, ...])
-def list_research_workspaces() -> tuple[ResearchWorkspaceSummary, ...]:
-    return _engine().list()
+def list_research_workspaces(
+    workspace_id: str | None = None,
+) -> tuple[ResearchWorkspaceSummary, ...]:
+    workspaces = _engine().list()
+    if workspace_id is None:
+        return workspaces
+    try:
+        allowed = {
+            item.object_id
+            for item in workspace_service().memberships(workspace_id)
+            if item.object_type == "HYPOTHESIS"
+        }
+    except WorkspaceNotFoundError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"Workspace '{exc.args[0]}' was not found"
+        ) from exc
+    return tuple(item for item in workspaces if item.idea_id in allowed)
 
 
 @router.get("/{hypothesis_id}", response_model=ResearchWorkspace)

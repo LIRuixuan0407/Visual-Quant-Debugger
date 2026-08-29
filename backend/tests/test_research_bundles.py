@@ -13,6 +13,7 @@ import pytest
 from test_research_snapshots import _complete_hypothesis
 
 import app.api.research_bundles as research_bundles_api
+import app.api.workspaces as workspaces_api
 from app.datasets import DatasetImportRequest, DatasetRegistry
 from app.discovery.repository import HypothesisRepository
 from app.factor_relationships.repository import FactorRelationshipRepository
@@ -525,8 +526,37 @@ def test_bundle_api_import_uses_persisted_preview_across_requests(
         ResearchSnapshotRepository(target),
     )
     monkeypatch.setattr(research_bundles_api, "dataset_registry", DatasetRegistry(target))
+    monkeypatch.setattr(workspaces_api, "dataset_registry", DatasetRegistry(target))
+    monkeypatch.setattr(
+        workspaces_api,
+        "research_snapshot_repository",
+        ResearchSnapshotRepository(target),
+    )
+    monkeypatch.setattr(
+        workspaces_api,
+        "factor_research_repository",
+        FactorResearchRepository(target),
+    )
+    monkeypatch.setattr(
+        workspaces_api,
+        "factor_relationship_repository",
+        FactorRelationshipRepository(target),
+    )
+    monkeypatch.setattr(workspaces_api, "walk_forward_repository", WalkForwardRepository(target))
+    monkeypatch.setattr(
+        workspaces_api,
+        "hypothesis_repository",
+        HypothesisRepository(target),
+    )
+    monkeypatch.setattr(
+        workspaces_api,
+        "portfolio_research_repository",
+        PortfolioResearchRepository(target),
+    )
     previous = run_store.repository
     run_store.repository = RunRepository(target)
+    workspaces_api._workspace_service = None
+    workspaces_api.workspace_service().ensure_default_workspace()
 
     async def request(method: str, path: str, **kwargs: object) -> httpx.Response:
         transport = httpx.ASGITransport(app=app)
@@ -544,12 +574,28 @@ def test_bundle_api_import_uses_persisted_preview_across_requests(
         )
         assert preview.status_code == 200
         preview_id = preview.json()["preview_id"]
-        imported = asyncio.run(request("POST", f"/api/research-bundles/import/{preview_id}"))
+        imported = asyncio.run(
+            request(
+                "POST",
+                f"/api/research-bundles/import/{preview_id}",
+                json={"target_workspace_id": "workspace-default"},
+            )
+        )
+        memberships = workspaces_api.workspace_service().memberships("workspace-default")
     finally:
         run_store.repository = previous
 
     assert imported.status_code == 200
     assert imported.json()["bundle_id"].startswith("research-bundle-")
+    assert imported.json()["target_workspace_id"] == "workspace-default"
+    assert any(
+        item.object_type == "RESEARCH_BUNDLE" and item.object_id == imported.json()["bundle_id"]
+        for item in memberships
+    )
+    assert any(
+        item.object_type == "SNAPSHOT" and item.object_id == snapshot.snapshot_id
+        for item in memberships
+    )
     assert ResearchSnapshotRepository(target).get(snapshot.snapshot_id) == snapshot
 
 

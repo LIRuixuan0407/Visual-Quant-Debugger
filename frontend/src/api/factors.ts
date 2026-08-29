@@ -10,6 +10,7 @@ import type {
   HistoricalMarketView,
   ResearchPeriods,
 } from '../types/factor'
+import { addCreatedObjectToCurrentWorkspace } from './workspaces'
 
 interface FactorInspectionResponse { observation: FactorObservation }
 
@@ -51,7 +52,9 @@ export async function createFactorResearch(input: {
   const response = await fetch('/api/factor-research', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
   })
-  return readJson(response, 'POST /api/factor-research') as Promise<FactorResearchRecord>
+  const created = await readJson(response, 'POST /api/factor-research') as FactorResearchRecord
+  await addCreatedObjectToCurrentWorkspace('FACTOR_RESEARCH', created.research_id)
+  return created
 }
 
 async function stageAction(researchId: string, action: 'validate' | 'reveal-holdout'): Promise<FactorResearchRecord> {
@@ -79,7 +82,9 @@ export async function createFactorStrategy(researchId: string, input: {
   const response = await fetch(`/api/factor-research/${encodeURIComponent(researchId)}/strategy`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
   })
-  return readJson(response, 'POST factor strategy') as Promise<FactorStrategyArtifact>
+  const created = await readJson(response, 'POST factor strategy') as FactorStrategyArtifact
+  await addCreatedObjectToCurrentWorkspace('STRATEGY', created.strategy_id)
+  return created
 }
 
 export async function getHistoricalMarket(datasetId: string, asOf: string, symbol?: string, fundamentalDatasetId?: string): Promise<HistoricalMarketView> {

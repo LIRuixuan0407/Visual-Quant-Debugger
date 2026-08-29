@@ -8,6 +8,7 @@ import {
   hypothesisAction,
 } from '../../api/research'
 import { useI18n } from '../../i18n/I18nProvider'
+import { useWorkspace } from '../workspaces/WorkspaceContext'
 import type {
   ResearchWorkspace,
   ResearchWorkspaceSummary,
@@ -67,6 +68,7 @@ export default function ResearchWorkspacePage({
   onRunDataAudit,
 }: ResearchWorkspacePageProps) {
   const { tr } = useI18n()
+  const { currentWorkspace } = useWorkspace()
   const selectedIdeaRef = useRef<string | null>(null)
   const [summaries, setSummaries] = useState<ResearchWorkspaceSummary[]>([])
   const [workspace, setWorkspace] = useState<ResearchWorkspace | null>(null)
@@ -84,7 +86,7 @@ export default function ResearchWorkspacePage({
     async function load() {
       if (mounted) { setLoading(true); setError(null) }
       try {
-        const rows = await getResearchWorkspaces()
+        const rows = await getResearchWorkspaces(currentWorkspace?.workspace_id)
         if (!mounted) return
         setSummaries(rows)
         const selected = rows.find((item) => item.idea_id === initialIdeaId) ?? rows[0]
@@ -107,7 +109,7 @@ export default function ResearchWorkspacePage({
     }
     void load()
     return () => { mounted = false }
-  }, [initialIdeaId, onIdeaChange])
+  }, [currentWorkspace?.workspace_id, initialIdeaId, onIdeaChange])
 
   async function selectIdea(ideaId: string) {
     setBusy(true)
@@ -125,7 +127,7 @@ export default function ResearchWorkspacePage({
   }
 
   async function refresh(ideaId: string) {
-    const [rows, detail] = await Promise.all([getResearchWorkspaces(), getResearchWorkspace(ideaId)])
+    const [rows, detail] = await Promise.all([getResearchWorkspaces(currentWorkspace?.workspace_id), getResearchWorkspace(ideaId)])
     setSummaries(rows)
     setWorkspace(detail)
   }

@@ -1,6 +1,7 @@
 import { readJson } from './client'
 import type { ForwardComparisonReport, ForwardSessionSnapshot, ForwardTrace } from '../types/forward'
 import type { StrategyParameters } from '../types/strategy'
+import { addCreatedObjectToCurrentWorkspace } from './workspaces'
 
 async function requestJson(endpoint: string, init?: RequestInit): Promise<unknown> {
   const response = await fetch(endpoint, init)
@@ -31,7 +32,7 @@ async function parseSession(endpoint: string, init?: RequestInit): Promise<Forwa
   return body
 }
 
-export function createForwardSession(input: StrategyParameters | {
+export async function createForwardSession(input: StrategyParameters | {
   strategy_id: string
   dataset_id: string
   parameters: StrategyParameters
@@ -40,11 +41,13 @@ export function createForwardSession(input: StrategyParameters | {
   const payload = 'strategy_id' in input
     ? input
     : { strategy_id: 'pairs-trading', dataset_id: 'forward-demo-v1', parameters: input }
-  return parseSession('/api/forward-sessions', {
+  const created = await parseSession('/api/forward-sessions', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   })
+  await addCreatedObjectToCurrentWorkspace('FORWARD_SESSION', created.session_id)
+  return created
 }
 
 export function getForwardSession(sessionId: string) {

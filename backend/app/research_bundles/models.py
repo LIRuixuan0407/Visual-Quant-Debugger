@@ -126,3 +126,8 @@ class BundleImportResult(BundleModel):
     imported: tuple[str, ...]
     reused: tuple[str, ...]
     unavailable: tuple[str, ...]
+    target_workspace_id: str | None = None
+
+
+class BundleImportRequest(BundleModel):
+    target_workspace_id: str = Field(pattern=r"^(workspace-default|workspace-[0-9a-f]{24})$")

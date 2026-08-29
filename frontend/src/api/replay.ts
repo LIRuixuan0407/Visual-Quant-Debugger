@@ -1,6 +1,7 @@
 import type { BacktestCreated, BacktestTrace, RunContext } from '../types/trace'
 import type { StrategyParameters } from '../types/strategy'
 import { readJson } from './client'
+import { addCreatedObjectToCurrentWorkspace } from './workspaces'
 
 function isBacktestCreated(value: unknown): value is BacktestCreated {
   if (typeof value !== 'object' || value === null) return false
@@ -49,6 +50,7 @@ export async function createBacktest(input: StrategyParameters | {
   if (!isBacktestCreated(body)) {
     throw new Error('POST /api/backtests returned a malformed response.')
   }
+  await addCreatedObjectToCurrentWorkspace('RUN', body.run_id)
   return body
 }
 

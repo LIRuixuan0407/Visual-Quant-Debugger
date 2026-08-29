@@ -4,6 +4,16 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 export type Language = 'zh' | 'en'
 
 const zh: Record<string, string> = {
+  Workspaces: '工作空间', 'Current Workspace': '当前工作空间', 'All Workspaces': '全部工作空间',
+  'Manage Workspaces': '管理工作空间', 'Loading Workspaces…': '正在加载工作空间…', 'No active Workspaces': '没有可用的工作空间',
+  'Organize research assets without copying their underlying evidence.': '组织研究资产，但不复制底层证据。',
+  'Workspace list': '工作空间列表', 'Default Workspace': '默认工作空间', 'Create Workspace': '创建工作空间',
+  'Make Current': '设为当前', 'Research assets': '研究资产', 'Save changes': '保存更改',
+  'Archived Workspaces are read-only. Restore this Workspace to edit memberships.': '已归档工作空间为只读；恢复后才能编辑成员关系。',
+  'No research assets yet': '还没有研究资产', 'New research created in this Workspace will appear here.': '在此工作空间中新建的研究会显示在这里。',
+  'Missing reference': '引用缺失', 'Remove from Workspace': '移出工作空间', 'No Workspaces': '没有工作空间',
+  'Search scope': '搜索范围', 'Target Workspace': '目标工作空间',
+  'Outside current Workspace': '当前工作空间之外',
   'Strategy Drift': '策略漂移', 'BEHAVIORAL EVIDENCE': '行为证据',
   DRIFT_REPORT: '漂移报告', FORWARD_SESSION: '前向会话', PAPER_SESSION: '模拟交易会话', PAPER_RUN: '模拟交易运行',
   BASELINE_FOR_DRIFT: '漂移基线', OBSERVED_BY_DRIFT: '漂移观测证据',

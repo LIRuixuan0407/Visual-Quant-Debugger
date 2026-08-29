@@ -1,6 +1,7 @@
 import { readJson } from './client'
 import type { CompatibilityCheck, DatasetDefinition, DatasetFamily, DatasetPreview, DatasetRevisionDiff } from '../types/dataset'
 import type { StrategyParameters } from '../types/strategy'
+import { addCreatedObjectToCurrentWorkspace } from './workspaces'
 
 function isDataset(value: unknown): value is DatasetDefinition {
   if (typeof value !== 'object' || value === null) return false
@@ -12,9 +13,10 @@ function isDataset(value: unknown): value is DatasetDefinition {
     && typeof item.quality === 'object'
 }
 
-export async function getDatasets(): Promise<DatasetDefinition[]> {
-  const response = await fetch('/api/datasets')
-  const body = await readJson(response, 'GET /api/datasets')
+export async function getDatasets(workspaceId?: string): Promise<DatasetDefinition[]> {
+  const endpoint = workspaceId ? `/api/datasets?workspace_id=${encodeURIComponent(workspaceId)}` : '/api/datasets'
+  const response = await fetch(endpoint)
+  const body = await readJson(response, `GET ${endpoint}`)
   if (!Array.isArray(body) || !body.every(isDataset)) {
     throw new Error('GET /api/datasets returned a malformed Dataset Library.')
   }
@@ -48,6 +50,7 @@ export async function refreshProviderDataset(datasetId: string, end: string, rev
     body: JSON.stringify({ end, revision_reason: revisionReason || null }),
   }), `POST ${endpoint}`)
   if (!isDataset(body)) throw new Error(`POST ${endpoint} returned malformed metadata.`)
+  await addCreatedObjectToCurrentWorkspace('DATASET', body.dataset_id)
   return body
 }
 
@@ -81,6 +84,7 @@ export async function importDataset(input: {
   })
   const body = await readJson(response, 'POST /api/datasets/import')
   if (!isDataset(body)) throw new Error('POST /api/datasets/import returned malformed metadata.')
+  await addCreatedObjectToCurrentWorkspace('DATASET', body.dataset_id)
   return body
 }
 

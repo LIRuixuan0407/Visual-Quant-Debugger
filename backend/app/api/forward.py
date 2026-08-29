@@ -154,6 +154,9 @@ class ForwardSessionStore:
     def get(self, session_id: str) -> ForwardSessionLike | None:
         return self._sessions.get(session_id)
 
+    def list_ids(self) -> tuple[str, ...]:
+        return tuple(self._sessions)
+
 
 forward_store = ForwardSessionStore()
 
