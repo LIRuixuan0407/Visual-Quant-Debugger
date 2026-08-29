@@ -297,9 +297,7 @@ class PaperSessionService:
                     "Session was not resumed automatically.",
                 )
             else:
-                restored_status = recovery_target_status(
-                    persisted.status, explicit=explicit
-                )
+                restored_status = recovery_target_status(persisted.status, explicit=explicit)
                 session.manifest = session.manifest.model_copy(
                     update={
                         "status": restored_status,
