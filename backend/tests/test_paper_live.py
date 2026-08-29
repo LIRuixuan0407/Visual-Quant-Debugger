@@ -452,6 +452,153 @@ def test_reconnect_gap_backfill_is_chronological_and_exactly_once(tmp_path: Path
     assert service.get(session_id).duplicate_count == 1
 
 
+def test_operational_health_and_log_are_durable_sequenced_and_secret_free(
+    tmp_path: Path,
+) -> None:
+    service, request, _ = _service(tmp_path)
+    session_id = service.create(request).session_id
+    _run(service.start(session_id, launch_task=False))
+    _run(service.ingest(session_id, _bar(30, 100.0)))
+    adapter = FakeLiveMarketDataAdapter()
+    adapter.add_historical(_bar(31, 101.0), _bar(32, 102.0))
+    service.register_adapter(session_id, adapter)
+    _run(service.reconnect_once(session_id, current_time=_time(34)))
+    service._record_operation(
+        session_id,
+        "ERROR",
+        "Safe diagnostic",
+        {
+            "api_key": "must-not-persist",
+            "secret_key": "must-not-persist",
+            "access_token": "must-not-persist",
+            "attempt": 2,
+        },
+    )
+
+    operations = service.operations(session_id).items
+    assert [item.sequence for item in operations] == list(range(1, len(operations) + 1))
+    assert operations[0].operation_type == "CREATED"
+    assert {item.operation_type for item in operations} >= {
+        "STARTED",
+        "FEED_RECONNECTING",
+        "BACKFILL_STARTED",
+        "BACKFILL_COMPLETED",
+        "FEED_RECONNECTED",
+    }
+    serialized = service.operations(session_id).model_dump_json()
+    assert "must-not-persist" not in serialized
+    assert operations[-1].metadata == {"attempt": 2}
+
+    health = service.health(session_id)
+    assert health.status == "RUNNING"
+    assert health.feed_status == "CONNECTED"
+    assert health.reconnect_count == 1
+    assert health.backfill_count == 1
+    assert health.backfilled_bar_count == 2
+    assert health.last_latency_ms == pytest.approx(60_125.0)
+    assert health.stale_seconds >= 0
+
+    restarted = PaperSessionService(PaperSessionRepository(tmp_path))
+    restarted_operations = restarted.operations(session_id).items
+    assert [item.sequence for item in restarted_operations] == list(
+        range(1, len(restarted_operations) + 1)
+    )
+    assert restarted_operations[-2].operation_type == "RECOVERY_STARTED"
+    assert restarted_operations[-1].operation_type == "RECOVERY_COMPLETED"
+
+
+def test_lifecycle_rejects_terminal_restart_and_duplicate_start_has_one_task(
+    tmp_path: Path,
+) -> None:
+    service, request, _ = _service(tmp_path)
+    adapter = FakeLiveMarketDataAdapter()
+    service = PaperSessionService(
+        service.repository,
+        registry=service.registry,
+        adapter_factory=lambda _: adapter,
+    )
+    session_id = service.create(request).session_id
+
+    async def scenario() -> None:
+        await service.start(session_id)
+        first_task = service._tasks[session_id]
+        with pytest.raises(ValueError, match="Cannot start a RUNNING session"):
+            await service.start(session_id)
+        assert service._tasks[session_id] is first_task
+        await service.stop(session_id)
+        with pytest.raises(ValueError, match="Cannot start a STOPPED session"):
+            await service.start(session_id)
+        with pytest.raises(ValueError, match="Cannot resume a STOPPED session"):
+            await service.resume(session_id)
+        await service.shutdown()
+
+    asyncio.run(scenario())
+
+
+def test_account_ownership_uses_active_manifests_and_survives_session_history(
+    tmp_path: Path,
+) -> None:
+    service, base_request, _ = _service(tmp_path)
+    account = service.create_account(
+        CreatePaperAccount(name="Long-running paper", initial_cash=100_000.0)
+    )
+    request = base_request.model_copy(update={"account_id": account.account_id})
+    first_session_id = service.create(request).session_id
+    _run(service.stop(first_session_id))
+    second_session_id = service.create(request).session_id
+
+    current_account = service.get_account(account.account_id)
+    service.repository.save_account(current_account.model_copy(update={"active_session_id": None}))
+    with pytest.raises(ValueError, match="already has active session"):
+        service.create(request)
+
+    restarted = PaperSessionService(PaperSessionRepository(tmp_path))
+    assert restarted.get(first_session_id).status == "STOPPED"
+    assert restarted.get(second_session_id).status == "CREATED"
+    assert restarted.get_account(account.account_id).active_session_id == second_session_id
+
+
+def test_explicit_recovery_requires_a_matching_checkpoint_and_returns_paused(
+    tmp_path: Path,
+) -> None:
+    service, request, _ = _service(tmp_path)
+    session_id = service.create(request).session_id
+    _run(service.start(session_id, launch_task=False))
+    _run(service.ingest(session_id, _bar(30, 100.0)))
+    manifest = service.repository.load_manifest(session_id)
+    assert manifest.checkpoint is not None
+    service.repository.save_manifest(
+        manifest.model_copy(
+            update={
+                "checkpoint": manifest.checkpoint.model_copy(
+                    update={"portfolio_hash": "sha256:tampered"}
+                )
+            }
+        ),
+        equity=service.get(session_id).account.equity,
+    )
+
+    restarted = PaperSessionService(PaperSessionRepository(tmp_path))
+    assert restarted.recovery(session_id).status == "RECOVERY_DIVERGENCE"
+    assert restarted.get(session_id).status == "ERROR"
+    assert session_id not in restarted._tasks
+    actual = restarted._session(session_id).checkpoint()
+    failed_manifest = restarted.repository.load_manifest(session_id)
+    restarted.repository.save_manifest(
+        failed_manifest.model_copy(update={"checkpoint": actual}),
+        equity=restarted.get(session_id).account.equity,
+    )
+
+    report = _run(restarted.recover(session_id))
+    assert report.status == "RECOVERED"
+    assert report.recorded_portfolio_hash == report.recovered_portfolio_hash
+    assert report.recorded_trace_hash == report.recovered_trace_hash
+    recovered = restarted.get(session_id)
+    assert recovered.status == "PAUSED"
+    assert recovered.recovery_status == "READY"
+    assert session_id not in restarted._tasks
+
+
 def test_strategy_failure_is_terminal_and_does_not_retry_input(tmp_path: Path) -> None:
     source = tmp_path / "faulty_strategy.py"
     source.write_text(
@@ -540,6 +687,10 @@ def test_recovery_mismatch_stops_session_in_error(tmp_path: Path) -> None:
     assert snapshot.status == "ERROR"
     assert snapshot.recovery_status == "RECOVERY_DIVERGENCE"
     assert snapshot.error_code == "RECOVERY_DIVERGENCE"
+    stopped = _run(restarted.stop(session_id))
+    assert stopped.status == "STOPPED"
+    assert stopped.research_run_id is not None
+    assert stopped.reference_run_id is not None
 
 
 def _equivalence(snapshot: object, trace: object) -> dict[str, object]:
@@ -830,12 +981,28 @@ def test_api_provider_status_and_persistent_created_session() -> None:
     assert created.json()["symbols"] == ["AAPL", "MSFT"]
     assert client.get(f"/api/paper-sessions/{session_id}").status_code == 200
     assert client.get(f"/api/paper-sessions/{session_id}/trace").json()["timeline"] == []
+    health = client.get(f"/api/paper/sessions/{session_id}/health")
+    assert health.status_code == 200
+    assert health.json()["status"] == "CREATED"
+    operations = client.get(f"/api/paper/sessions/{session_id}/operations")
+    assert operations.status_code == 200
+    assert operations.json()["items"][0]["operation_type"] == "CREATED"
+    recovery = client.get(f"/api/paper/sessions/{session_id}/recovery")
+    assert recovery.status_code == 200
+    assert recovery.json()["status"] == "READY"
+    invalid_recover = client.post(f"/api/paper/sessions/{session_id}/recover")
+    assert invalid_recover.status_code == 409
     stopped = client.post(f"/api/paper-sessions/{session_id}/stop").json()
     assert stopped["status"] == "STOPPED"
     assert stopped["research_run_id"] is not None
     run = client.get(f"/api/runs/{stopped['research_run_id']}")
     assert run.status_code == 200
     assert run.json()["manifest"]["run_type"] == "PAPER"
+    final_operations = client.get(f"/api/paper/sessions/{session_id}/operations").json()["items"]
+    assert [item["operation_type"] for item in final_operations[-2:]] == [
+        "STOP_REQUESTED",
+        "STOPPED",
+    ]
 
 
 def test_actual_python_backend_process_restart_recovers_and_continues(tmp_path: Path) -> None:
@@ -979,3 +1146,89 @@ def test_optional_real_alpaca_authentication() -> None:
         await adapter.disconnect()
 
     asyncio.run(scenario())
+
+
+def test_explicit_recovery_does_not_steal_account_from_new_active_session(
+    tmp_path: Path,
+) -> None:
+    service, base_request, _ = _service(tmp_path)
+    account = service.create_account(
+        CreatePaperAccount(name="Recovery ownership", initial_cash=100_000.0)
+    )
+    request = base_request.model_copy(update={"account_id": account.account_id})
+    failed_session_id = service.create(request).session_id
+    _run(service.start(failed_session_id, launch_task=False))
+    _run(service.ingest(failed_session_id, _bar(30, 100.0)))
+    manifest = service.repository.load_manifest(failed_session_id)
+    assert manifest.checkpoint is not None
+    service.repository.save_manifest(
+        manifest.model_copy(
+            update={
+                "checkpoint": manifest.checkpoint.model_copy(
+                    update={"portfolio_hash": "sha256:tampered"}
+                )
+            }
+        ),
+        equity=service.get(failed_session_id).account.equity,
+    )
+
+    restarted = PaperSessionService(
+        PaperSessionRepository(tmp_path), registry=StrategyRegistry(tmp_path)
+    )
+    actual = restarted._session(failed_session_id).checkpoint()
+    failed_manifest = restarted.repository.load_manifest(failed_session_id)
+    restarted.repository.save_manifest(
+        failed_manifest.model_copy(update={"checkpoint": actual}),
+        equity=restarted.get(failed_session_id).account.equity,
+    )
+    new_session_id = restarted.create(request).session_id
+    operation_count = len(restarted.operations(failed_session_id).items)
+
+    with pytest.raises(ValueError, match="already owned by active session"):
+        _run(restarted.recover(failed_session_id))
+
+    assert restarted.get_account(account.account_id).active_session_id == new_session_id
+    assert restarted.get(failed_session_id).status == "ERROR"
+    assert restarted.get(failed_session_id).recovery_status == "RECOVERY_DIVERGENCE"
+    assert len(restarted.operations(failed_session_id).items) == operation_count
+
+
+def test_startup_replay_failure_keeps_error_session_retrievable(tmp_path: Path) -> None:
+    source = tmp_path / "faulty_recovery_strategy.py"
+    source.write_text(
+        STRATEGY_SOURCE.replace(
+            "        self.calls += 1\n        history = context.history",
+            "        self.calls += 1\n"
+            "        if self.calls == 2:\n"
+            "            raise RuntimeError('deterministic strategy failure')\n"
+            "        history = context.history",
+        ),
+        encoding="utf-8",
+    )
+    registry = StrategyRegistry(tmp_path)
+    registry.add(source)
+    service = PaperSessionService(PaperSessionRepository(tmp_path), registry=registry)
+    request = CreatePaperSession(
+        strategy_id="test.live-correction",
+        symbols=("AAPL",),
+        provider="fake",
+        feed="iex",
+    )
+    session_id = service.create(request).session_id
+    _run(service.start(session_id, launch_task=False))
+    _run(service.ingest(session_id, _bar(30, 100.0)))
+    with pytest.raises(RuntimeError, match="deterministic strategy failure"):
+        _run(service.ingest(session_id, _bar(31, 101.0)))
+    assert service.get(session_id).status == "ERROR"
+
+    restarted = PaperSessionService(PaperSessionRepository(tmp_path))
+    snapshot = restarted.get(session_id)
+    assert snapshot.status == "ERROR"
+    assert snapshot.recovery_status == "RECOVERY_DIVERGENCE"
+    assert restarted.health(session_id).status == "ERROR"
+    assert restarted.operations(session_id).items
+    assert restarted.recovery(session_id).status == "RECOVERY_DIVERGENCE"
+    stopped = _run(restarted.stop(session_id))
+    assert stopped.status == "STOPPED"
+    assert stopped.research_run_id is not None
+    assert stopped.reference_run_id is not None

@@ -7,6 +7,54 @@ export type PaperExecutionMode = 'VQD_SIMULATED' | 'ALPACA_PAPER'
 export type BrokerConnectionStatus = 'NOT_USED' | 'CONNECTED' | 'RECONNECTING' | 'DISCONNECTED' | 'ERROR'
 export type BrokerOrderStatus = 'CREATED' | 'SUBMITTED' | 'PARTIALLY_FILLED' | 'PENDING_CANCEL' | 'FILLED' | 'CANCELLED' | 'EXPIRED' | 'REJECTED' | 'REPLACED' | 'DONE_FOR_DAY' | 'HELD' | 'SUSPENDED' | 'UNKNOWN'
 export type JournalDisposition = 'BUFFERED' | 'EVALUATED' | 'EVALUATION_SKIPPED_PAUSED' | 'CORRECTION_APPLIED' | 'DUPLICATE_IGNORED' | 'OUT_OF_ORDER_REJECTED'
+export type PaperOperationType = 'CREATED' | 'STARTED' | 'PAUSED' | 'RESUMED' | 'STOP_REQUESTED' | 'STOPPED' | 'FEED_DISCONNECTED' | 'FEED_RECONNECTING' | 'FEED_RECONNECTED' | 'BACKFILL_STARTED' | 'BACKFILL_COMPLETED' | 'BROKER_RECONCILIATION' | 'RECOVERY_STARTED' | 'RECOVERY_COMPLETED' | 'RECOVERY_DIVERGENCE' | 'ERROR'
+
+export interface PaperOperationEvent {
+  operation_id: string
+  sequence: number
+  session_id: string
+  operation_type: PaperOperationType
+  occurred_at: string
+  message: string
+  metadata: Record<string, string | number | boolean | null>
+}
+
+export interface PaperRecoveryReport {
+  session_id: string
+  status: 'READY' | 'RECOVERED' | 'RECOVERY_DIVERGENCE'
+  journal_event_count: number
+  broker_event_count: number
+  recorded_portfolio_hash: string
+  recovered_portfolio_hash: string
+  recorded_trace_hash: string
+  recovered_trace_hash: string
+  broker_reconciled: boolean
+  account_reconciled: boolean
+  warnings: string[]
+}
+
+export interface PaperOperationalHealth {
+  session_id: string
+  status: PaperSessionStatus
+  feed_status: FeedStatus
+  broker_status: BrokerConnectionStatus
+  recovery_status: RecoveryStatus
+  last_received_at: string | null
+  last_market_event: string | null
+  last_latency_ms: number | null
+  stale_seconds: number
+  reconnect_count: number
+  backfill_count: number
+  backfilled_bar_count: number
+  open_order_count: number
+  partially_filled_order_count: number
+  broker_account_status: string | null
+  broker_cash: number | null
+  broker_equity: number | null
+  broker_buying_power: number | null
+  rejected_order_count: number
+  last_broker_event_at: string | null
+}
 
 export interface MarketDataProviderStatus {
   provider: string

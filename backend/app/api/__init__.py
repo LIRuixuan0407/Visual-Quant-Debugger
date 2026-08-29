@@ -11,7 +11,7 @@ from app.api.factors import router as factors_router
 from app.api.forward import router as forward_router
 from app.api.fundamentals import router as fundamentals_router
 from app.api.global_search import router as global_search_router
-from app.api.paper import account_router, dataset_refresh_router, market_router
+from app.api.paper import account_router, dataset_refresh_router, market_router, operations_router
 from app.api.paper import router as paper_router
 from app.api.portfolio_lab import router as portfolio_lab_router
 from app.api.replay import router as replay_router
@@ -45,6 +45,7 @@ router.include_router(autopsy_router)
 router.include_router(forward_router)
 router.include_router(market_router)
 router.include_router(paper_router)
+router.include_router(operations_router)
 router.include_router(account_router)
 router.include_router(settings_router)
 router.include_router(factors_router)

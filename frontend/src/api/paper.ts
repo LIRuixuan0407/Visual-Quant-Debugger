@@ -1,5 +1,5 @@
 import { readJson } from './client'
-import type { CreatePaperSessionInput, MarketDataProviderStatus, PaperAccount, PaperSessionSnapshot, PaperTrace } from '../types/paper'
+import type { CreatePaperSessionInput, MarketDataProviderStatus, PaperAccount, PaperOperationalHealth, PaperOperationEvent, PaperRecoveryReport, PaperSessionSnapshot, PaperTrace } from '../types/paper'
 
 async function requestJson(endpoint: string, init?: RequestInit): Promise<unknown> {
   const response = await fetch(endpoint, init)
@@ -70,4 +70,32 @@ export async function getPaperTrace(sessionId: string): Promise<PaperTrace> {
   const value = await requestJson(endpoint)
   if (typeof value !== 'object' || value === null || (value as Record<string, unknown>).trace_version !== '1.0' || !Array.isArray((value as Record<string, unknown>).timeline) || !Array.isArray((value as Record<string, unknown>).market_revisions)) throw new Error(`${endpoint} returned a malformed live Trace.`)
   return value as PaperTrace
+}
+
+export async function getPaperHealth(sessionId: string): Promise<PaperOperationalHealth> {
+  const endpoint = `/api/paper/sessions/${encodeURIComponent(sessionId)}/health`
+  const value = await requestJson(endpoint)
+  if (typeof value !== 'object' || value === null || (value as Record<string, unknown>).session_id !== sessionId || typeof (value as Record<string, unknown>).stale_seconds !== 'number') throw new Error(`${endpoint} returned malformed health data.`)
+  return value as PaperOperationalHealth
+}
+
+export async function getPaperOperations(sessionId: string): Promise<PaperOperationEvent[]> {
+  const endpoint = `/api/paper/sessions/${encodeURIComponent(sessionId)}/operations`
+  const value = await requestJson(endpoint)
+  if (typeof value !== 'object' || value === null || !Array.isArray((value as { items?: unknown }).items)) throw new Error(`${endpoint} returned a malformed operation log.`)
+  return (value as { items: PaperOperationEvent[] }).items
+}
+
+export async function getPaperRecovery(sessionId: string): Promise<PaperRecoveryReport> {
+  const endpoint = `/api/paper/sessions/${encodeURIComponent(sessionId)}/recovery`
+  const value = await requestJson(endpoint)
+  if (typeof value !== 'object' || value === null || (value as Record<string, unknown>).session_id !== sessionId || !Array.isArray((value as Record<string, unknown>).warnings)) throw new Error(`${endpoint} returned a malformed recovery report.`)
+  return value as PaperRecoveryReport
+}
+
+export async function recoverPaperSession(sessionId: string): Promise<PaperRecoveryReport> {
+  const endpoint = `/api/paper/sessions/${encodeURIComponent(sessionId)}/recover`
+  const value = await requestJson(endpoint, { method: 'POST' })
+  if (typeof value !== 'object' || value === null || (value as Record<string, unknown>).session_id !== sessionId || !Array.isArray((value as Record<string, unknown>).warnings)) throw new Error(`${endpoint} returned a malformed recovery report.`)
+  return value as PaperRecoveryReport
 }

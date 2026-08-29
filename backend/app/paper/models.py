@@ -13,6 +13,25 @@ PaperSessionStatus = Literal["CREATED", "RUNNING", "PAUSED", "STOPPED", "ERROR"]
 PaperExecutionMode = Literal["VQD_SIMULATED", "ALPACA_PAPER"]
 BrokerConnectionStatus = Literal["NOT_USED", "DISCONNECTED", "CONNECTED", "RECONNECTING", "ERROR"]
 RecoveryStatus = Literal["READY", "RECOVERING", "RECOVERY_DIVERGENCE"]
+RecoveryReportStatus = Literal["READY", "RECOVERED", "RECOVERY_DIVERGENCE"]
+PaperOperationType = Literal[
+    "CREATED",
+    "STARTED",
+    "PAUSED",
+    "RESUMED",
+    "STOP_REQUESTED",
+    "STOPPED",
+    "FEED_DISCONNECTED",
+    "FEED_RECONNECTING",
+    "FEED_RECONNECTED",
+    "BACKFILL_STARTED",
+    "BACKFILL_COMPLETED",
+    "BROKER_RECONCILIATION",
+    "RECOVERY_STARTED",
+    "RECOVERY_COMPLETED",
+    "RECOVERY_DIVERGENCE",
+    "ERROR",
+]
 JournalDisposition = Literal[
     "BUFFERED",
     "EVALUATED",
@@ -64,6 +83,57 @@ class RecoveryCheckpoint(PaperModel):
     market_watermark: datetime | None = None
     portfolio_hash: str
     trace_semantic_hash: str
+
+
+class PaperOperationEvent(PaperModel):
+    operation_id: str
+    sequence: int = Field(ge=1)
+    session_id: str
+    operation_type: PaperOperationType
+    occurred_at: datetime
+    message: str
+    metadata: dict[str, str | int | float | bool | None] = Field(default_factory=dict)
+
+
+class PaperOperationLog(PaperModel):
+    items: tuple[PaperOperationEvent, ...]
+
+
+class PaperRecoveryReport(PaperModel):
+    session_id: str
+    status: RecoveryReportStatus
+    journal_event_count: int = Field(ge=0)
+    broker_event_count: int = Field(ge=0)
+    recorded_portfolio_hash: str
+    recovered_portfolio_hash: str
+    recorded_trace_hash: str
+    recovered_trace_hash: str
+    broker_reconciled: bool
+    account_reconciled: bool
+    warnings: tuple[str, ...] = ()
+
+
+class PaperOperationalHealth(PaperModel):
+    session_id: str
+    status: PaperSessionStatus
+    feed_status: MarketDataConnectionState
+    broker_status: BrokerConnectionStatus
+    recovery_status: RecoveryStatus
+    last_received_at: datetime | None
+    last_market_event: datetime | None
+    last_latency_ms: float | None
+    stale_seconds: float = Field(ge=0)
+    reconnect_count: int = Field(ge=0)
+    backfill_count: int = Field(ge=0)
+    backfilled_bar_count: int = Field(ge=0)
+    open_order_count: int = Field(ge=0)
+    partially_filled_order_count: int = Field(ge=0)
+    broker_account_status: str | None = None
+    broker_cash: float | None = None
+    broker_equity: float | None = None
+    broker_buying_power: float | None = None
+    rejected_order_count: int = Field(ge=0)
+    last_broker_event_at: datetime | None = None
 
 
 class PaperSessionManifest(PaperModel):

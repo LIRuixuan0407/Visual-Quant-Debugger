@@ -26,6 +26,7 @@ from app.market_data import (
     MarketBar,
     MarketDataAdapter,
 )
+from app.paper.lifecycle import recovery_target_status
 from app.paper.models import (
     CreatePaperAccount,
     CreatePaperSession,
@@ -34,11 +35,16 @@ from app.paper.models import (
     PaperAccountList,
     PaperBrokerEvent,
     PaperFill,
+    PaperOperationalHealth,
+    PaperOperationEvent,
+    PaperOperationLog,
     PaperOrder,
+    PaperRecoveryReport,
     PaperSessionList,
     PaperSessionManifest,
     PaperSessionSnapshot,
     PaperTrace,
+    RecoveryCheckpoint,
     RuntimeConsistencyReport,
 )
 from app.paper.repository import PaperSessionNotFoundError, PaperSessionRepository
@@ -60,6 +66,19 @@ from app.trace.models import BacktestTrace
 
 AdapterFactory = Callable[[PaperSessionManifest], MarketDataAdapter]
 BrokerAdapterFactory = Callable[[PaperSessionManifest], PaperBrokerAdapter]
+
+_SENSITIVE_OPERATION_KEYS = ("api_key", "secret", "token", "credential", "password")
+_OPEN_ORDER_STATUSES = frozenset(
+    {
+        "CREATED",
+        "SUBMITTED",
+        "PARTIALLY_FILLED",
+        "PENDING_CANCEL",
+        "HELD",
+        "SUSPENDED",
+        "UNKNOWN",
+    }
+)
 
 
 class PaperSessionService:
@@ -98,6 +117,283 @@ class PaperSessionService:
             )
         ).encode()
         return f"market-{hashlib.sha256(identity).hexdigest()[:24]}"
+
+    def _record_operation(
+        self,
+        session_id: str,
+        operation_type: Literal[
+            "CREATED",
+            "STARTED",
+            "PAUSED",
+            "RESUMED",
+            "STOP_REQUESTED",
+            "STOPPED",
+            "FEED_DISCONNECTED",
+            "FEED_RECONNECTING",
+            "FEED_RECONNECTED",
+            "BACKFILL_STARTED",
+            "BACKFILL_COMPLETED",
+            "BROKER_RECONCILIATION",
+            "RECOVERY_STARTED",
+            "RECOVERY_COMPLETED",
+            "RECOVERY_DIVERGENCE",
+            "ERROR",
+        ],
+        message: str,
+        metadata: dict[str, str | int | float | bool | None] | None = None,
+    ) -> PaperOperationEvent:
+        safe_metadata = {
+            key: value
+            for key, value in (metadata or {}).items()
+            if not any(fragment in key.lower() for fragment in _SENSITIVE_OPERATION_KEYS)
+        }
+        sequence = len(self.repository.read_operations(session_id)) + 1
+        event = PaperOperationEvent(
+            operation_id=f"operation-{session_id.removeprefix('paper-')}-{sequence:08d}",
+            sequence=sequence,
+            session_id=session_id,
+            operation_type=operation_type,
+            occurred_at=datetime.now(UTC),
+            message=message,
+            metadata=safe_metadata,
+        )
+        self.repository.append_operation(session_id, event)
+        return event
+
+    @staticmethod
+    def _operation_int_metadata(event: PaperOperationEvent, key: str) -> int:
+        value = event.metadata.get(key, 0)
+        if isinstance(value, bool) or value is None:
+            return 0
+        if isinstance(value, (int, float)):
+            return int(value)
+        try:
+            return int(value)
+        except ValueError:
+            return 0
+
+    @staticmethod
+    def _checkpoint_matches(
+        recorded: RecoveryCheckpoint | None, recovered: RecoveryCheckpoint
+    ) -> bool:
+        if recorded is None:
+            return True
+        return bool(
+            recovered.last_event_sequence == recorded.last_event_sequence
+            and recovered.portfolio_hash == recorded.portfolio_hash
+            and recovered.trace_semantic_hash == recorded.trace_semantic_hash
+            and (
+                recorded.last_processed_market_event_id is None
+                or recovered.last_processed_market_event_id
+                == recorded.last_processed_market_event_id
+            )
+            and (
+                recorded.market_watermark is None
+                or recovered.market_watermark == recorded.market_watermark
+            )
+        )
+
+    def _replay_session(
+        self, persisted: PaperSessionManifest
+    ) -> tuple[LivePaperSession, int, int, Exception | None]:
+        recovering = persisted.model_copy(update={"recovery_status": "RECOVERING"})
+        session = LivePaperSession(
+            recovering, str(self.repository.strategy_path(persisted.session_id))
+        )
+        broker_events = self.repository.read_broker_events(persisted.session_id)
+        broker_index = 0
+        journal = self.repository.read_journal(persisted.session_id)
+        try:
+            for entry in journal:
+                session.apply_entry(entry)
+                while (
+                    broker_index < len(broker_events)
+                    and broker_events[broker_index].market_sequence <= entry.sequence
+                ):
+                    session.apply_broker_event(broker_events[broker_index])
+                    broker_index += 1
+            while broker_index < len(broker_events):
+                session.apply_broker_event(broker_events[broker_index])
+                broker_index += 1
+        except Exception as exc:
+            return session, len(journal), len(broker_events), exc
+        return session, len(journal), len(broker_events), None
+
+    def _recover_session(
+        self, stored: PaperSessionManifest, *, explicit: bool
+    ) -> PaperRecoveryReport:
+        persisted = self._ensure_manifest_account(stored)
+        session_id = persisted.session_id
+        recorded = persisted.checkpoint
+        self._record_operation(
+            session_id,
+            "RECOVERY_STARTED",
+            "Explicit recovery started" if explicit else "Startup recovery started",
+        )
+        try:
+            session, journal_count, broker_count, replay_error = self._replay_session(persisted)
+            if replay_error is not None:
+                failed = persisted.model_copy(
+                    update={
+                        "status": "ERROR",
+                        "feed_status": "DISCONNECTED",
+                        "recovery_status": "RECOVERY_DIVERGENCE",
+                        "error_code": "RECOVERY_DIVERGENCE",
+                        "error_message": f"Recovery failed: {type(replay_error).__name__}",
+                        "updated_at": datetime.now(UTC),
+                    }
+                )
+                session.manifest = failed
+                self._sessions[session_id] = session
+                self._locks.setdefault(session_id, asyncio.Lock())
+                self.repository.save_trace(session_id, session.trace())
+                self.repository.save_manifest(failed, equity=session.snapshot().account.equity)
+                report = PaperRecoveryReport(
+                    session_id=session_id,
+                    status="RECOVERY_DIVERGENCE",
+                    journal_event_count=journal_count,
+                    broker_event_count=broker_count,
+                    recorded_portfolio_hash=(
+                        "unavailable" if recorded is None else recorded.portfolio_hash
+                    ),
+                    recovered_portfolio_hash="unavailable",
+                    recorded_trace_hash=(
+                        "unavailable" if recorded is None else recorded.trace_semantic_hash
+                    ),
+                    recovered_trace_hash="unavailable",
+                    broker_reconciled=False,
+                    account_reconciled=False,
+                    warnings=(
+                        f"Recovery failed with {type(replay_error).__name__}.",
+                        "Session remains available in ERROR state for inspection or stopping.",
+                    ),
+                )
+                self.repository.save_recovery_report(report)
+                self._record_operation(
+                    session_id,
+                    "RECOVERY_DIVERGENCE",
+                    "Recovery could not replay the durable journal",
+                    {"error_type": type(replay_error).__name__},
+                )
+                return report
+            recovered = session.checkpoint()
+            matches = self._checkpoint_matches(recorded, recovered)
+            warnings: tuple[str, ...] = ()
+            if not matches:
+                session.manifest = session.manifest.model_copy(
+                    update={
+                        "status": "ERROR",
+                        "feed_status": "DISCONNECTED",
+                        "recovery_status": "RECOVERY_DIVERGENCE",
+                        "error_code": "RECOVERY_DIVERGENCE",
+                        "error_message": (
+                            "Deterministic replay did not match the persisted checkpoint"
+                        ),
+                        "updated_at": datetime.now(UTC),
+                    }
+                )
+                warnings = (
+                    "Recovered runtime state does not match the persisted checkpoint.",
+                    "Session was not resumed automatically.",
+                )
+            else:
+                restored_status = recovery_target_status(
+                    persisted.status, explicit=explicit
+                )
+                session.manifest = session.manifest.model_copy(
+                    update={
+                        "status": restored_status,
+                        "recovery_status": "READY",
+                        "checkpoint": recovered,
+                        "error_code": None,
+                        "error_message": None,
+                        "updated_at": datetime.now(UTC),
+                    }
+                )
+            self._sessions[session_id] = session
+            self._locks.setdefault(session_id, asyncio.Lock())
+            self.repository.save_trace(session_id, session.trace())
+            self.repository.save_manifest(
+                session.manifest, equity=session.snapshot().account.equity
+            )
+            self._reconcile_account(session)
+            report = PaperRecoveryReport(
+                session_id=session_id,
+                status=(
+                    "RECOVERY_DIVERGENCE"
+                    if not matches
+                    else "RECOVERED"
+                    if explicit or recorded is not None
+                    else "READY"
+                ),
+                journal_event_count=journal_count,
+                broker_event_count=broker_count,
+                recorded_portfolio_hash=(
+                    recovered.portfolio_hash if recorded is None else recorded.portfolio_hash
+                ),
+                recovered_portfolio_hash=recovered.portfolio_hash,
+                recorded_trace_hash=(
+                    recovered.trace_semantic_hash
+                    if recorded is None
+                    else recorded.trace_semantic_hash
+                ),
+                recovered_trace_hash=recovered.trace_semantic_hash,
+                broker_reconciled=session.manifest.execution_mode == "VQD_SIMULATED",
+                account_reconciled=True,
+                warnings=warnings,
+            )
+            self.repository.save_recovery_report(report)
+            self._record_operation(
+                session_id,
+                "RECOVERY_DIVERGENCE" if not matches else "RECOVERY_COMPLETED",
+                warnings[0] if warnings else "Runtime state recovered from durable journals",
+                {
+                    "journal_event_count": journal_count,
+                    "broker_event_count": broker_count,
+                    "checkpoint_match": matches,
+                },
+            )
+            return report
+        except Exception as exc:
+            failed = persisted.model_copy(
+                update={
+                    "status": "ERROR",
+                    "feed_status": "DISCONNECTED",
+                    "recovery_status": "RECOVERY_DIVERGENCE",
+                    "error_code": "RECOVERY_DIVERGENCE",
+                    "error_message": f"Recovery failed: {type(exc).__name__}",
+                    "updated_at": datetime.now(UTC),
+                }
+            )
+            self.repository.save_manifest(failed, equity=persisted.initial_cash)
+            report = PaperRecoveryReport(
+                session_id=session_id,
+                status="RECOVERY_DIVERGENCE",
+                journal_event_count=len(self.repository.read_journal(session_id)),
+                broker_event_count=len(self.repository.read_broker_events(session_id)),
+                recorded_portfolio_hash=(
+                    "unavailable" if recorded is None else recorded.portfolio_hash
+                ),
+                recovered_portfolio_hash="unavailable",
+                recorded_trace_hash=(
+                    "unavailable" if recorded is None else recorded.trace_semantic_hash
+                ),
+                recovered_trace_hash="unavailable",
+                broker_reconciled=False,
+                account_reconciled=False,
+                warnings=(
+                    f"Recovery failed with {type(exc).__name__}.",
+                    "Session was not resumed automatically.",
+                ),
+            )
+            self.repository.save_recovery_report(report)
+            self._record_operation(
+                session_id,
+                "RECOVERY_DIVERGENCE",
+                "Recovery could not rebuild a matching runtime state",
+                {"error_type": type(exc).__name__},
+            )
+            return report
 
     def create_account(self, request: CreatePaperAccount) -> PaperAccount:
         now = datetime.now(UTC)
@@ -157,70 +453,22 @@ class PaperSessionService:
         return AlpacaPaperBrokerAdapter(credentials.api_key, credentials.secret_key)
 
     def _recover_all(self) -> None:
-        for stored in self.repository.list_manifests():
-            persisted = self._ensure_manifest_account(stored)
-            expected = persisted.checkpoint
-            recovering = persisted.model_copy(update={"recovery_status": "RECOVERING"})
-            try:
-                session = LivePaperSession(
-                    recovering, str(self.repository.strategy_path(persisted.session_id))
-                )
-                broker_events = self.repository.read_broker_events(persisted.session_id)
-                broker_index = 0
-                for entry in self.repository.read_journal(persisted.session_id):
-                    session.apply_entry(entry)
-                    while (
-                        broker_index < len(broker_events)
-                        and broker_events[broker_index].market_sequence <= entry.sequence
-                    ):
-                        session.apply_broker_event(broker_events[broker_index])
-                        broker_index += 1
-                while broker_index < len(broker_events):
-                    session.apply_broker_event(broker_events[broker_index])
-                    broker_index += 1
-                actual = session.checkpoint()
-                checkpoint_matches = expected is None or (
-                    actual.last_event_sequence == expected.last_event_sequence
-                    and actual.portfolio_hash == expected.portfolio_hash
-                    and actual.trace_semantic_hash == expected.trace_semantic_hash
-                    and (
-                        expected.last_processed_market_event_id is None
-                        or actual.last_processed_market_event_id
-                        == expected.last_processed_market_event_id
-                    )
-                    and (
-                        expected.market_watermark is None
-                        or actual.market_watermark == expected.market_watermark
-                    )
-                )
-                if not checkpoint_matches:
-                    session.mark_error(
-                        "RECOVERY_DIVERGENCE",
-                        "Deterministic replay did not match the persisted checkpoint",
-                    )
-                else:
-                    session.manifest = session.manifest.model_copy(
-                        update={"recovery_status": "READY", "checkpoint": actual}
-                    )
-                self._sessions[persisted.session_id] = session
-                self._locks[persisted.session_id] = asyncio.Lock()
-                self.repository.save_trace(persisted.session_id, session.trace())
-                self.repository.save_manifest(
-                    session.manifest, equity=session.snapshot().account.equity
-                )
-                self._reconcile_account(session)
-            except Exception as exc:
-                failed = persisted.model_copy(
-                    update={
-                        "status": "ERROR",
-                        "feed_status": "DISCONNECTED",
-                        "recovery_status": "RECOVERY_DIVERGENCE",
-                        "error_code": "RECOVERY_DIVERGENCE",
-                        "error_message": str(exc),
-                        "updated_at": datetime.now(UTC),
-                    }
-                )
-                self.repository.save_manifest(failed, equity=persisted.initial_cash)
+        # Reconcile chronologically so the newest session for an account owns
+        # the final durable balance and active-session pointer.
+        for stored in reversed(self.repository.list_manifests()):
+            self._recover_session(stored, explicit=False)
+
+    def _active_session_id_for_account(
+        self, account_id: str, *, exclude_session_id: str | None = None
+    ) -> str | None:
+        active = tuple(
+            manifest
+            for manifest in self.repository.list_manifests()
+            if manifest.account_id == account_id
+            and manifest.session_id != exclude_session_id
+            and manifest.status in {"CREATED", "RUNNING", "PAUSED"}
+        )
+        return None if not active else max(active, key=lambda item: item.created_at).session_id
 
     def create(self, request: CreatePaperSession) -> PaperSessionSnapshot:
         if (
@@ -259,18 +507,12 @@ class PaperSessionService:
             if request.account_id is None
             else self.repository.get_account(request.account_id)
         )
-        if account.active_session_id is not None:
-            active = self._sessions.get(account.active_session_id)
-            active_status = (
-                active.manifest.status
-                if active is not None
-                else self.repository.load_manifest(account.active_session_id).status
+        active_session_id = self._active_session_id_for_account(account.account_id)
+        if active_session_id is not None:
+            raise ValueError(
+                f"Paper account '{account.account_id}' already has active session "
+                f"'{active_session_id}'"
             )
-            if active_status in {"CREATED", "RUNNING", "PAUSED"}:
-                raise ValueError(
-                    f"Paper account '{account.account_id}' already has active session "
-                    f"'{account.active_session_id}'"
-                )
         now = datetime.now(UTC)
         session_id = self.repository.new_session_id()
         manifest = PaperSessionManifest(
@@ -301,10 +543,36 @@ class PaperSessionService:
             updated_at=now,
         )
         self.repository.create(manifest, loaded.source_path.read_bytes())
+        self._record_operation(
+            session_id,
+            "CREATED",
+            "Paper session created",
+            {
+                "account_id": account.account_id,
+                "execution_mode": request.execution_mode,
+                "provider": request.provider,
+                "feed": request.feed,
+            },
+        )
         session = LivePaperSession(manifest, str(self.repository.strategy_path(session_id)))
         session.manifest = manifest.model_copy(update={"checkpoint": session.checkpoint()})
         self.repository.save_trace(session_id, session.trace())
         self.repository.save_manifest(session.manifest, equity=account.cash)
+        checkpoint = session.checkpoint()
+        self.repository.save_recovery_report(
+            PaperRecoveryReport(
+                session_id=session_id,
+                status="READY",
+                journal_event_count=0,
+                broker_event_count=0,
+                recorded_portfolio_hash=checkpoint.portfolio_hash,
+                recovered_portfolio_hash=checkpoint.portfolio_hash,
+                recorded_trace_hash=checkpoint.trace_semantic_hash,
+                recovered_trace_hash=checkpoint.trace_semantic_hash,
+                broker_reconciled=request.execution_mode == "VQD_SIMULATED",
+                account_reconciled=True,
+            )
+        )
         self._sessions[session_id] = session
         self._locks[session_id] = asyncio.Lock()
         self.repository.save_account(
@@ -338,6 +606,107 @@ class PaperSessionService:
 
     def trace(self, session_id: str) -> PaperTrace:
         return self._session(session_id).trace()
+
+    def operations(self, session_id: str) -> PaperOperationLog:
+        self._session(session_id)
+        return PaperOperationLog(items=self.repository.read_operations(session_id))
+
+    def recovery(self, session_id: str) -> PaperRecoveryReport:
+        self._session(session_id)
+        return self.repository.load_recovery_report(session_id)
+
+    def health(self, session_id: str) -> PaperOperationalHealth:
+        session = self._session(session_id)
+        snapshot = self._snapshot(session)
+        operations = self.repository.read_operations(session_id)
+        last_received_at = snapshot.last_received_at
+        stale_seconds = (
+            0.0
+            if last_received_at is None
+            else max(0.0, (datetime.now(UTC) - last_received_at).total_seconds())
+        )
+        open_orders = tuple(
+            order for order in snapshot.orders if order.status in _OPEN_ORDER_STATUSES
+        )
+        broker_account = snapshot.broker_account
+        return PaperOperationalHealth(
+            session_id=session_id,
+            status=snapshot.status,
+            feed_status=snapshot.feed_status,
+            broker_status=snapshot.broker_status,
+            recovery_status=snapshot.recovery_status,
+            last_received_at=last_received_at,
+            last_market_event=snapshot.last_market_event,
+            last_latency_ms=(
+                None
+                if not snapshot.recent_market_events
+                else snapshot.recent_market_events[-1].latency_ms
+            ),
+            stale_seconds=stale_seconds,
+            reconnect_count=sum(item.operation_type == "FEED_RECONNECTING" for item in operations),
+            backfill_count=sum(item.operation_type == "BACKFILL_COMPLETED" for item in operations),
+            backfilled_bar_count=sum(
+                self._operation_int_metadata(item, "bar_count")
+                for item in operations
+                if item.operation_type == "BACKFILL_COMPLETED"
+            ),
+            open_order_count=len(open_orders),
+            partially_filled_order_count=sum(
+                order.status == "PARTIALLY_FILLED" for order in snapshot.orders
+            ),
+            broker_account_status=None if broker_account is None else broker_account.status,
+            broker_cash=None if broker_account is None else broker_account.cash,
+            broker_equity=None if broker_account is None else broker_account.equity,
+            broker_buying_power=(None if broker_account is None else broker_account.buying_power),
+            rejected_order_count=sum(order.status == "REJECTED" for order in snapshot.orders),
+            last_broker_event_at=(
+                None
+                if not snapshot.recent_broker_events
+                else snapshot.recent_broker_events[-1].received_at
+            ),
+        )
+
+    async def recover(self, session_id: str) -> PaperRecoveryReport:
+        session = self._session(session_id)
+        if session.manifest.status != "ERROR":
+            raise ValueError(f"Cannot recover a {session.manifest.status} session")
+        if session.manifest.recovery_status != "RECOVERY_DIVERGENCE":
+            raise ValueError("This session does not have a recoverable divergence report")
+        self._assert_account_available(session)
+        report = self._recover_session(self.repository.load_manifest(session_id), explicit=True)
+        recovered = self._session(session_id)
+        if report.status == "RECOVERED" and recovered.manifest.execution_mode == "ALPACA_PAPER":
+            try:
+                async with self._locks[session_id]:
+                    await self._refresh_broker_state(recovered)
+                    self._persist(recovered)
+                report = report.model_copy(update={"broker_reconciled": True})
+                self.repository.save_recovery_report(report)
+                self._record_operation(
+                    session_id,
+                    "BROKER_RECONCILIATION",
+                    "Broker account and open orders reconciled after recovery",
+                )
+            except Exception as exc:
+                recovered.mark_error("BROKER_RECONCILIATION_FAILED", str(exc))
+                self._persist(recovered)
+                report = report.model_copy(
+                    update={
+                        "status": "RECOVERY_DIVERGENCE",
+                        "broker_reconciled": False,
+                        "warnings": report.warnings
+                        + ("Broker reconciliation did not complete; session remains stopped.",),
+                    }
+                )
+                self.repository.save_recovery_report(report)
+                self._record_operation(
+                    session_id,
+                    "RECOVERY_DIVERGENCE",
+                    "Broker reconciliation did not complete",
+                    {"error_type": type(exc).__name__},
+                )
+        await self._publish(session_id)
+        return report
 
     def register_adapter(self, session_id: str, adapter: MarketDataAdapter) -> None:
         self._session(session_id)
@@ -398,6 +767,30 @@ class PaperSessionService:
             raise RuntimeError("Paper account reconciliation failed")
         return verified
 
+    def _assert_account_available(self, session: LivePaperSession) -> None:
+        account = self.repository.get_account(session.manifest.account_id)
+        conflicting_session_id = self._active_session_id_for_account(
+            account.account_id, exclude_session_id=session.manifest.session_id
+        )
+        if conflicting_session_id is not None:
+            raise ValueError(
+                f"Paper account '{account.account_id}' is already owned by active session "
+                f"'{conflicting_session_id}'"
+            )
+
+    def _assert_account_ownership(self, session: LivePaperSession) -> None:
+        self._assert_account_available(session)
+        account = self.repository.get_account(session.manifest.account_id)
+        if account.active_session_id != session.manifest.session_id:
+            self.repository.save_account(
+                account.model_copy(
+                    update={
+                        "active_session_id": session.manifest.session_id,
+                        "updated_at": datetime.now(UTC),
+                    }
+                )
+            )
+
     async def _publish(self, session_id: str) -> None:
         payload = self.get(session_id).model_dump_json()
         for queue in tuple(self._subscribers.get(session_id, set())):
@@ -410,6 +803,11 @@ class PaperSessionService:
         session = self._session(session_id)
         if session.manifest.status != "CREATED":
             raise ValueError(f"Cannot start a {session.manifest.status} session")
+        if session.manifest.recovery_status != "READY":
+            raise ValueError(
+                f"Cannot start while recovery status is {session.manifest.recovery_status}"
+            )
+        self._assert_account_ownership(session)
         if session.manifest.execution_mode == "ALPACA_PAPER":
             try:
                 broker = self._broker_adapter(session)
@@ -429,9 +827,16 @@ class PaperSessionService:
                     }
                 )
                 self._persist(session)
+                self._record_operation(
+                    session_id,
+                    "ERROR",
+                    "Broker connection prevented the session from starting",
+                    {"error_type": type(exc).__name__},
+                )
                 raise ValueError("Could not connect to the Alpaca Paper Broker") from exc
         session.set_status("RUNNING")
         self._persist(session)
+        self._record_operation(session_id, "STARTED", "Paper session started")
         if launch_task:
             self._start_task(session_id)
             self._start_broker_task(session_id)
@@ -444,6 +849,11 @@ class PaperSessionService:
             raise ValueError(f"Cannot pause a {session.manifest.status} session")
         session.set_status("PAUSED")
         self._persist(session)
+        self._record_operation(
+            session_id,
+            "PAUSED",
+            "Strategy decisions and new orders paused; market ingestion remains active",
+        )
         await self._publish(session_id)
         return self._snapshot(session)
 
@@ -451,8 +861,18 @@ class PaperSessionService:
         session = self._session(session_id)
         if session.manifest.status != "PAUSED":
             raise ValueError(f"Cannot resume a {session.manifest.status} session")
+        if session.manifest.recovery_status != "READY":
+            raise ValueError(
+                f"Cannot resume while recovery status is {session.manifest.recovery_status}"
+            )
+        self._assert_account_ownership(session)
         session.set_status("RUNNING")
         self._persist(session)
+        self._record_operation(
+            session_id,
+            "RESUMED",
+            "Strategy decisions resumed from the current market stream",
+        )
         self._start_task(session_id)
         self._start_broker_task(session_id)
         await self._publish(session_id)
@@ -460,8 +880,9 @@ class PaperSessionService:
 
     async def stop(self, session_id: str) -> PaperSessionSnapshot:
         session = self._session(session_id)
-        if session.manifest.status not in {"CREATED", "RUNNING", "PAUSED"}:
+        if session.manifest.status not in {"CREATED", "RUNNING", "PAUSED", "ERROR"}:
             raise ValueError(f"Cannot stop a {session.manifest.status} session")
+        self._record_operation(session_id, "STOP_REQUESTED", "Stop requested")
         if session.manifest.execution_mode == "ALPACA_PAPER":
             await self._cancel_open_broker_orders(session)
         session.set_status("STOPPED", feed_status="DISCONNECTED")
@@ -480,23 +901,48 @@ class PaperSessionService:
         if session.manifest.execution_mode == "ALPACA_PAPER":
             session.manifest = session.manifest.model_copy(update={"broker_status": "DISCONNECTED"})
         self._persist(session)
-        report = self.runtime_consistency(session_id)
+        try:
+            report = self.runtime_consistency(session_id)
+        except Exception as exc:
+            report = RuntimeConsistencyReport(
+                session_id=session_id,
+                status="FIRST_RUNTIME_DIVERGENCE",
+                compared_event_count=len(session.trace().timeline),
+                first_divergence_layer="DECISION",
+                message=(
+                    "Recorded Feed Replay failed during the consistency check: "
+                    f"{type(exc).__name__}"
+                ),
+            )
         self.repository.save_consistency_report(report)
         if session.manifest.research_run_id is None:
             run_id = self._archive_paper_run(session, report)
             session.manifest = session.manifest.model_copy(update={"research_run_id": run_id})
             self._persist(session)
         if session.manifest.reference_run_id is None:
+            try:
+                reference_trace = self.recorded_reference_trace(session_id)
+            except Exception:
+                reference_trace = None
             reference_run_id = self._archive_paper_run(
                 session,
                 report,
                 run_type="REFERENCE",
-                trace_override=self.recorded_reference_trace(session_id),
+                trace_override=reference_trace,
             )
             session.manifest = session.manifest.model_copy(
                 update={"reference_run_id": reference_run_id}
             )
             self._persist(session)
+        self._record_operation(
+            session_id,
+            "STOPPED",
+            "Paper session stopped and research evidence archived",
+            {
+                "paper_run_archived": session.manifest.research_run_id is not None,
+                "reference_run_archived": session.manifest.reference_run_id is not None,
+            },
+        )
         await self._publish(session_id)
         return self._snapshot(session)
 
@@ -787,6 +1233,12 @@ class PaperSessionService:
             except Exception as exc:
                 session.mark_error(type(exc).__name__, str(exc))
                 self._persist(session)
+                self._record_operation(
+                    session_id,
+                    "ERROR",
+                    "Strategy runtime failed while applying a durable market event",
+                    {"error_type": type(exc).__name__},
+                )
                 await self._publish(session_id)
                 raise
             if disposition in {"EVALUATED", "EVALUATION_SKIPPED_PAUSED"}:
@@ -932,6 +1384,16 @@ class PaperSessionService:
                 ),
             )
         self.repository.save_orders_and_fills((updated_order,), fills)
+        self._record_operation(
+            session.manifest.session_id,
+            "BROKER_RECONCILIATION",
+            "Broker order state reconciled",
+            {
+                "order_id": updated_order.order_id,
+                "status": updated_order.status,
+                "fill_quantity": fill_quantity,
+            },
+        )
 
     async def _persist_runtime_records(
         self, session: LivePaperSession, market_event_id: str
@@ -1098,6 +1560,7 @@ class PaperSessionService:
 
     async def _refresh_broker_state(self, session: LivePaperSession) -> None:
         broker = self._broker_adapter(session)
+        previous_status = session.manifest.broker_status
         session.broker_account = await broker.account()
         for order in self.repository.list_orders(session.manifest.session_id):
             if order.status == "CREATED" or order.status not in TERMINAL_BROKER_STATUSES:
@@ -1109,6 +1572,25 @@ class PaperSessionService:
                 "error_message": None,
             }
         )
+        if previous_status != "CONNECTED":
+            self._record_operation(
+                session.manifest.session_id,
+                "BROKER_RECONCILIATION",
+                "Broker account connection and open orders reconciled",
+                {"previous_status": previous_status},
+            )
+        try:
+            recovery_report = self.repository.load_recovery_report(session.manifest.session_id)
+        except PaperSessionNotFoundError:
+            recovery_report = None
+        if (
+            recovery_report is not None
+            and recovery_report.status != "RECOVERY_DIVERGENCE"
+            and not recovery_report.broker_reconciled
+        ):
+            self.repository.save_recovery_report(
+                recovery_report.model_copy(update={"broker_reconciled": True})
+            )
 
     async def _cancel_open_broker_orders(self, session: LivePaperSession) -> None:
         broker = self._broker_adapter(session)
@@ -1200,12 +1682,24 @@ class PaperSessionService:
         end = current_time.replace(second=0, microsecond=0) - timedelta(minutes=1)
         if start > end:
             return ()
+        self._record_operation(
+            session_id,
+            "BACKFILL_STARTED",
+            "Market data gap backfill started",
+            {"start": start.isoformat(), "end": end.isoformat()},
+        )
         bars = await adapter.historical_bars(session.manifest.symbols, start, end)
         accepted: list[MarketBar] = []
         for bar in bars:
             if await self._is_regular_bar(session, bar, adapter):
                 await self.ingest(session_id, bar)
                 accepted.append(bar)
+        self._record_operation(
+            session_id,
+            "BACKFILL_COMPLETED",
+            "Market data gap backfill completed",
+            {"bar_count": len(accepted)},
+        )
         return tuple(accepted)
 
     async def reconnect_once(
@@ -1215,6 +1709,11 @@ class PaperSessionService:
         adapter = self._adapter(session)
         session.manifest = session.manifest.model_copy(update={"feed_status": "RECONNECTING"})
         self._persist(session)
+        self._record_operation(
+            session_id,
+            "FEED_RECONNECTING",
+            "Market data feed reconnect started",
+        )
         await adapter.connect()
         backfilled = await self.backfill_gap(session_id, adapter, current_time)
         await adapter.subscribe(session.manifest.symbols)
@@ -1226,6 +1725,12 @@ class PaperSessionService:
             }
         )
         self._persist(session)
+        self._record_operation(
+            session_id,
+            "FEED_RECONNECTED",
+            "Market data feed reconnected",
+            {"backfilled_bar_count": len(backfilled)},
+        )
         await self._publish(session_id)
         return backfilled
 
@@ -1246,6 +1751,11 @@ class PaperSessionService:
                     update={"feed_status": "RECONNECTING"}
                 )
                 self._persist(session)
+                self._record_operation(
+                    session_id,
+                    "FEED_RECONNECTING",
+                    "Market data feed connection attempt started",
+                )
                 await self._publish(session_id)
                 await adapter.connect()
                 if isinstance(adapter, AlpacaStockMarketDataAdapter):
@@ -1260,6 +1770,11 @@ class PaperSessionService:
                     }
                 )
                 self._persist(session)
+                self._record_operation(
+                    session_id,
+                    "FEED_RECONNECTED",
+                    "Market data feed connected",
+                )
                 await self._publish(session_id)
                 delay = 1.0
                 iterator = adapter.events().__aiter__()
@@ -1303,6 +1818,12 @@ class PaperSessionService:
                     }
                 )
                 self._persist(session)
+                self._record_operation(
+                    session_id,
+                    "FEED_DISCONNECTED",
+                    "Market data feed disconnected; retry is scheduled",
+                    {"error_type": type(exc).__name__},
+                )
                 await self._publish(session_id)
                 await adapter.disconnect()
                 await asyncio.sleep(delay)
@@ -1310,7 +1831,10 @@ class PaperSessionService:
 
     async def start_recovered_tasks(self) -> None:
         for session_id, session in self._sessions.items():
-            if session.manifest.status in {"RUNNING", "PAUSED"}:
+            if (
+                session.manifest.status in {"RUNNING", "PAUSED"}
+                and session.manifest.recovery_status == "READY"
+            ):
                 self._start_task(session_id)
                 self._start_broker_task(session_id)
 

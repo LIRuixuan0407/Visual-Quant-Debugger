@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
+import { I18nProvider } from '../../i18n/I18nProvider'
 import type { PaperSessionSnapshot } from '../../types/paper'
 import type { StrategyDefinition } from '../../types/strategy'
 import ForwardPage from './ForwardPage'
@@ -33,7 +34,7 @@ const snapshot: PaperSessionSnapshot = {
 
 const account = { account_id: snapshot.account_id, name: 'Primary paper', currency: 'USD', initial_cash: 100000, cash: 100000, positions: {}, equity: 100000, cumulative_fees: 0, cumulative_slippage: 0, active_session_id: null, created_at: snapshot.created_at, updated_at: snapshot.created_at }
 
-afterEach(() => vi.restoreAllMocks())
+afterEach(() => { vi.restoreAllMocks(); window.localStorage.clear() })
 
 describe('Live Paper Forward workspace', () => {
   it('uses the same numeric alignment hook for the Forward default header and values', () => {
@@ -67,7 +68,7 @@ describe('Live Paper Forward workspace', () => {
     fireEvent.click(screen.getByRole('radio', { name: /Alpaca Paper broker/i }))
     expect(screen.getByText('Paper orders leave VQD')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Create paper portfolio' }))
-    await waitFor(() => expect(screen.getByText(snapshot.account_id)).toBeInTheDocument())
+    await waitFor(() => expect(screen.getAllByText(snapshot.account_id).length).toBeGreaterThan(0))
     expect(screen.getAllByText('ALPACA · IEX').length).toBeGreaterThan(0)
     expect(screen.getByText('ALPACA PAPER BROKER')).toBeInTheDocument()
     expect(screen.getByText('NO REAL MONEY')).toBeInTheDocument()
@@ -124,5 +125,37 @@ describe('Live Paper Forward workspace', () => {
     expect(screen.getByRole('heading', { name: 'Native runtime required' })).toBeInTheDocument()
     expect(screen.getByText('Framework strategies are historical-research adapters and cannot run in Forward or Live Paper.')).toBeInTheDocument()
     expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('shows backend health, operation history, orders, fills, and a safe divergence recovery surface in Chinese', async () => {
+    window.localStorage.setItem('vqd-language', 'zh')
+    const failed = { ...snapshot, status: 'ERROR' as const, recovery_status: 'RECOVERY_DIVERGENCE' as const, broker_status: 'ERROR' as const, error_code: 'RECOVERY_DIVERGENCE', error_message: 'Deterministic replay did not match the persisted checkpoint' }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const endpoint = String(input)
+      const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (endpoint === '/api/market-data/providers') return json([{ provider: 'alpaca', configured: true, feeds: ['iex'], selected_feed: 'iex', timeframe: '1Min', market_session: 'US_REGULAR' }])
+      if (endpoint === '/api/paper-accounts') return json({ items: [account] })
+      if (endpoint === '/api/paper-sessions') return json({ items: [failed] })
+      if (endpoint === `/api/paper-sessions/${failed.session_id}`) return json(failed)
+      if (endpoint === `/api/paper-sessions/${failed.session_id}/trace`) return json({ trace_version: '1.0', session_id: failed.session_id, strategy_id: failed.strategy_id, parameters: failed.parameters, timeline: [], diagnostics: [], market_revisions: [], execution_mode: failed.execution_mode, broker_events: [] })
+      if (endpoint === `/api/paper/sessions/${failed.session_id}/health`) return json({ session_id: failed.session_id, status: 'ERROR', feed_status: 'DISCONNECTED', broker_status: 'ERROR', recovery_status: 'RECOVERY_DIVERGENCE', last_received_at: null, last_market_event: null, last_latency_ms: null, stale_seconds: 0, reconnect_count: 2, backfill_count: 1, backfilled_bar_count: 3, open_order_count: 0, partially_filled_order_count: 0, broker_account_status: null, broker_cash: null, broker_equity: null, broker_buying_power: null, rejected_order_count: 0, last_broker_event_at: null })
+      if (endpoint === `/api/paper/sessions/${failed.session_id}/operations`) return json({ items: [{ operation_id: 'operation-1', sequence: 1, session_id: failed.session_id, operation_type: 'RECOVERY_DIVERGENCE', occurred_at: failed.created_at, message: 'Recovered runtime state does not match the persisted checkpoint.', metadata: {} }] })
+      if (endpoint === `/api/paper/sessions/${failed.session_id}/recovery`) return json({ session_id: failed.session_id, status: 'RECOVERY_DIVERGENCE', journal_event_count: 3, broker_event_count: 0, recorded_portfolio_hash: 'sha256:recorded', recovered_portfolio_hash: 'sha256:recovered', recorded_trace_hash: 'sha256:recorded-trace', recovered_trace_hash: 'sha256:recovered-trace', broker_reconciled: false, account_reconciled: true, warnings: ['Session was not resumed automatically.'] })
+      throw new Error(`Unexpected request GET ${endpoint}`)
+    })
+
+    render(<I18nProvider><LivePaperPage definition={definition} /></I18nProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: new RegExp(failed.account_id) }))
+    expect(await screen.findByRole('heading', { name: '健康状态' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '运维记录' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '概览' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '订单' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '成交' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: '恢复' })).toBeInTheDocument()
+    expect((await screen.findAllByText('会话未自动恢复运行。')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('恢复后的运行状态与持久化检查点不一致。').length).toBeGreaterThan(0)
+    expect(screen.getByRole('button', { name: '重试恢复' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '停止会话' })).toBeInTheDocument()
+    expect(screen.queryByText(/force continue/i)).not.toBeInTheDocument()
   })
 })

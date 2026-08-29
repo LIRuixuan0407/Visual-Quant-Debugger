@@ -29,6 +29,9 @@ from app.paper import (
     CreatePaperSession,
     PaperAccount,
     PaperAccountList,
+    PaperOperationalHealth,
+    PaperOperationLog,
+    PaperRecoveryReport,
     PaperSessionList,
     PaperSessionNotFoundError,
     PaperSessionSnapshot,
@@ -41,6 +44,7 @@ from app.settings import integration_vault
 
 market_router = APIRouter(prefix="/api/market-data", tags=["market-data"])
 router = APIRouter(prefix="/api/paper-sessions", tags=["paper-sessions"])
+operations_router = APIRouter(prefix="/api/paper/sessions", tags=["paper-operations"])
 account_router = APIRouter(prefix="/api/paper-accounts", tags=["paper-accounts"])
 dataset_refresh_router = APIRouter(prefix="/api/datasets", tags=["datasets"])
 
@@ -312,6 +316,40 @@ async def resume_paper_session(session_id: str) -> PaperSessionSnapshot:
 @router.post("/{session_id}/stop", response_model=PaperSessionSnapshot)
 async def stop_paper_session(session_id: str) -> PaperSessionSnapshot:
     return await _transition(session_id, paper_store.service.stop)
+
+
+@operations_router.get("/{session_id}/health", response_model=PaperOperationalHealth)
+def get_paper_health(session_id: str) -> PaperOperationalHealth:
+    try:
+        return paper_store.service.health(session_id)
+    except PaperSessionNotFoundError as exc:
+        raise _not_found(exc) from exc
+
+
+@operations_router.get("/{session_id}/operations", response_model=PaperOperationLog)
+def get_paper_operations(session_id: str) -> PaperOperationLog:
+    try:
+        return paper_store.service.operations(session_id)
+    except PaperSessionNotFoundError as exc:
+        raise _not_found(exc) from exc
+
+
+@operations_router.get("/{session_id}/recovery", response_model=PaperRecoveryReport)
+def get_paper_recovery(session_id: str) -> PaperRecoveryReport:
+    try:
+        return paper_store.service.recovery(session_id)
+    except PaperSessionNotFoundError as exc:
+        raise _not_found(exc) from exc
+
+
+@operations_router.post("/{session_id}/recover", response_model=PaperRecoveryReport)
+async def recover_paper_session(session_id: str) -> PaperRecoveryReport:
+    try:
+        return await paper_store.service.recover(session_id)
+    except PaperSessionNotFoundError as exc:
+        raise _not_found(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/{session_id}/orders/{order_id}/cancel", response_model=PaperSessionSnapshot)

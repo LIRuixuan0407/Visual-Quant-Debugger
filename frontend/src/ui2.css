@@ -2157,10 +2157,10 @@ button.dataset-row.selected { background: var(--data-soft); box-shadow: inset 3p
 
 .live-session-row {
   display: grid;
-  grid-template-columns: 120px 1.2fr 1fr 1fr 95px 125px;
+  grid-template-columns: 190px 1.2fr 90px 105px 105px 145px 100px 115px 90px;
   align-items: center;
   width: 100%;
-  min-width: 820px;
+  min-width: 1160px;
   min-height: 44px;
   padding: 0;
   border: 0;
@@ -2282,6 +2282,22 @@ button.live-session-row.selected { background: #eef9fb; }
 .order-status.cancelled { background: var(--danger-soft); color: var(--danger); }
 .fill-comparison-table .dense-row { grid-template-columns: 100px minmax(140px, 1fr) 100px 110px 110px 110px; min-width: 720px; }
 .fill-comparison-table .negative { color: var(--danger); }
+
+.paper-health-panel { border-top: 3px solid var(--positive); }
+.paper-operation-panel { border-top: 3px solid var(--accent); }
+.paper-recovery-panel { border-top: 3px solid var(--data); }
+.paper-recovery-panel.divergence { border-top-color: var(--danger); }
+.paper-operation-list { max-height: 340px; overflow: auto; border: 1px solid var(--line); border-radius: 7px; }
+.paper-operation-list article { display: grid; grid-template-columns: 58px minmax(150px, .7fr) minmax(260px, 2fr) 90px; gap: 10px; align-items: center; min-height: 42px; padding: 7px 10px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.paper-operation-list article:last-child { border-bottom: 0; }
+.paper-operation-list article > * { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.paper-operation-list article code,
+.paper-operation-list article time { color: var(--muted); font-size: 11px; }
+.paper-operation-list article strong { color: var(--accent-strong); font: 700 11px var(--mono); }
+.recovery-divergence { display: grid; gap: 5px; margin: 10px 0; padding: 11px 12px; border: 1px solid #e4b7b7; border-radius: 7px; background: var(--danger-soft); color: var(--danger); }
+.recovery-divergence strong { font-size: 13px; }
+.recovery-divergence span { font-size: 12px; }
+.recovery-actions { display: flex; gap: 8px; margin-top: 10px; }
 
 /* -------------------------------------------------------------------------- */
 /* Start / error surfaces                                                      */

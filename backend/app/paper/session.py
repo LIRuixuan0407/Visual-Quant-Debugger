@@ -12,6 +12,7 @@ from app.market_data import (
     PointInTimeMarketStore,
 )
 from app.models import Execution
+from app.paper.lifecycle import validate_paper_transition
 from app.paper.models import (
     JournalDisposition,
     MarketJournalEntry,
@@ -23,6 +24,7 @@ from app.paper.models import (
     PaperPendingOrder,
     PaperSessionManifest,
     PaperSessionSnapshot,
+    PaperSessionStatus,
     PaperTrace,
     RecoveryCheckpoint,
 )
@@ -364,7 +366,8 @@ class LivePaperSession:
             recent_broker_events=tuple(self.broker_events[-100:]),
         )
 
-    def set_status(self, status: str, *, feed_status: str | None = None) -> None:
+    def set_status(self, status: PaperSessionStatus, *, feed_status: str | None = None) -> None:
+        validate_paper_transition(self.manifest.status, status)
         now = datetime.now(UTC)
         updates: dict[str, object] = {"status": status, "updated_at": now}
         if feed_status is not None:
@@ -376,6 +379,7 @@ class LivePaperSession:
         self.manifest = self.manifest.model_copy(update=updates)
 
     def mark_error(self, code: str, message: str) -> None:
+        validate_paper_transition(self.manifest.status, "ERROR")
         self.manifest = self.manifest.model_copy(
             update={
                 "status": "ERROR",

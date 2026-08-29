@@ -15,7 +15,9 @@ from app.paper.models import (
     PaperAccount,
     PaperBrokerEvent,
     PaperFill,
+    PaperOperationEvent,
     PaperOrder,
+    PaperRecoveryReport,
     PaperSessionManifest,
     PaperTrace,
     RuntimeConsistencyReport,
@@ -275,6 +277,7 @@ class PaperSessionRepository:
             self._atomic_write(target / "strategy.py", strategy_source)
             self._atomic_write(target / "market-events.jsonl", b"")
             self._atomic_write(target / "broker-events.jsonl", b"")
+            self._atomic_write(target / "operations.jsonl", b"")
             self.save_manifest(manifest, equity=manifest.initial_cash, insert=True)
         except Exception:
             shutil.rmtree(target, ignore_errors=True)
@@ -388,6 +391,51 @@ class PaperSessionRepository:
             for line in path.read_bytes().splitlines()
             if line.strip()
         )
+
+    def append_operation(self, session_id: str, event: PaperOperationEvent) -> None:
+        path = self.session_directory(session_id) / "operations.jsonl"
+        existing = self.read_operations(session_id)
+        expected_sequence = len(existing) + 1
+        if event.session_id != session_id:
+            raise ValueError("Operation event does not belong to this paper session")
+        if event.sequence != expected_sequence:
+            raise ValueError(
+                f"Expected operation sequence {expected_sequence}, received {event.sequence}"
+            )
+        with path.open("ab") as handle:
+            handle.write((event.model_dump_json() + "\n").encode())
+            handle.flush()
+            os.fsync(handle.fileno())
+
+    def read_operations(self, session_id: str) -> tuple[PaperOperationEvent, ...]:
+        path = self.session_directory(session_id) / "operations.jsonl"
+        if not path.is_file():
+            return ()
+        events = tuple(
+            PaperOperationEvent.model_validate_json(line)
+            for line in path.read_bytes().splitlines()
+            if line.strip()
+        )
+        for expected_sequence, event in enumerate(events, start=1):
+            if event.session_id != session_id:
+                raise ValueError("Operation log contains an event for another paper session")
+            if event.sequence != expected_sequence:
+                raise ValueError(
+                    f"Expected operation sequence {expected_sequence}, received {event.sequence}"
+                )
+        return events
+
+    def save_recovery_report(self, report: PaperRecoveryReport) -> None:
+        self._atomic_write(
+            self.session_directory(report.session_id) / "recovery-report.json",
+            (report.model_dump_json(indent=2) + "\n").encode(),
+        )
+
+    def load_recovery_report(self, session_id: str) -> PaperRecoveryReport:
+        path = self.session_directory(session_id) / "recovery-report.json"
+        if not path.is_file():
+            raise PaperSessionNotFoundError(f"{session_id}/recovery-report")
+        return PaperRecoveryReport.model_validate_json(path.read_bytes())
 
     def save_trace(self, session_id: str, trace: PaperTrace) -> None:
         self._atomic_write(
