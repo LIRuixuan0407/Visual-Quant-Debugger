@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime
+from typing import cast
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
@@ -16,6 +17,7 @@ from app.datasets import (
 )
 from app.market_data import (
     AlpacaStockReferenceClient,
+    MarketDataTimeframe,
     ProviderStatus,
     StockSecurity,
     StockSnapshot,
@@ -202,6 +204,12 @@ async def refresh_provider_dataset(
     start = dataset.provenance.requested_start
     if request.end <= start:
         raise HTTPException(status_code=422, detail="Refresh end must be after the original start")
+    if dataset.frequency not in {"1Min", "5Min", "15Min", "1Hour", "1Day"}:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Provider dataset timeframe '{dataset.frequency}' cannot be refreshed",
+        )
+    timeframe = cast(MarketDataTimeframe, dataset.frequency)
     try:
         retrieved = datetime.now(UTC)
         client = stock_reference_client()
@@ -209,7 +217,7 @@ async def refresh_provider_dataset(
             dataset.provenance.requested_symbols or dataset.symbols,
             start,
             request.end,
-            timeframe=dataset.frequency,
+            timeframe=timeframe,
             feed=dataset.provenance.feed,
         )
         if not bars:
