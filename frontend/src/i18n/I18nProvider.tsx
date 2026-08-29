@@ -404,9 +404,50 @@ const zh: Record<string, string> = {
   COMPATIBLE: '兼容', INCOMPATIBLE: '不兼容',
   'Research Runs': '研究记录', 'Durable, immutable backtest records': '持久保存、不可变的回测记录',
   selected: '已选择', Compare: '对比', 'Comparing…': '正在对比…',
-  Validate: '验证', 'Run validation failed.': '运行验证失败。',
+  Validate: '验证', Attribute: '归因', 'Attributing…': '正在归因…', 'Run validation failed.': '运行验证失败。',
   REFERENCE: '参考运行',
   'Backtest vs Paper Validation': '回测与虚拟盘验证',
+  'Backtest vs Paper Attribution': '回测与虚拟盘差异归因',
+  'Historical Baseline': '历史基线', 'Historical Backtest': '历史回测', 'Selected immutable historical evidence': '已选择的不可变历史证据',
+  'Paper Evidence': '虚拟盘证据', 'Frozen Recorded Feed': '冻结的已记录行情', 'Reference Run': '参考运行',
+  'Cross-period claims stay descriptive unless evidence is equivalent.': '除非证据等价，否则跨周期结论仅作描述性说明。',
+  'Total P&L Gap': '总盈亏差异', 'Backend-calculated attribution': '后端计算的归因结果',
+  'Attributed total': '已归因合计', Residual: '残差', 'Reconciliation error': '对账误差',
+  'Attribution Waterfall': '归因瀑布图', 'Unknown effects remain in Residual': '无法可靠拆分的影响保留在残差中', layers: '层',
+  'Attribution layers': '归因层级', 'Not isolated': '无法单独量化', 'Average delay': '平均延迟', 'Maximum delay': '最大延迟',
+  'strategy revision match': '策略修订一致', 'parameters match': '参数一致', 'execution semantics match': '执行语义一致',
+  'First Divergence': '首次分歧', 'All recorded-feed layers match': '已记录行情各层均一致',
+  'MARKET PATH': '行情路径', 'EXECUTION PRICE': '成交价格', DELAY: '延迟', FEES: '费用', SLIPPAGE: '滑点', RESIDUAL: '残差',
+  ATTRIBUTED: '已归因', DETECTED: '已检测', NOT_APPLICABLE: '不适用',
+  'Attribution uses immutable Historical Backtest, frozen Recorded Feed Reference, Paper trace, order/fill evidence, and recorded costs. Unknown or overlapping effects remain in Residual; no causal explanation is guessed.': '归因仅使用不可变历史回测、冻结的已记录行情参考运行、虚拟盘追踪、订单/成交证据和已记录成本。无法可靠拆分或存在重叠的影响保留在残差中，不猜测因果。',
+  'P&L metrics are unavailable for the historical-to-recorded-feed bridge': '历史回测到已记录行情参考运行缺少盈亏指标，无法完成桥接归因',
+  'The historical and Recorded Feed Reference runs do not share equivalent strategy, parameters, and execution semantics': '历史回测与已记录行情参考运行的策略、参数或执行语义不等价，无法单独归因行情路径',
+  'Historical and recorded market paths reconcile to the same P&L': '历史行情与已记录行情路径的盈亏一致',
+  'Historical-to-recorded-feed P&L bridge under matched strategy and execution semantics': '在策略和执行语义一致时，用历史回测到已记录行情参考运行的盈亏差异归因行情路径',
+  'Decision attribution requires both Recorded Feed Reference and Paper traces': '决策归因需要已记录行情参考追踪和虚拟盘追踪',
+  'No aligned recorded-feed events are available for decision comparison': '没有可对齐的已记录行情事件用于决策比较',
+  'Signal state, conditions, or target positions diverged on the recorded market path': '在同一已记录行情路径上，信号状态、条件或目标仓位出现分歧',
+  'Aligned decisions match, but recorded-feed event coverage differs': '已对齐的决策一致，但已记录行情事件覆盖范围不同',
+  'Recorded Feed Reference and Paper made the same decisions on every aligned event': '已记录行情参考运行与虚拟盘在所有已对齐事件上做出了相同决策',
+  'Execution-price attribution is not isolated because the decision path already differs': '由于决策路径已经不同，无法单独量化成交价格影响',
+  'Execution-price attribution requires both Recorded Feed Reference and Paper traces': '成交价格归因需要已记录行情参考追踪和虚拟盘追踪',
+  'Execution count, symbol, side, or filled quantity differs despite matching decisions': '决策一致，但成交数量、标的、方向或成交量不同',
+  'Neither path produced an execution': '两条路径都没有产生成交',
+  'Actual Paper fill price differs from the Recorded Feed Reference fill price': '虚拟盘实际成交价与已记录行情参考运行成交价不同',
+  'Comparable Recorded Feed Reference and Paper fills use the same prices': '可比较的已记录行情参考成交与虚拟盘成交价格一致',
+  'Delay attribution is not isolated because the decision path already differs': '由于决策路径已经不同，无法单独量化延迟影响',
+  'Delay attribution requires both Recorded Feed Reference and Paper traces': '延迟归因需要已记录行情参考追踪和虚拟盘追踪',
+  'Execution streams cannot be paired one-for-one, so delay cannot be isolated': '成交序列无法一一配对，因此无法单独量化延迟',
+  'No executions were produced, so no execution delay was introduced': '没有产生成交，因此没有执行延迟影响',
+  'Paper executions occurred at the same timestamps as the Recorded Feed Reference': '虚拟盘成交时间与已记录行情参考运行一致',
+  'Paper execution timing differs from the same-decision Recorded Feed Reference': '在决策一致的情况下，虚拟盘成交时间与已记录行情参考运行不同',
+  'Known attribution layers reconcile the total P&L gap': '已知归因层已经与总盈亏差异对账',
+  'Residual is retained because the remaining P&L gap is not deterministically isolated by recorded evidence': '剩余盈亏差异无法由已记录证据确定性拆分，因此保留为残差',
+  'Residual is never force-distributed across known attribution layers.': '残差不会被强行分配到已知归因层。',
+  'Recorded fees match the Reference path': '已记录费用与参考路径一致',
+  'Recorded slippage match the Reference path': '已记录滑点与参考路径一致',
+  'Recorded fees difference from Reference to Paper': '已记录费用在参考运行与虚拟盘之间存在差异',
+  'Recorded slippage difference from Reference to Paper': '已记录滑点在参考运行与虚拟盘之间存在差异',
   'Historical comparison': '历史对比', 'Recorded Feed validation': '已记录行情验证',
   'Different periods or market paths are descriptive only.': '周期或行情路径不同，仅作描述性比较。',
   'Reference and Paper use the same recorded market path.': '参考运行与虚拟盘使用同一条已记录行情路径。',
@@ -974,6 +1015,52 @@ function translateDynamic(rawText: string): string {
   const text = productText(rawText)
   const exact = zh[text]
   if (exact) return exact
+  const attributionDataset = text.match(/^(Backtest dataset|Recorded Feed dataset): (.+)$/)
+  if (attributionDataset) return `${attributionDataset[1] === 'Backtest dataset' ? '回测数据集' : '已记录行情数据集'}：${attributionDataset[2]}`
+  const attributionPnl = text.match(/^(Backtest net P&L|Recorded Feed Reference net P&L): (.+)$/)
+  if (attributionPnl) return `${attributionPnl[1] === 'Backtest net P&L' ? '回测净盈亏' : '已记录行情参考净盈亏'}：${attributionPnl[2]}`
+  const attributionMatch = text.match(/^(strategy revision match|parameters match|execution semantics match): (true|false)$/)
+  if (attributionMatch) return `${translateDynamic(attributionMatch[1])}：${attributionMatch[2] === 'true' ? '是' : '否'}`
+  const comparableExecutions = text.match(/^Comparable execution pairs: (\d+)$/)
+  if (comparableExecutions) return `可比较成交对：${comparableExecutions[1]}`
+  const attributionPeriod = text.match(/^(Backtest period|Recorded Feed period): (.+)$/)
+  if (attributionPeriod) return `${attributionPeriod[1] === 'Backtest period' ? '回测周期' : '已记录行情周期'}：${attributionPeriod[2]}`
+  const attributionDataView = text.match(/^Backtest data view: (.+)$/)
+  if (attributionDataView) return `回测数据视图：${attributionDataView[1]}`
+  const attributionBars = text.match(/^(Backtest trace bars|Recorded Feed trace bars): (\d+)$/)
+  if (attributionBars) return `${attributionBars[1] === 'Backtest trace bars' ? '回测追踪 bars' : '已记录行情追踪 bars'}：${attributionBars[2]}`
+  const recordedMarketCount = text.match(/^(Recorded market events|Recorded corrections|Recorded duplicates|Recorded out-of-order events): (\d+)$/)
+  if (recordedMarketCount) {
+    const labels: Record<string, string> = {
+      'Recorded market events': '已记录行情事件',
+      'Recorded corrections': '已记录修正',
+      'Recorded duplicates': '已记录重复事件',
+      'Recorded out-of-order events': '已记录乱序事件',
+    }
+    return `${labels[recordedMarketCount[1]]}：${recordedMarketCount[2]}`
+  }
+  const attributionTimestamp = text.match(/^(First signal decision_time|Reference order submitted_at|First Paper order submitted_at|First broker event occurred_at|First Paper fill executed_at|Reference execution_at|Paper execution_at): (.+)$/)
+  if (attributionTimestamp) {
+    const labels: Record<string, string> = {
+      'First signal decision_time': '首个信号决策时间',
+      'Reference order submitted_at': '参考订单提交时间',
+      'First Paper order submitted_at': '首个虚拟盘订单提交时间',
+      'First broker event occurred_at': '首个券商事件时间',
+      'First Paper fill executed_at': '首个虚拟盘成交时间',
+      'Reference execution_at': '参考成交时间',
+      'Paper execution_at': '虚拟盘成交时间',
+    }
+    return `${labels[attributionTimestamp[1]]}：${attributionTimestamp[2]}`
+  }
+  const attributionFill = text.match(/^(Reference fill|Paper fill|Price difference|Reference fees|Paper fees|Reference slippage|Paper slippage): (.+)$/)
+  if (attributionFill) {
+    const labels: Record<string, string> = {
+      'Reference fill': '参考成交价', 'Paper fill': '虚拟盘成交价', 'Price difference': '价格差异',
+      'Reference fees': '参考费用', 'Paper fees': '虚拟盘费用',
+      'Reference slippage': '参考滑点', 'Paper slippage': '虚拟盘滑点',
+    }
+    return `${labels[attributionFill[1]]}：${attributionFill[2]}`
+  }
   const workspaceFactors = text.match(/^(\d+) Factor research revisions are linked\.$/)
   if (workspaceFactors) return `已关联 ${workspaceFactors[1]} 个因子研究修订版。`
   const workspaceRuns = text.match(/^(\d+) immutable Run \/ Trace pairs are linked\.$/)

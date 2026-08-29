@@ -114,3 +114,29 @@ test('translates unified workspace stages and explicit Holdout boundary in Chine
   expect(screen.getByText('已关联 2 对不可变的运行 / 追踪记录。')).toBeInTheDocument()
   expect(screen.getByText(/不会自动修改任何参数或研究构想/)).toBeInTheDocument()
 })
+
+function AttributionTranslations() {
+  const { tr } = useI18n()
+  return <div>
+    <span>{tr('Backtest vs Paper Attribution')}</span>
+    <span>{tr('Attribution Waterfall')}</span>
+    <span>{tr('Unknown effects remain in Residual')}</span>
+    <span>{tr('Paper execution timing differs from the same-decision Recorded Feed Reference')}</span>
+    <span>{tr('First broker event occurred_at: 2026-08-29T01:30:00+00:00')}</span>
+    <span>{tr('Backtest period: 2026-01-01 → 2026-01-31')}</span>
+    <span>{tr('Recorded market events: 42')}</span>
+    <span>{tr('Recorded fees difference from Reference to Paper')}</span>
+  </div>
+}
+
+test('translates attribution labels and evidence boundaries in Chinese mode', () => {
+  render(<I18nProvider><AttributionTranslations /></I18nProvider>)
+  expect(screen.getByText('回测与虚拟盘差异归因')).toBeInTheDocument()
+  expect(screen.getByText('归因瀑布图')).toBeInTheDocument()
+  expect(screen.getByText('无法可靠拆分的影响保留在残差中')).toBeInTheDocument()
+  expect(screen.getByText('在决策一致的情况下，虚拟盘成交时间与已记录行情参考运行不同')).toBeInTheDocument()
+  expect(screen.getByText('首个券商事件时间：2026-08-29T01:30:00+00:00')).toBeInTheDocument()
+  expect(screen.getByText('回测周期：2026-01-01 → 2026-01-31')).toBeInTheDocument()
+  expect(screen.getByText('已记录行情事件：42')).toBeInTheDocument()
+  expect(screen.getByText('已记录费用在参考运行与虚拟盘之间存在差异')).toBeInTheDocument()
+})

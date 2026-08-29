@@ -32,7 +32,7 @@ from app.paper import (
     PaperSessionRepository,
     PaperSessionService,
 )
-from app.runs import RunRepository, ValidationRequest
+from app.runs import ArtifactIntegrityError, RunRepository, ValidationRequest
 from app.runs.validation import validate_backtest_vs_paper
 from app.sdk.registry import StrategyRegistry
 
@@ -848,6 +848,8 @@ def test_persistent_account_exactly_once_orders_fills_recovery_and_paper_run(
         }
     )
     repository.finalize(completed_backtest, paper_trace)
+    paper_manifest_before = repository.get_manifest(stopped.research_run_id)
+    paper_trace_before = repository.load_trace_for_run(stopped.research_run_id)
     validation = validate_backtest_vs_paper(
         repository,
         recovered,
@@ -856,11 +858,35 @@ def test_persistent_account_exactly_once_orders_fills_recovery_and_paper_run(
             paper_run_id=stopped.research_run_id,
         ),
     )
+    assert repository.get_manifest(stopped.research_run_id) == paper_manifest_before
+    assert repository.load_trace_for_run(stopped.research_run_id) == paper_trace_before
     assert validation.historical_comparability == "DESCRIPTIVE_ONLY"
     assert validation.strict_recorded_feed_status == "MATCH"
     assert validation.reference_run_id == stopped.reference_run_id
     assert validation.first_divergence.status == "MATCH"
-    assert (tmp_path / ".vqd" / "validations" / f"{validation.report_id}.json").exists()
+    assert [component.layer for component in validation.pnl_attribution.components] == [
+        "MARKET_PATH",
+        "DECISION",
+        "EXECUTION_PRICE",
+        "DELAY",
+        "FEES",
+        "SLIPPAGE",
+        "RESIDUAL",
+    ]
+    assert validation.pnl_attribution.reconciliation_error == pytest.approx(0.0)
+    assert (
+        validation.pnl_attribution.attributed_total
+        + validation.pnl_attribution.residual_unattributed
+        == pytest.approx(validation.pnl_attribution.total_difference)
+    )
+    validation_path = tmp_path / ".vqd" / "validations" / f"{validation.report_id}.json"
+    assert validation_path.exists()
+    assert RunRepository(tmp_path).load_validation(validation.report_id) == validation
+    RunRepository(tmp_path).save_validation(validation)
+    with pytest.raises(ArtifactIntegrityError, match="immutable"):
+        RunRepository(tmp_path).save_validation(
+            validation.model_copy(update={"note": "changed after creation"})
+        )
 
 
 def test_alpaca_paper_broker_partial_fills_are_incremental_and_recoverable(

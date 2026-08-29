@@ -311,18 +311,61 @@ class ValidationDivergence(RunModel):
         return None if value is None else _aware(value)
 
 
+AttributionLayer = Literal[
+    "MARKET_PATH",
+    "DECISION",
+    "EXECUTION_PRICE",
+    "DELAY",
+    "FEES",
+    "SLIPPAGE",
+    "RESIDUAL",
+]
+AttributionEvidenceStatus = Literal[
+    "ATTRIBUTED",
+    "DETECTED",
+    "MATCH",
+    "INSUFFICIENT_EVIDENCE",
+    "NOT_APPLICABLE",
+]
+
+
+class AttributionComponent(RunModel):
+    layer: AttributionLayer
+    amount: float | None = None
+    status: AttributionEvidenceStatus
+    summary: str
+    evidence: tuple[str, ...] = ()
+    first_divergence_at: datetime | None = None
+    reference_event_id: str | None = None
+    paper_event_id: str | None = None
+    sample_count: int = Field(default=0, ge=0)
+    average_delay_ms: float | None = None
+    max_delay_ms: float | None = None
+
+    @field_validator("first_divergence_at")
+    @classmethod
+    def aware_component_timestamp(cls, value: datetime | None) -> datetime | None:
+        return None if value is None else _aware(value)
+
+
 class PnLAttribution(RunModel):
     total_difference: float
+    market_path_difference: float | None = None
     decision_difference: float | None
     execution_price_difference: float | None
+    delay_impact: float | None = None
     fees: float
     slippage: float
     residual_unattributed: float
+    attributed_total: float = 0.0
+    reconciliation_error: float = 0.0
+    components: tuple[AttributionComponent, ...] = ()
     status: Literal["RECONCILED", "PARTIALLY_ATTRIBUTED", "NOT_AVAILABLE"]
 
 
 class RunValidationReport(RunModel):
-    report_version: Literal["1.0"] = "1.0"
+    report_version: Literal["1.0", "2.0"] = "2.0"
+    attribution_rule_version: Literal["1.0"] = "1.0"
     report_id: str
     backtest_run_id: str
     paper_run_id: str

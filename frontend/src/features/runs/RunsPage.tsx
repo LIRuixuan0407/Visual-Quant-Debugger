@@ -207,15 +207,48 @@ function ValidationWorkspace({ report, onBack, onOpenReplay }: {
 }) {
   const { tr } = useI18n()
   const attribution = report.pnl_attribution
+  const amounts = attribution.components.flatMap((component) => component.amount == null ? [] : [Math.abs(component.amount)])
+  const largestAmount = Math.max(Math.abs(attribution.total_difference), ...amounts, 1)
   return <main className="runs-shell validation-shell">
-    <header className="workspace-title"><div><h1>{tr('Backtest vs Paper Validation')}</h1><span>{report.report_id}</span></div><button className="secondary-button" onClick={onBack}>{tr('Back to Runs')}</button></header>
-    <section className="validation-status-grid">
-      <div className="workspace-panel"><span>{tr('Historical comparison')}</span><strong>{tr(report.historical_comparability)}</strong><small>{tr('Different periods or market paths are descriptive only.')}</small></div>
-      <div className="workspace-panel"><span>{tr('Recorded Feed validation')}</span><strong className={report.strict_recorded_feed_status === 'MATCH' ? 'validation-match' : 'validation-diff'}>{tr(report.strict_recorded_feed_status)}</strong><small>{tr('Reference and Paper use the same recorded market path.')}</small></div>
+    <header className="workspace-title"><div><h1>{tr('Backtest vs Paper Attribution')}</h1><span>{report.report_id}</span></div><button className="secondary-button" onClick={onBack}>{tr('Back to Runs')}</button></header>
+    <section className="validation-status-grid attribution-status-grid">
+      <div className="workspace-panel"><span>{tr('Historical Baseline')}</span><strong>{tr('Historical Backtest')}</strong><code>{report.backtest_run_id}</code><small>{tr('Selected immutable historical evidence')}</small></div>
+      <div className="workspace-panel"><span>{tr('Paper Evidence')}</span><strong>{tr('Frozen Recorded Feed')}</strong><code>{report.paper_run_id}</code><small>{tr('Reference Run')} · {report.reference_run_id}</small></div>
+      <div className="workspace-panel"><span>{tr('Comparability')}</span><strong>{tr(report.historical_comparability)}</strong><small>{tr('Cross-period claims stay descriptive unless evidence is equivalent.')}</small></div>
     </section>
+
+    <section className="workspace-panel attribution-overview">
+      <div className="section-heading"><div><h2>{tr('Total P&L Gap')}</h2><span>{tr('Backend-calculated attribution')}</span></div><strong className="attribution-total">{formatNumber(attribution.total_difference)}</strong></div>
+      <div className="attribution-reconciliation"><span>{tr(attribution.status)}</span><span>{tr('Attributed total')}: {formatNumber(attribution.attributed_total)}</span><span>{tr('Residual')}: {formatNumber(attribution.residual_unattributed)}</span><span>{tr('Reconciliation error')}: {formatNumber(attribution.reconciliation_error)}</span></div>
+    </section>
+
+    <section className="workspace-panel attribution-waterfall">
+      <div className="section-heading"><div><h2>{tr('Attribution Waterfall')}</h2><span>{tr('Unknown effects remain in Residual')}</span></div><span>{attribution.components.length} {tr('layers')}</span></div>
+      <div className="attribution-waterfall-list">
+        {attribution.components.map((component) => {
+          const width = component.amount == null ? 0 : Math.max(3, Math.min(100, Math.abs(component.amount) / largestAmount * 100))
+          return <article key={component.layer} className="attribution-waterfall-row">
+            <div><strong>{tr(component.layer.replaceAll('_', ' '))}</strong><small>{tr(component.status)}</small></div>
+            <div className="attribution-waterfall-track" aria-hidden="true"><i style={{ width: `${width}%` }} /></div>
+            <strong>{component.amount == null ? tr('Not isolated') : formatNumber(component.amount)}</strong>
+          </article>
+        })}
+      </div>
+    </section>
+
+    <section className="attribution-layer-grid" aria-label={tr('Attribution layers')}>
+      {attribution.components.map((component) => <article className="workspace-panel attribution-layer-card" key={`detail-${component.layer}`}>
+        <header><div><span className="section-kicker">{tr(component.layer.replaceAll('_', ' '))}</span><h3>{component.amount == null ? tr('Not isolated') : formatNumber(component.amount)}</h3></div><span className={`status-badge ${component.status === 'MATCH' ? 'match' : component.status === 'ATTRIBUTED' ? 'completed' : 'paused'}`}>{tr(component.status)}</span></header>
+        <p>{tr(component.summary)}</p>
+        {component.average_delay_ms != null && <dl className="attribution-delay-facts"><div><dt>{tr('Average delay')}</dt><dd>{formatNumber(component.average_delay_ms)} ms</dd></div><div><dt>{tr('Maximum delay')}</dt><dd>{formatNumber(component.max_delay_ms)} ms</dd></div></dl>}
+        {component.evidence.length > 0 && <ul>{component.evidence.map((item) => <li key={item}>{tr(item)}</li>)}</ul>}
+      </article>)}
+    </section>
+
+    <section className="workspace-panel validation-divergence"><div className="section-heading"><h2>{tr('First Divergence')}</h2><span>{report.first_divergence.layer ? tr(report.first_divergence.layer) : tr('All recorded-feed layers match')}</span></div><div className={`validation-result ${report.first_divergence.status.toLowerCase()}`}><strong>{tr(report.first_divergence.status)}</strong><time>{formatTime(report.first_divergence.timestamp)}</time><p>{tr(report.first_divergence.difference)}</p>{report.first_divergence.status === 'DIVERGENCE' && <div className="validation-values"><code>{report.first_divergence.reference_value}</code><code>{report.first_divergence.paper_value}</code></div>}</div><div className="toolbar"><button disabled={!report.reference_trace_id} onClick={() => report.reference_trace_id && onOpenReplay(report.reference_run_id, report.reference_trace_id, report.first_divergence.reference_event_id)}>{tr('Open Reference Replay')}</button><button disabled={!report.paper_trace_id} onClick={() => report.paper_trace_id && onOpenReplay(report.paper_run_id, report.paper_trace_id, report.first_divergence.paper_event_id)}>{tr('Open Paper Replay')}</button></div></section>
+
     <section className="workspace-panel validation-checks"><div className="section-heading"><h2>{tr('Comparability checks')}</h2><span>{tr('No cross-period equivalence is inferred')}</span></div><div className="validation-check-table"><div className="validation-check-row header"><span>{tr('Check')}</span><span>{tr('Result')}</span><span>{tr('Backtest')}</span><span>{tr('Paper')}</span></div>{report.checks.map((check) => <div className="validation-check-row" key={check.field}><strong>{tr(check.field.replaceAll('_', ' '))}</strong><span className={`status-badge ${check.same ? 'match' : 'paused'}`}>{tr(check.same ? 'SAME' : 'DIFFERENT')}</span><code>{shortHash(check.reference_value)}</code><code>{shortHash(check.paper_value)}</code></div>)}</div></section>
-    <section className="workspace-panel validation-divergence"><div className="section-heading"><h2>{tr('First recorded-feed divergence')}</h2><span>{report.first_divergence.layer ? tr(report.first_divergence.layer) : tr('All layers')}</span></div><div className={`validation-result ${report.first_divergence.status.toLowerCase()}`}><strong>{tr(report.first_divergence.status)}</strong><time>{formatTime(report.first_divergence.timestamp)}</time><p>{tr(report.first_divergence.difference)}</p>{report.first_divergence.status === 'DIVERGENCE' && <div className="validation-values"><code>{report.first_divergence.reference_value}</code><code>{report.first_divergence.paper_value}</code></div>}</div><div className="toolbar"><button disabled={!report.reference_trace_id} onClick={() => report.reference_trace_id && onOpenReplay(report.reference_run_id, report.reference_trace_id, report.first_divergence.reference_event_id)}>{tr('Open Reference Replay')}</button><button disabled={!report.paper_trace_id} onClick={() => report.paper_trace_id && onOpenReplay(report.paper_run_id, report.paper_trace_id, report.first_divergence.paper_event_id)}>{tr('Open Paper Replay')}</button></div></section>
-    <section className="workspace-panel validation-attribution"><div className="section-heading"><h2>{tr('P&L difference attribution')}</h2><span>{tr(attribution.status)}</span></div><div className="attribution-grid"><div><span>{tr('Total difference')}</span><strong>{formatNumber(attribution.total_difference)}</strong></div><div><span>{tr('Decision difference')}</span><strong>{formatNumber(attribution.decision_difference)}</strong></div><div><span>{tr('Execution price difference')}</span><strong>{formatNumber(attribution.execution_price_difference)}</strong></div><div><span>{tr('Fees')}</span><strong>{formatNumber(attribution.fees)}</strong></div><div><span>{tr('Slippage')}</span><strong>{formatNumber(attribution.slippage)}</strong></div><div><span>{tr('Residual / unattributed')}</span><strong>{formatNumber(attribution.residual_unattributed)}</strong></div></div><p className="provenance-note">{tr(report.note)}</p></section>
+    <p className="provenance-note attribution-disclosure">{tr(report.note)}</p>
   </main>
 }
 
@@ -386,7 +419,7 @@ function RunsPage({ strategies, datasets, initialRunId = null, onRunSelection, o
   const canValidate = comparisonSelection.length === 2 && selectedRunTypes.includes('BACKTEST') && selectedRunTypes.includes('PAPER')
 
   return <main className="runs-shell">
-    <header className="workspace-title"><div><h1>{tr('Research Runs')}</h1><span>{tr('Durable, immutable research records')}</span></div><div className="toolbar"><span>{comparisonSelection.length} {tr('selected')}</span>{canValidate && <button className="primary-button" type="button" disabled={busy === 'validate'} onClick={() => void startValidation()}>{tr(busy === 'validate' ? 'Validating…' : 'Validate')}</button>}<button type="button" disabled={comparisonSelection.length < 2 || comparisonSelection.length > 4 || busy === 'compare'} onClick={() => void startComparison()}>{tr(busy === 'compare' ? 'Comparing…' : 'Compare')}</button></div></header>
+    <header className="workspace-title"><div><h1>{tr('Research Runs')}</h1><span>{tr('Durable, immutable research records')}</span></div><div className="toolbar"><span>{comparisonSelection.length} {tr('selected')}</span>{canValidate && <button className="primary-button" type="button" disabled={busy === 'validate'} onClick={() => void startValidation()}>{tr(busy === 'validate' ? 'Attributing…' : 'Attribute')}</button>}<button type="button" disabled={comparisonSelection.length < 2 || comparisonSelection.length > 4 || busy === 'compare'} onClick={() => void startComparison()}>{tr(busy === 'compare' ? 'Comparing…' : 'Compare')}</button></div></header>
     <section className="run-filterbar" aria-label={tr('Run filters')}>
       <label>{tr('Search')}<input aria-label={tr('Search runs')} placeholder={tr('Run ID, name, tag')} value={filters.search ?? ''} onChange={(event) => setFilters((current) => ({ ...current, search: event.target.value }))} /></label>
       <label>{tr('Strategy')}<select aria-label={tr('Strategy filter')} value={filters.strategy_id ?? ''} onChange={(event) => setFilters((current) => ({ ...current, strategy_id: event.target.value }))}><option value="">{tr('All strategies')}</option>{strategies.map((strategy) => <option key={strategy.strategy_id} value={strategy.strategy_id}>{tr(strategy.name)}</option>)}</select></label>

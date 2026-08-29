@@ -28,10 +28,12 @@ from .models import (
     RunManifest,
     RunMetrics,
     RunStatus,
+    RunValidationReport,
     StrategySourceArtifact,
 )
 
 RUN_ID_PATTERN = re.compile(r"^run-[0-9a-f]{24}$")
+VALIDATION_ID_PATTERN = re.compile(r"^validation-[0-9a-f]{20}$")
 ArtifactName = Literal["diagnostics", "pnl-autopsy"]
 
 
@@ -60,6 +62,7 @@ class RunRepository:
         )
         self.vqd_root = self.workspace_root / ".vqd"
         self.runs_root = self.vqd_root / "runs"
+        self.validations_root = self.vqd_root / "validations"
         self.database_path = self.vqd_root / "vqd.sqlite"
         self._initialize()
 
@@ -76,6 +79,7 @@ class RunRepository:
     def _initialize(self) -> None:
         self.vqd_root.mkdir(parents=True, exist_ok=True)
         self.runs_root.mkdir(parents=True, exist_ok=True)
+        self.validations_root.mkdir(parents=True, exist_ok=True)
         with self._connection() as connection:
             connection.execute("PRAGMA journal_mode = WAL")
             ensure_schema_version(connection)
@@ -498,6 +502,35 @@ class RunRepository:
             annotations=self.get_annotations(run_id),
             artifacts=self.artifact_availability(run_id),
         )
+
+    def _validation_path(self, report_id: str) -> Path:
+        if not VALIDATION_ID_PATTERN.fullmatch(report_id):
+            raise ValueError(f"Invalid validation report id '{report_id}'")
+        target = (self.validations_root / f"{report_id}.json").resolve()
+        if target.parent != self.validations_root.resolve():
+            raise ValueError("Validation report path escaped the workspace")
+        return target
+
+    def save_validation(self, report: RunValidationReport) -> None:
+        path = self._validation_path(report.report_id)
+        payload = (report.model_dump_json(indent=2) + "\n").encode()
+        if path.is_file():
+            existing = path.read_bytes()
+            if existing != payload:
+                raise ArtifactIntegrityError(
+                    f"Validation report '{report.report_id}' is immutable and already exists"
+                )
+            return
+        self._atomic_write(path, payload)
+
+    def load_validation(self, report_id: str) -> RunValidationReport:
+        path = self._validation_path(report_id)
+        if not path.is_file():
+            raise RunNotFoundError(report_id)
+        try:
+            return RunValidationReport.model_validate_json(path.read_bytes())
+        except ValueError as exc:
+            raise ArtifactIntegrityError(f"Validation report '{report_id}' is not valid") from exc
 
     def strategy_source(self, run_id: str) -> StrategySourceArtifact:
         manifest = self.get_manifest(run_id)

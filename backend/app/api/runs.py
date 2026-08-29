@@ -170,3 +170,17 @@ def create_validation(request: ValidationRequest) -> RunValidationReport:
         raise _integrity(exc) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/run-validations/{report_id}", response_model=RunValidationReport)
+def get_validation(report_id: str) -> RunValidationReport:
+    try:
+        return run_ledger.repository.load_validation(report_id)
+    except RunNotFoundError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"Validation report '{report_id}' was not found"
+        ) from exc
+    except ArtifactIntegrityError as exc:
+        raise _integrity(exc) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc

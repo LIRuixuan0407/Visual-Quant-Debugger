@@ -93,12 +93,24 @@ const comparison: RunComparisonReport = {
 }
 
 const validation: RunValidationReport = {
-  report_version: '1.0', report_id: 'validation-a-paper', backtest_run_id: runAId,
+  report_version: '2.0', attribution_rule_version: '1.0', report_id: 'validation-a-paper', backtest_run_id: runAId,
   paper_run_id: paperRunId, reference_run_id: 'run-reference', reference_trace_id: 'trace-reference', paper_trace_id: 'trace-paper',
-  historical_comparability: 'DESCRIPTIVE_ONLY', strict_recorded_feed_status: 'MATCH',
+  historical_comparability: 'DESCRIPTIVE_ONLY', strict_recorded_feed_status: 'FIRST_DIVERGENCE',
   checks: [{ field: 'strategy_revision', same: true, reference_value: 'sha256:same', paper_value: 'sha256:same' }, { field: 'market_path', same: false, reference_value: 'sha256:history', paper_value: 'sha256:recorded' }],
-  first_divergence: { status: 'MATCH', layer: null, timestamp: null, reference_value: '', paper_value: '', difference: 'Recorded Feed Reference and Paper match at every validation layer', reference_event_id: null, paper_event_id: null },
-  pnl_attribution: { total_difference: -120, decision_difference: null, execution_price_difference: null, fees: -10, slippage: -5, residual_unattributed: -105, status: 'PARTIALLY_ATTRIBUTED' },
+  first_divergence: { status: 'DIVERGENCE', layer: 'EXECUTION', timestamp: '2025-01-11T16:00:00Z', reference_value: '100', paper_value: '101', difference: 'First recorded-feed difference at EXECUTION', reference_event_id: 'event-ref', paper_event_id: 'event-paper' },
+  pnl_attribution: {
+    total_difference: -120, market_path_difference: -80, decision_difference: 0, execution_price_difference: null, delay_impact: null,
+    fees: -10, slippage: -5, residual_unattributed: -25, attributed_total: -95, reconciliation_error: 0, status: 'PARTIALLY_ATTRIBUTED',
+    components: [
+      { layer: 'MARKET_PATH', amount: -80, status: 'ATTRIBUTED', summary: 'Historical-to-recorded-feed P&L bridge under matched strategy and execution semantics', evidence: ['Backtest dataset: historical'], first_divergence_at: null, reference_event_id: null, paper_event_id: null, sample_count: 0, average_delay_ms: null, max_delay_ms: null },
+      { layer: 'DECISION', amount: 0, status: 'MATCH', summary: 'Recorded Feed Reference and Paper made the same decisions on every aligned event', evidence: [], first_divergence_at: null, reference_event_id: null, paper_event_id: null, sample_count: 20, average_delay_ms: null, max_delay_ms: null },
+      { layer: 'EXECUTION_PRICE', amount: null, status: 'DETECTED', summary: 'Actual Paper fill price differs from the Recorded Feed Reference fill price', evidence: ['Reference fill: 100', 'Paper fill: 101'], first_divergence_at: '2025-01-11T16:00:00Z', reference_event_id: 'event-ref', paper_event_id: 'event-paper', sample_count: 1, average_delay_ms: null, max_delay_ms: null },
+      { layer: 'DELAY', amount: null, status: 'DETECTED', summary: 'Paper execution timing differs from the same-decision Recorded Feed Reference', evidence: [], first_divergence_at: '2025-01-11T16:00:01Z', reference_event_id: 'event-ref', paper_event_id: 'event-paper', sample_count: 1, average_delay_ms: 1000, max_delay_ms: 1000 },
+      { layer: 'FEES', amount: -10, status: 'ATTRIBUTED', summary: 'Recorded fees difference from Reference to Paper', evidence: [], first_divergence_at: null, reference_event_id: null, paper_event_id: null, sample_count: 0, average_delay_ms: null, max_delay_ms: null },
+      { layer: 'SLIPPAGE', amount: -5, status: 'ATTRIBUTED', summary: 'Recorded slippage difference from Reference to Paper', evidence: [], first_divergence_at: null, reference_event_id: null, paper_event_id: null, sample_count: 0, average_delay_ms: null, max_delay_ms: null },
+      { layer: 'RESIDUAL', amount: -25, status: 'ATTRIBUTED', summary: 'Residual is retained because the remaining P&L gap is not deterministically isolated by recorded evidence', evidence: ['Residual is never force-distributed across known attribution layers.'], first_divergence_at: null, reference_event_id: null, paper_event_id: null, sample_count: 0, average_delay_ms: null, max_delay_ms: null },
+    ],
+  },
   note: 'Historical Backtest vs Paper is descriptive unless period and market path match. Strict status compares the frozen Recorded Feed Reference with Paper.',
 }
 
@@ -193,13 +205,16 @@ test('validates one Backtest and one Paper Run against the frozen recorded-feed 
   await screen.findByText('2 research records · newest first')
   fireEvent.click(screen.getByLabelText(`Select ${runAId} for comparison`))
   fireEvent.click(screen.getByLabelText(`Select ${paperRunId} for comparison`))
-  fireEvent.click(screen.getByRole('button', { name: 'Validate' }))
-  expect(await screen.findByRole('heading', { name: 'Backtest vs Paper Validation' })).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Attribute' }))
+  expect(await screen.findByRole('heading', { name: 'Backtest vs Paper Attribution' })).toBeInTheDocument()
   expect(screen.getByText('DESCRIPTIVE_ONLY')).toBeInTheDocument()
   expect(screen.getAllByText('MATCH').length).toBeGreaterThan(0)
-  expect(screen.getByText('Recorded Feed Reference and Paper match at every validation layer')).toBeInTheDocument()
+  expect(screen.getByText('First recorded-feed difference at EXECUTION')).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Attribution Waterfall' })).toBeInTheDocument()
+  expect(screen.getAllByText('DETECTED').length).toBeGreaterThanOrEqual(2)
+  expect(screen.getAllByText('-25').length).toBeGreaterThan(0)
   fireEvent.click(screen.getByRole('button', { name: 'Open Reference Replay' }))
   fireEvent.click(screen.getByRole('button', { name: 'Open Paper Replay' }))
-  expect(onReplay).toHaveBeenNthCalledWith(1, 'run-reference', 'trace-reference', null)
-  expect(onReplay).toHaveBeenNthCalledWith(2, paperRunId, 'trace-paper', null)
+  expect(onReplay).toHaveBeenNthCalledWith(1, 'run-reference', 'trace-reference', 'event-ref')
+  expect(onReplay).toHaveBeenNthCalledWith(2, paperRunId, 'trace-paper', 'event-paper')
 })

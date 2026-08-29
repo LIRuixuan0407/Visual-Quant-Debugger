@@ -197,7 +197,8 @@ export interface StrategySourceArtifact {
 }
 
 export interface RunValidationReport {
-  report_version: '1.0'
+  report_version: '1.0' | '2.0'
+  attribution_rule_version: '1.0'
   report_id: string
   backtest_run_id: string
   paper_run_id: string
@@ -224,11 +225,28 @@ export interface RunValidationReport {
   }
   pnl_attribution: {
     total_difference: number
+    market_path_difference: number | null
     decision_difference: number | null
     execution_price_difference: number | null
+    delay_impact: number | null
     fees: number
     slippage: number
     residual_unattributed: number
+    attributed_total: number
+    reconciliation_error: number
+    components: Array<{
+      layer: 'MARKET_PATH' | 'DECISION' | 'EXECUTION_PRICE' | 'DELAY' | 'FEES' | 'SLIPPAGE' | 'RESIDUAL'
+      amount: number | null
+      status: 'ATTRIBUTED' | 'DETECTED' | 'MATCH' | 'INSUFFICIENT_EVIDENCE' | 'NOT_APPLICABLE'
+      summary: string
+      evidence: string[]
+      first_divergence_at: string | null
+      reference_event_id: string | null
+      paper_event_id: string | null
+      sample_count: number
+      average_delay_ms: number | null
+      max_delay_ms: number | null
+    }>
     status: 'RECONCILED' | 'PARTIALLY_ATTRIBUTED' | 'NOT_AVAILABLE'
   }
   note: string
