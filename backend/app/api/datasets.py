@@ -38,7 +38,10 @@ def list_dataset_families() -> tuple[DatasetFamily, ...]:
 
 @router.get("/dataset-families/{dataset_family_id}", response_model=DatasetFamily)
 def get_dataset_family(dataset_family_id: str) -> DatasetFamily:
-    family = dataset_registry.get_family(dataset_family_id)
+    try:
+        family = dataset_registry.get_family(dataset_family_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if family is None:
         raise HTTPException(
             status_code=404, detail=f"Dataset family '{dataset_family_id}' was not found"
@@ -51,7 +54,10 @@ def get_dataset_family(dataset_family_id: str) -> DatasetFamily:
     response_model=tuple[DatasetDefinition, ...],
 )
 def list_dataset_family_revisions(dataset_family_id: str) -> tuple[DatasetDefinition, ...]:
-    family = dataset_registry.get_family(dataset_family_id)
+    try:
+        family = dataset_registry.get_family(dataset_family_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
     if family is None:
         raise HTTPException(
             status_code=404, detail=f"Dataset family '{dataset_family_id}' was not found"

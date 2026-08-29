@@ -159,3 +159,7 @@ def test_dataset_family_history_and_compare_api(
     assert compared.status_code == 200
     assert compared.json()["same_family"] is True
     assert compared.json()["rows_delta"] == 1
+
+    invalid_family = asyncio.run(_request("GET", "/api/dataset-families/not-a-family"))
+    assert invalid_family.status_code == 422
+    assert "Invalid Dataset Family id" in invalid_family.json()["detail"]

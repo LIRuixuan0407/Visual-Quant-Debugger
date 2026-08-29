@@ -25,7 +25,7 @@ const hypothesis: ResearchHypothesis = {
 
 const snapshot: ResearchSnapshot = {
   snapshot_version: '1.0', snapshot_id: 'research-snapshot-0123456789abcdef01234567', name: 'Diversified signals · frozen research', created_at: '2026-08-21T00:00:00Z', content_fingerprint: 'sha256:snapshot-content',
-  lineage: { dataset_id: 'dataset-real', universe_ids: [], corporate_action_dataset_ids: [], factor_research_ids: ['factor-research-a'], factor_ids: ['momentum'], relationship_ids: ['relationship-a'], walk_forward_ids: ['walk-forward-a'], hypothesis_id: hypothesis.hypothesis_id, hypothesis_revision: 3, portfolio_research_id: 'portfolio-a', strategy_id: 'portfolio-strategy-a', run_ids: ['run-0123456789abcdef01234567'], trace_ids: ['trace-a'] },
+  lineage: { dataset_id: 'dataset-real', dataset_family_id: 'dataset-family-real', dataset_revision: 1, universe_ids: [], corporate_action_dataset_ids: [], factor_research_ids: ['factor-research-a'], factor_ids: ['momentum'], relationship_ids: ['relationship-a'], walk_forward_ids: ['walk-forward-a'], hypothesis_id: hypothesis.hypothesis_id, hypothesis_revision: 3, portfolio_research_id: 'portfolio-a', strategy_id: 'portfolio-strategy-a', run_ids: ['run-0123456789abcdef01234567'], trace_ids: ['trace-a'] },
   dataset: artifact('DATASET', 'dataset-real'), universes: [], corporate_actions: [], factors: [artifact('FACTOR_RESEARCH', 'factor-research-a')], relationships: [artifact('FACTOR_RELATIONSHIP', 'relationship-a')], walk_forward: [artifact('WALK_FORWARD', 'walk-forward-a')], hypothesis: artifact('HYPOTHESIS', hypothesis.hypothesis_id), portfolio: artifact('PORTFOLIO_RESEARCH', 'portfolio-a'), strategy: artifact('STRATEGY_SOURCE', 'portfolio-strategy-a'), runs: [artifact('RUN_MANIFEST', 'run-0123456789abcdef01234567')], traces: [artifact('TRACE', 'trace-a')],
   parameters: [{ owner_type: 'FACTOR', owner_id: 'factor-research-a', values: [{ key: 'lookback', value: 20 }] }],
   time_boundaries: {
@@ -98,7 +98,9 @@ it('shows immutable lineage, revisions, periods, parameters, environment, and ve
       ? [summary]
       : url === '/api/hypotheses'
         ? [hypothesis]
-        : snapshot
+        : url === '/api/dataset-families'
+          ? [{ dataset_family_id: 'dataset-family-real', name: 'Real prices', created_at: '2024-01-01T00:00:00Z', latest_dataset_id: 'dataset-real-r4', revision_count: 4 }]
+          : snapshot
     return Promise.resolve(new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } }))
   }))
   const onOpenRuns = vi.fn()
@@ -113,6 +115,7 @@ it('shows immutable lineage, revisions, periods, parameters, environment, and ve
   expect(screen.getByText('Frozen parameters')).toBeInTheDocument()
   expect(screen.getByText('Environment summary')).toBeInTheDocument()
   expect(screen.getAllByText('VERIFIED').length).toBeGreaterThan(1)
+  expect(screen.getByText('Uses revision r1 · Latest revision is r4')).toBeInTheDocument()
   expect(screen.queryByText(/internal build label/i)).not.toBeInTheDocument()
 
   fireEvent.click(screen.getByRole('button', { name: 'Open frozen Run' }))

@@ -350,7 +350,7 @@ const zh: Record<string, string> = {
   'First revision': '首个修订', 'Legacy identity': '旧版数据身份', 'Import mode': '导入方式',
   'Create new dataset': '创建新数据集', 'Create new revision': '创建现有数据族的新修订',
   'Refresh end date': '刷新截止日期', 'Provider refresh': '行情刷新', 'Refresh provider': '刷新行情数据',
-  'Revision History': '修订历史', 'Revision Compare': '修订对比', 'Fingerprint changed': '内容指纹变化',
+  'Revision History': '修订历史', 'Revision Compare': '修订对比', 'Fingerprint changed': '内容指纹变化', 'Uses revision': '使用修订版本', 'Latest revision is': '最新修订版本为',
   'Rows delta': '行数变化', 'Synchronized bars delta': '同步K线数变化', 'Start changed': '起始时间变化', 'End changed': '结束时间变化',
   'Symbols added': '新增标的', 'Symbols removed': '移除标的',
   'Fields added': '新增字段', 'Fields removed': '移除字段', 'Quality changes': '质量变化', 'Provenance changes': '来源变化', 'Data-view changes': '数据视图契约变化',

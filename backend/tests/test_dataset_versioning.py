@@ -116,6 +116,17 @@ def test_csv_revision_requires_explicit_family_and_never_guesses_from_filename(
     else:
         raise AssertionError("Unknown family must be rejected")
 
+    try:
+        _import_csv(
+            registry,
+            b"date,ticker,price\n2025-01-04,AAPL,103\n",
+            family_id="../../escaped-family",
+        )
+    except DatasetValidationError as exc:
+        assert "Invalid Dataset Family id" in str(exc)
+    else:
+        raise AssertionError("Unsafe family identity must be rejected")
+
 
 def test_revision_diff_reports_factual_changes(tmp_path: Path) -> None:
     registry = DatasetRegistry(tmp_path)

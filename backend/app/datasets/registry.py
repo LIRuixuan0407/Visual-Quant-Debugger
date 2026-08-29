@@ -156,7 +156,10 @@ class DatasetRegistry:
             raise DatasetValidationError(
                 "The built-in sample Dataset Family is immutable and cannot accept revisions"
             )
-        family = self.family_repository.get(dataset_family_id)
+        try:
+            family = self.family_repository.get(dataset_family_id)
+        except ValueError as exc:
+            raise DatasetValidationError(str(exc)) from exc
         if family is None:
             raise DatasetValidationError(
                 f"Dataset family '{dataset_family_id}' was not found; select an existing family"

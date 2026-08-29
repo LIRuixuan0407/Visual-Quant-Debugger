@@ -7,7 +7,9 @@ import {
   getResearchSnapshot,
   getResearchSnapshots,
 } from '../../api/research'
+import { getDatasetFamilies } from '../../api/datasets'
 import { useI18n } from '../../i18n/I18nProvider'
+import type { DatasetFamily } from '../../types/dataset'
 import type {
   ExperimentComparisonReport,
   FrozenArtifact,
@@ -135,6 +137,7 @@ export default function ResearchSnapshotsPage({
   const [compareBusy, setCompareBusy] = useState(false)
   const [compareIds, setCompareIds] = useState<string[]>([])
   const [comparison, setComparison] = useState<ExperimentComparisonReport | null>(null)
+  const [datasetFamilies, setDatasetFamilies] = useState<DatasetFamily[]>([])
   const [error, setError] = useState<string | null>(null)
 
   const eligible = useMemo(() => hypotheses.filter((item) => (
@@ -146,6 +149,9 @@ export default function ResearchSnapshotsPage({
 
   useEffect(() => {
     let mounted = true
+    void getDatasetFamilies()
+      .then((rows) => { if (mounted) setDatasetFamilies(rows) })
+      .catch(() => undefined)
     void Promise.all([getResearchSnapshots(), getHypotheses()]).then(
       async ([snapshotRows, hypothesisRows]) => {
         if (!mounted) return
@@ -242,6 +248,10 @@ export default function ResearchSnapshotsPage({
     ...snapshot.runs,
     ...snapshot.traces,
   ]
+  const snapshotDatasetRevision = snapshot?.lineage.dataset_revision ?? 1
+  const snapshotDatasetFamily = snapshot?.lineage.dataset_family_id
+    ? datasetFamilies.find((family) => family.dataset_family_id === snapshot.lineage.dataset_family_id)
+    : undefined
 
   return <main className="discover-shell research-workbench snapshot-workspace">
     <section className="discover-title">
@@ -287,7 +297,7 @@ export default function ResearchSnapshotsPage({
 
           <section className="workspace-panel snapshot-lineage">
             <div className="section-heading"><div><span className="section-kicker">{tr('Frozen dependency chain')}</span><h2>{tr('Research lineage')}</h2></div><span>{artifacts.length} {tr('artifacts')}</span></div>
-            <div className="lineage-chain"><article><span>{tr('Dataset')}</span><code>{shortId(snapshot.lineage.dataset_id)}</code><small>r{snapshot.lineage.dataset_revision ?? 1}{snapshot.lineage.dataset_family_id ? ` · ${shortId(snapshot.lineage.dataset_family_id)}` : ''}</small></article><i>→</i><article><span>{tr('Factors')}</span><code>{snapshot.lineage.factor_ids.join(' · ')}</code><small>{snapshot.lineage.factor_research_ids.length} {tr('revisions')}</small></article><i>→</i><article><span>{tr('Hypothesis')}</span><code>r{snapshot.lineage.hypothesis_revision}</code><small>{shortId(snapshot.lineage.hypothesis_id)}</small></article><i>→</i><article><span>{tr('Portfolio')}</span><code>{shortId(snapshot.lineage.portfolio_research_id)}</code></article><i>→</i><article><span>{tr('Strategy')}</span><code>{shortId(snapshot.lineage.strategy_id)}</code></article><i>→</i><article><span>{tr('Runs / Traces')}</span><code>{snapshot.lineage.run_ids.length} / {snapshot.lineage.trace_ids.length}</code></article></div>
+            <div className="lineage-chain"><article><span>{tr('Dataset')}</span><code>{shortId(snapshot.lineage.dataset_id)}</code><small>r{snapshotDatasetRevision}{snapshot.lineage.dataset_family_id ? ` · ${shortId(snapshot.lineage.dataset_family_id)}` : ''}</small>{snapshotDatasetFamily && <small>{tr('Uses revision')} r{snapshotDatasetRevision} · {tr('Latest revision is')} r{snapshotDatasetFamily.revision_count}</small>}</article><i>→</i><article><span>{tr('Factors')}</span><code>{snapshot.lineage.factor_ids.join(' · ')}</code><small>{snapshot.lineage.factor_research_ids.length} {tr('revisions')}</small></article><i>→</i><article><span>{tr('Hypothesis')}</span><code>r{snapshot.lineage.hypothesis_revision}</code><small>{shortId(snapshot.lineage.hypothesis_id)}</small></article><i>→</i><article><span>{tr('Portfolio')}</span><code>{shortId(snapshot.lineage.portfolio_research_id)}</code></article><i>→</i><article><span>{tr('Strategy')}</span><code>{shortId(snapshot.lineage.strategy_id)}</code></article><i>→</i><article><span>{tr('Runs / Traces')}</span><code>{snapshot.lineage.run_ids.length} / {snapshot.lineage.trace_ids.length}</code></article></div>
             <div className="snapshot-links"><button onClick={() => onOpenRuns(snapshot.lineage.run_ids[0])}>{tr('Open frozen Run')}</button><button onClick={() => onOpenReplay(snapshot.lineage.trace_ids[0])}>{tr('Open frozen Replay')}</button></div>
           </section>
 
