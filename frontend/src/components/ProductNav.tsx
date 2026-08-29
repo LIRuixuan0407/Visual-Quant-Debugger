@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 
 import { useI18n } from '../i18n/I18nProvider'
 
-export type ProductPage = 'historical' | 'factors' | 'portfolio' | 'walk-forward' | 'relationships' | 'discovery' | 'workspace' | 'lineage' | 'snapshots' | 'integrity' | 'audit' | 'strategy' | 'data' | 'runs' | 'replay' | 'diagnose' | 'autopsy' | 'forward' | 'paper' | 'profile'
+export type ProductPage = 'historical' | 'factors' | 'portfolio' | 'walk-forward' | 'relationships' | 'discovery' | 'workspace' | 'lineage' | 'snapshots' | 'integrity' | 'audit' | 'strategy' | 'data' | 'runs' | 'replay' | 'diagnose' | 'autopsy' | 'forward' | 'paper' | 'drift' | 'profile'
 
 interface ProductNavProps {
   activePage: ProductPage
@@ -49,6 +49,7 @@ function NavIcon({ page }: { page: ProductPage }) {
     diagnose: <><circle cx="9" cy="9" r="5" /><path d="m13 13 3.5 3.5M9 6v3l2 1" /></>,
     autopsy: <><path d="M3.5 15.5h13M5 13V8m3 5V4m3 9V6m3 7V3" /></>,
     forward: <><path d="M3.5 10h12" /><path d="m11.5 6 4 4-4 4M4 5v10" /></>,
+    drift: <><path d="M3 14 6.5 9l3 2 4-7 3.5 5" /><path d="M3 17h14M3 3v14" /></>,
     paper: <><rect x="3.5" y="5" width="13" height="10" rx="2" /><path d="M6 5V3.5h8V5m-7 5h6m-3-3v6" /></>,
     profile: <><circle cx="10" cy="7" r="3" /><path d="M4.5 17c.5-3.1 2.3-4.8 5.5-4.8s5 1.7 5.5 4.8" /></>,
   }

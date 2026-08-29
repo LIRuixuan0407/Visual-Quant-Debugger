@@ -20,6 +20,7 @@ from app.runs import RunRepository
 from app.runs.models import RunListItem
 from app.sdk.registry import StrategyRegistry
 from app.strategies.definition import PAIRS_TRADING_DEFINITION
+from app.strategy_drift.repository import StrategyDriftRepository
 from app.universes import UniverseRepository
 from app.walk_forward import WalkForwardRepository
 
@@ -141,6 +142,7 @@ class GlobalSearchService:
         snapshots: ResearchSnapshotRepository,
         universes: UniverseRepository | None = None,
         corporate_actions: CorporateActionRepository | None = None,
+        drift_reports: StrategyDriftRepository | None = None,
     ) -> None:
         self.datasets = datasets
         self.factors = factors
@@ -156,6 +158,7 @@ class GlobalSearchService:
         self.corporate_actions = corporate_actions or CorporateActionRepository(
             datasets.workspace_root
         )
+        self.drift_reports = drift_reports or StrategyDriftRepository(datasets.workspace_root)
         self._cache_lock = Lock()
         self._cached_signature: tuple[tuple[str, int, int], ...] | None = None
         self._cached_documents: tuple[SearchDocument, ...] | None = None
@@ -186,6 +189,7 @@ class GlobalSearchService:
             self.snapshots.root,
             self.universes.root,
             self.corporate_actions.root,
+            self.drift_reports.root,
         )
         files = [
             self.factors.registry_path,
@@ -652,6 +656,34 @@ class GlobalSearchService:
                         "dataset_id": snapshot.dataset_id,
                         "strategy_id": snapshot.strategy_id,
                         "fingerprint": snapshot.content_fingerprint,
+                    },
+                )
+            )
+        for report in self.drift_reports.list():
+            first = report.first_drift_dimension or "No first drift"
+            documents.append(
+                SearchDocument(
+                    entity_type="DRIFT_REPORT",
+                    entity_id=report.drift_report_id,
+                    title=f"Strategy Drift · {report.baseline_id} → {report.observed_id}",
+                    subtitle=f"{report.overall_status} · {report.comparability} · {first}",
+                    aliases=(
+                        report.baseline_id,
+                        report.observed_id,
+                        report.baseline_type,
+                        report.observed_type,
+                        report.overall_status,
+                        report.comparability,
+                        report.first_drift_dimension or "",
+                    ),
+                    created_at=report.created_at,
+                    route=_route("/strategy-drift", "report_id", report.drift_report_id),
+                    metadata={
+                        "baseline_id": report.baseline_id,
+                        "observed_id": report.observed_id,
+                        "overall_status": report.overall_status,
+                        "comparability": report.comparability,
+                        "first_drift_dimension": report.first_drift_dimension,
                     },
                 )
             )

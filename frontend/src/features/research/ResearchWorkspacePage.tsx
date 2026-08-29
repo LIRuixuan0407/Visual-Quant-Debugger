@@ -42,6 +42,7 @@ interface ResearchWorkspacePageProps {
   onOpenReplay: (traceId: string) => void
   onOpenIntegrity: (ideaId: string) => void
   onOpenSnapshots: () => void
+  onOpenDrift?: (reportId: string) => void
   onRunComplete: (traceId: string, runId: string) => void
   onRunDataAudit?: (rootType: 'DATASET' | 'FACTOR_RESEARCH' | 'RUN', rootId: string) => void
 }
@@ -61,6 +62,7 @@ export default function ResearchWorkspacePage({
   onOpenReplay,
   onOpenIntegrity,
   onOpenSnapshots,
+  onOpenDrift = () => undefined,
   onRunComplete,
   onRunDataAudit,
 }: ResearchWorkspacePageProps) {
@@ -265,7 +267,7 @@ export default function ResearchWorkspacePage({
             <article className="workspace-panel workspace-context-card">
               <div className="section-heading"><div><span className="section-kicker">{tr('Recorded execution')}</span><h2>{tr('Runs & Evidence')}</h2></div>{latestRun && <button onClick={() => onOpenRun(latestRun.run_id)}>{tr('Open Run')}</button>}</div>
               {latestRun ? <div className="workspace-run-summary"><header><span>{tr(latestRun.status)}</span><code>{shortId(latestRun.run_id)}</code></header><dl><div><dt>{tr('Total return')}</dt><dd>{number(latestRun.total_return)}</dd></div><div><dt>{tr('Max drawdown')}</dt><dd>{number(latestRun.max_drawdown)}</dd></div></dl>{latestRun.trace_id && <button onClick={() => onOpenReplay(latestRun.trace_id!)}>{tr('Open Replay')}</button>}</div> : <p className="empty-copy">{tr('No immutable Run / Trace is attached yet.')}</p>}
-              <div className="workspace-evidence-links"><button onClick={() => onOpenIntegrity(workspace.idea_id)}>{tr('Integrity')} <b>{tr(workspace.integrity_status)}</b><small>{workspace.integrity_violations} / {workspace.integrity_warnings}</small></button><button onClick={onOpenSnapshots}>{tr('Research Snapshots')} <b>{workspace.snapshot_ids.length}</b><small>{tr('frozen records')}</small></button></div>
+              <div className="workspace-evidence-links"><button onClick={() => onOpenIntegrity(workspace.idea_id)}>{tr('Integrity')} <b>{tr(workspace.integrity_status)}</b><small>{workspace.integrity_violations} / {workspace.integrity_warnings}</small></button><button onClick={onOpenSnapshots}>{tr('Research Snapshots')} <b>{workspace.snapshot_ids.length}</b><small>{tr('frozen records')}</small></button></div>{(workspace.drift_reports ?? []).length > 0 && <div className="workspace-drift-links">{(workspace.drift_reports ?? []).map((item) => <button key={item.drift_report_id} onClick={() => onOpenDrift(item.drift_report_id)}><span>{tr('Strategy Drift')}</span><b>{tr(item.overall_status)}</b><small>{item.first_drift_dimension ? `${tr('First Drift')} · ${tr(item.first_drift_dimension)}` : tr('No material drift located')}</small></button>)}</div>}
             </article>
           </section>
 

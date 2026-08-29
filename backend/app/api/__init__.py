@@ -22,6 +22,7 @@ from app.api.research_workspace import router as research_workspace_router
 from app.api.runs import router as runs_router
 from app.api.settings import router as settings_router
 from app.api.strategies import router as strategies_router
+from app.api.strategy_drift import router as strategy_drift_router
 from app.api.universes import router as universes_router
 from app.api.walk_forward import router as walk_forward_router
 
@@ -39,6 +40,7 @@ router.include_router(runs_router)
 router.include_router(datasets_router)
 router.include_router(dataset_refresh_router)
 router.include_router(strategies_router)
+router.include_router(strategy_drift_router)
 router.include_router(diagnostics_router)
 router.include_router(discovery_router)
 router.include_router(autopsy_router)

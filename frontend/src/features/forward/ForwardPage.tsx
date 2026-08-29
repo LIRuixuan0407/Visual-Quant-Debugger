@@ -31,6 +31,7 @@ interface ForwardPageProps {
   } | null
   sessionId: string | null
   onSessionChange: (sessionId: string | null) => void
+  initialEventId?: string | null
 }
 
 function metric(value: number, status?: string) {
@@ -108,9 +109,9 @@ function Comparison({ report }: { report: ForwardComparisonReport | null }) {
   </section>
 }
 
-function ForwardWorkspace({ strategyName, snapshot, trace, comparison, onSnapshot }: { strategyName: string; snapshot: ForwardSessionSnapshot; trace: ForwardTrace; comparison: ForwardComparisonReport | null; onSnapshot: (snapshot: ForwardSessionSnapshot) => void }) {
+function ForwardWorkspace({ strategyName, snapshot, trace, comparison, onSnapshot, initialEventId }: { strategyName: string; snapshot: ForwardSessionSnapshot; trace: ForwardTrace; comparison: ForwardComparisonReport | null; onSnapshot: (snapshot: ForwardSessionSnapshot) => void; initialEventId?: string | null }) {
   const { tr } = useI18n()
-  const [selectedEventId, setSelectedEventId] = useState(trace.timeline.at(-1)?.event_id ?? '')
+  const [selectedEventId, setSelectedEventId] = useState(initialEventId ?? trace.timeline.at(-1)?.event_id ?? '')
   const [selectedFeatureId, setSelectedFeatureId] = useState<string | null>(null)
   const [playing, setPlaying] = useState(false)
   const stepping = useRef(false)
@@ -165,7 +166,7 @@ function ForwardWorkspace({ strategyName, snapshot, trace, comparison, onSnapsho
   </main>
 }
 
-function HistoricalForwardPage({ definition, configuration, sessionId, onSessionChange }: ForwardPageProps) {
+function HistoricalForwardPage({ definition, configuration, sessionId, onSessionChange, initialEventId }: ForwardPageProps) {
   const { tr } = useI18n()
   const [snapshot, setSnapshot] = useState<ForwardSessionSnapshot | null>(null)
   const [trace, setTrace] = useState<ForwardTrace | null>(null)
@@ -193,7 +194,7 @@ function HistoricalForwardPage({ definition, configuration, sessionId, onSession
   if (!sessionId) return <ForwardSetup definition={definition} configuration={configuration} onCreated={(created) => { onSessionChange(created.session_id); setSnapshot(created); setTrace({ trace_version: '1.0', session_id: created.session_id, strategy_id: created.strategy_id, parameters: created.parameters, timeline: [], diagnostics: [] }); setComparison(null) }} />
   if (error) return <main className="forward-shell"><section className="compact-error" role="alert"><strong>{tr('Forward session unavailable')}</strong><span>{tr(error)}</span><button onClick={() => void refresh(sessionId)}>{tr('Retry')}</button></section></main>
   if (!snapshot || !trace) return <main className="forward-shell"><p className="loading-line">{tr('Loading forward session…')}</p></main>
-  return <ForwardWorkspace strategyName={definition.name} snapshot={snapshot} trace={trace} comparison={comparison} onSnapshot={updateSnapshot} />
+  return <ForwardWorkspace strategyName={definition.name} snapshot={snapshot} trace={trace} comparison={comparison} onSnapshot={updateSnapshot} initialEventId={initialEventId} />
 }
 
 export default function ForwardPage(props: ForwardPageProps) {

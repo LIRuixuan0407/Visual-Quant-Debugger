@@ -12,6 +12,7 @@ from app.portfolio_lab import portfolio_research_repository
 from app.research_snapshots import research_snapshot_repository
 from app.runs import run_store
 from app.sdk.registry import strategy_registry
+from app.strategy_drift import strategy_drift_repository
 from app.walk_forward import walk_forward_repository
 
 router = APIRouter(prefix="/api/search", tags=["global-search"])
@@ -32,6 +33,7 @@ def _service() -> GlobalSearchService:
             strategy_registry,
             run_store.repository,
             research_snapshot_repository,
+            drift_reports=strategy_drift_repository,
         )
     return _search_service
 

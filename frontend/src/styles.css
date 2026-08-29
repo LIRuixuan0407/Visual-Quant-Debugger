@@ -1228,3 +1228,47 @@ button.live-session-row:hover, button.live-session-row.selected { background: va
   margin: 5rem auto;
   padding: 2rem;
 }
+
+/* Strategy Drift */
+.drift-shell { gap: 18px; }
+.drift-layout { display: grid; grid-template-columns: minmax(220px, 280px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.drift-stack { display: grid; gap: 16px; min-width: 0; }
+.drift-ledger { position: sticky; top: 14px; display: grid; gap: 8px; max-height: calc(100vh - 28px); overflow: auto; }
+.drift-ledger > button { display: grid; gap: 5px; width: 100%; text-align: left; padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: transparent; }
+.drift-ledger > button.selected { border-color: var(--ink); background: var(--panel-strong); }
+.drift-ledger > button > span { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.drift-ledger code { font-size: 10px; }
+.drift-create-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.drift-create-grid label { display: grid; gap: 6px; }
+.drift-create-grid label > span { font-size: 12px; font-weight: 700; }
+.drift-create-grid .primary-button { align-self: end; min-height: 42px; }
+.drift-source-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.drift-source-grid article { display: grid; gap: 6px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; }
+.drift-source-grid article > span, .drift-source-grid small { color: var(--muted); font-size: 11px; }
+.drift-source-grid code { overflow-wrap: anywhere; font-size: 11px; }
+.drift-dimensions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.drift-dimension-card { min-width: 0; }
+.drift-dimension-card:first-child { grid-column: 1 / -1; }
+.drift-dimension-card header { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.drift-metrics { display: grid; gap: 7px; margin-top: 12px; }
+.drift-metrics > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 12px; padding: 7px 0; border-top: 1px solid var(--line); }
+.drift-metrics > div span { overflow-wrap: anywhere; }
+.drift-metrics > div small { grid-column: 1 / -1; color: var(--muted); }
+.drift-insufficient { padding: 8px 10px; border: 1px dashed var(--line); border-radius: 8px; }
+.drift-status { display: inline-flex; align-items: center; width: fit-content; padding: 3px 7px; border: 1px solid var(--line); border-radius: 999px; font-size: 10px; font-weight: 800; letter-spacing: .03em; }
+.drift-status.drift { border-style: solid; font-weight: 900; }
+.drift-status.watch, .drift-status.incomplete { border-style: dashed; }
+.drift-status.insufficient-evidence { opacity: .7; }
+.drift-first { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.drift-first > div { min-width: 0; }
+.drift-timeline-table { display: grid; overflow-x: auto; }
+.drift-timeline-row { display: grid; grid-template-columns: 64px minmax(180px, 1.3fr) repeat(5, minmax(90px, 1fr)); gap: 8px; align-items: center; min-width: 820px; padding: 8px 0; border-top: 1px solid var(--line); }
+.drift-timeline-row.header { border-top: 0; color: var(--muted); font-size: 10px; font-weight: 800; text-transform: uppercase; }
+.drift-timeline-row > span:nth-child(2) { display: grid; gap: 2px; }
+.drift-timeline-row small { color: var(--muted); }
+.drift-timeline-row.partial { opacity: .72; }
+.workspace-drift-links { display: grid; gap: 6px; margin-top: 8px; }
+.workspace-drift-links button { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; text-align: left; }
+.workspace-drift-links button small { grid-column: 1 / -1; color: var(--muted); }
+@media (max-width: 1050px) { .drift-layout { grid-template-columns: 1fr; } .drift-ledger { position: static; max-height: none; } .drift-source-grid, .drift-dimensions { grid-template-columns: 1fr; } .drift-dimension-card:first-child { grid-column: auto; } }
+@media (max-width: 700px) { .drift-create-grid { grid-template-columns: 1fr; } .drift-first { align-items: flex-start; flex-direction: column; } }

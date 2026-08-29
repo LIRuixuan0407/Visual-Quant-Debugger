@@ -26,6 +26,8 @@ class ForwardSession:
     dataset_id: str
     source_bars: tuple[MarketBar, ...]
     parameters: BacktestParameters
+    strategy_fingerprint: str = ""
+    dataset_revision: str | None = None
     status: Literal["CREATED", "RUNNING", "PAUSED", "COMPLETED", "STOPPED", "ERROR"] = "CREATED"
     feed: HistoricalBarFeed = field(init=False)
     portfolio: Portfolio = field(init=False)

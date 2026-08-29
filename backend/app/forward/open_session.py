@@ -33,6 +33,8 @@ class OpenForwardSession:
     strategy_version: str
     parameters: dict[str, ParameterValue]
     research_cutoff: datetime
+    strategy_fingerprint: str = ""
+    dataset_revision: str | None = None
     initial_cash: float = 100_000.0
     fee_bps: float = 5.0
     slippage_bps: float = 5.0

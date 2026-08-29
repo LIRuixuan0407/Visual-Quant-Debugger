@@ -14,11 +14,13 @@ from app.research_ledger import ResearchLedgerRepository
 from app.research_snapshots import ResearchSnapshotRepository
 from app.runs import ArtifactIntegrityError, RunNotFoundError, RunRepository
 from app.sdk.registry import StrategyRegistry
+from app.strategy_drift.repository import StrategyDriftRepository
 from app.walk_forward.repository import WalkForwardRepository
 
 from .models import (
     ResearchWorkspace,
     ResearchWorkspaceSummary,
+    WorkspaceDriftReport,
     WorkspaceFactor,
     WorkspaceFactorRelationship,
     WorkspaceNextAction,
@@ -53,6 +55,7 @@ class ResearchWorkspaceEngine:
         snapshots: ResearchSnapshotRepository,
         integrity: ResearchIntegrityEngine,
         ledger: ResearchLedgerRepository,
+        drift_reports: StrategyDriftRepository | None = None,
     ) -> None:
         self.datasets = datasets
         self.factors = factors
@@ -65,6 +68,7 @@ class ResearchWorkspaceEngine:
         self.snapshots = snapshots
         self.integrity = integrity
         self.ledger = ledger
+        self.drift_reports = drift_reports or StrategyDriftRepository(datasets.workspace_root)
 
     @staticmethod
     def _next_action(record: ResearchHypothesis) -> WorkspaceNextAction:
@@ -305,6 +309,21 @@ class ResearchWorkspaceEngine:
                 for item in self.snapshots.list()
                 if item.hypothesis_id == record.hypothesis_id
             )
+        explicit_sources = {*record.lineage.run_ids, *snapshot_ids}
+        drift_reports = tuple(
+            WorkspaceDriftReport(
+                drift_report_id=item.drift_report_id,
+                baseline_id=item.baseline_id,
+                observed_id=item.observed_id,
+                comparability=item.comparability,
+                overall_status=item.overall_status,
+                first_drift_at=item.first_drift_at,
+                first_drift_dimension=item.first_drift_dimension,
+                created_at=item.created_at,
+            )
+            for item in self.drift_reports.list()
+            if item.baseline_id in explicit_sources or item.observed_id in explicit_sources
+        )
         integrity = self.integrity.audit(record.hypothesis_id)
         stages = self._stages(
             record,
@@ -340,6 +359,7 @@ class ResearchWorkspaceEngine:
             strategy=strategy,
             runs=runs,
             snapshot_ids=snapshot_ids,
+            drift_reports=drift_reports,
             integrity_status=integrity.overall_status,
             integrity_violations=integrity.violation_count,
             integrity_warnings=integrity.warning_count,

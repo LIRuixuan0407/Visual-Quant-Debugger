@@ -148,6 +148,7 @@ export interface WorkspaceFactorRelationship { relationship_id: string; status: 
 export interface WorkspaceWalkForward { walk_forward_id: string; status: WorkspaceLineageStatus; name: string | null; factor_research_id: string | null; factor_id: string | null; dataset_id: string | null; window_count: number; positive_ic_window_ratio: number | null }
 export interface WorkspacePortfolio { portfolio_research_id: string; name: string; revealed_stage: string; combination: string; rebalance: string; net_return: number; turnover: number }
 export interface WorkspaceStrategy { strategy_id: string; source_fingerprint: string }
+export interface WorkspaceDriftReport { drift_report_id: string; baseline_id: string; observed_id: string; comparability: string; overall_status: string; first_drift_at: string | null; first_drift_dimension: string | null; created_at: string }
 export interface WorkspaceRun { run_id: string; trace_id: string | null; status: string; created_at: string; run_fingerprint: string; total_return: number | null; max_drawdown: number | null }
 export interface ResearchWorkspaceSummary { idea_id: string; family_id: string; title: string; revision: number; lifecycle_status: string; outcome: string; dataset_id: string; factor_count: number; completed_stage_count: number; total_stage_count: 7; integrity_status: IntegritySeverity; next_action: WorkspaceNextAction; updated_at: string }
 export interface ResearchWorkspace {
@@ -177,6 +178,7 @@ export interface ResearchWorkspace {
   strategy: WorkspaceStrategy | null
   runs: WorkspaceRun[]
   snapshot_ids: string[]
+  drift_reports?: WorkspaceDriftReport[]
   integrity_status: IntegritySeverity
   integrity_violations: number
   integrity_warnings: number

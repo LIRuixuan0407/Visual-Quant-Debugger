@@ -19,6 +19,9 @@ LineageNodeType = Literal[
     "RUN",
     "TRACE",
     "SNAPSHOT",
+    "FORWARD_SESSION",
+    "PAPER_SESSION",
+    "DRIFT_REPORT",
 ]
 LineageEdgeType = Literal[
     "USES_DATASET",
@@ -34,6 +37,8 @@ LineageEdgeType = Literal[
     "EXECUTES_STRATEGY",
     "PRODUCES_TRACE",
     "FREEZES_RESEARCH",
+    "BASELINE_FOR_DRIFT",
+    "OBSERVED_BY_DRIFT",
 ]
 LineageNodeStatus = Literal["RESOLVED", "MISSING_SOURCE", "ORPHAN"]
 LineageDirection = Literal["UPSTREAM", "DOWNSTREAM", "BOTH"]

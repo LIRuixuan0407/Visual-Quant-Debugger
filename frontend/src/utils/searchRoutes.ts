@@ -15,6 +15,7 @@ const PAGE_BY_TYPE: Record<SearchEntityType, ProductPage> = {
   RUN: 'runs',
   TRACE: 'replay',
   SNAPSHOT: 'snapshots',
+  DRIFT_REPORT: 'drift',
 }
 
 export function resolveSearchTarget(item: SearchOpenTarget): { page: ProductPage; route: string } {

@@ -19,6 +19,7 @@ SearchEntityType = Literal[
     "RUN",
     "TRACE",
     "SNAPSHOT",
+    "DRIFT_REPORT",
 ]
 type SearchScalar = str | int | float | bool | None
 
@@ -36,6 +37,7 @@ SEARCH_ENTITY_TYPES: tuple[SearchEntityType, ...] = (
     "RUN",
     "TRACE",
     "SNAPSHOT",
+    "DRIFT_REPORT",
 )
 
 

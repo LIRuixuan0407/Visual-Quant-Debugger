@@ -30,7 +30,8 @@ WorkspaceAction = Literal[
 WORKSPACE_DISCLOSURE = (
     "The unified Research Workspace is a read model over the existing Dataset, Factor, "
     "Factor Relationship, Walk-Forward, Portfolio, Hypothesis, Native Strategy, Run, Trace, "
-    "Snapshot, and Integrity records. It does not duplicate quantitative engines, mutate "
+    "Snapshot, Strategy Drift, and Integrity records. It does not duplicate quantitative "
+    "engines, mutate "
     "evidence, reveal Holdout automatically, optimize parameters, or select a winner."
 )
 
@@ -114,6 +115,22 @@ class WorkspaceRun(WorkspaceModel):
     _aware_created = field_validator("created_at")(_aware)
 
 
+class WorkspaceDriftReport(WorkspaceModel):
+    drift_report_id: str
+    baseline_id: str
+    observed_id: str
+    comparability: str
+    overall_status: str
+    first_drift_at: datetime | None = None
+    first_drift_dimension: str | None = None
+    created_at: datetime
+
+    @field_validator("first_drift_at", "created_at")
+    @classmethod
+    def aware_when_present(cls, value: datetime | None) -> datetime | None:
+        return None if value is None else _aware(value)
+
+
 class ResearchWorkspaceSummary(WorkspaceModel):
     idea_id: str
     family_id: str
@@ -159,6 +176,7 @@ class ResearchWorkspace(WorkspaceModel):
     strategy: WorkspaceStrategy | None
     runs: tuple[WorkspaceRun, ...]
     snapshot_ids: tuple[str, ...]
+    drift_reports: tuple[WorkspaceDriftReport, ...] = ()
     integrity_status: IntegrityStatus
     integrity_violations: int = Field(ge=0)
     integrity_warnings: int = Field(ge=0)

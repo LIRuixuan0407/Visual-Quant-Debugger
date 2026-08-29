@@ -89,6 +89,8 @@ class ForwardSessionStore:
                 dataset_id=request.dataset_id,
                 source_bars=bars,
                 parameters=parameters,
+                strategy_fingerprint=strategy_registry.load(request.strategy_id).source_fingerprint,
+                dataset_revision="bundled:forward-demo-v1@1.0",
             )
         else:
             if request.research_cutoff is None:
@@ -141,6 +143,8 @@ class ForwardSessionStore:
                 strategy_version=strategy.metadata.version,
                 parameters=request.parameters,
                 research_cutoff=request.research_cutoff,
+                strategy_fingerprint=loaded.source_fingerprint,
+                dataset_revision=definition.content_fingerprint,
                 fee_bps=float(request.parameters.get("fee_bps", 5.0)),
                 slippage_bps=float(request.parameters.get("slippage_bps", 5.0)),
             )

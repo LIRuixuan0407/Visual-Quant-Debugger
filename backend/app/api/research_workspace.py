@@ -15,6 +15,7 @@ from app.research_workspace import (
 )
 from app.runs import run_store
 from app.sdk.registry import strategy_registry
+from app.strategy_drift import strategy_drift_repository
 from app.walk_forward import walk_forward_repository
 
 router = APIRouter(prefix="/api/research-workspaces", tags=["research-workspaces"])
@@ -44,6 +45,7 @@ def _engine() -> ResearchWorkspaceEngine:
         research_snapshot_repository,
         integrity,
         research_ledger,
+        strategy_drift_repository,
     )
 
 

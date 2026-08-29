@@ -25,6 +25,8 @@ from app.research_snapshots.repository import ResearchSnapshotRepository
 from app.runs import ArtifactIntegrityError, RunNotFoundError, RunRepository
 from app.runs.models import RunManifest
 from app.sdk.registry import StrategyRegistry
+from app.strategy_drift.models import StrategyDriftReport
+from app.strategy_drift.repository import StrategyDriftRepository
 from app.universes.models import HistoricalUniverse
 from app.universes.repository import UniverseRepository
 from app.walk_forward.models import WalkForwardResearchRecord
@@ -54,6 +56,9 @@ NODE_TYPE_ORDER: tuple[LineageNodeType, ...] = (
     "RUN",
     "TRACE",
     "SNAPSHOT",
+    "FORWARD_SESSION",
+    "PAPER_SESSION",
+    "DRIFT_REPORT",
 )
 _NODE_ORDER = {node_type: index for index, node_type in enumerate(NODE_TYPE_ORDER)}
 
@@ -127,6 +132,18 @@ def _trace_node_id(trace_id: str) -> str:
 
 def _snapshot_node_id(snapshot_id: str) -> str:
     return f"SNAPSHOT:{snapshot_id}"
+
+
+def _forward_session_node_id(session_id: str) -> str:
+    return f"FORWARD_SESSION:{session_id}"
+
+
+def _paper_session_node_id(session_id: str) -> str:
+    return f"PAPER_SESSION:{session_id}"
+
+
+def _drift_report_node_id(report_id: str) -> str:
+    return f"DRIFT_REPORT:{report_id}"
 
 
 def _route(path: str, artifact_id: str, query_name: str | None = None) -> str:
@@ -242,6 +259,7 @@ class ResearchLineageBuilder:
         integrity: ResearchIntegrityEngine | None = None,
         universes: UniverseRepository | None = None,
         corporate_actions: CorporateActionRepository | None = None,
+        drift_reports: StrategyDriftRepository | None = None,
     ) -> None:
         self.datasets = datasets
         self.factors = factors
@@ -257,6 +275,7 @@ class ResearchLineageBuilder:
         self.corporate_actions = corporate_actions or CorporateActionRepository(
             datasets.workspace_root
         )
+        self.drift_reports = drift_reports or StrategyDriftRepository(datasets.workspace_root)
         self._graph = _Graph()
         self._factor_records: dict[str, FactorResearchRecord] = {}
         self._relationship_nodes: dict[str, str] = {}
@@ -1220,6 +1239,85 @@ class ResearchLineageBuilder:
             if record is not None:
                 yield record
 
+    def _drift_source_node(self, report: StrategyDriftReport, *, baseline: bool) -> str:
+        source = report.baseline if baseline else report.observed
+        if source.source_type in {"RUN", "PAPER_RUN"}:
+            return self._run_node(source.resolved_run_id or source.source_id)
+        if source.source_type == "SNAPSHOT":
+            node_id = _snapshot_node_id(source.source_id)
+            if node_id in self._graph.nodes:
+                return node_id
+            return self._missing_node(
+                "SNAPSHOT",
+                source.source_id,
+                node_id,
+                f"Missing Research Snapshot · {source.source_id}",
+                _route("/research-snapshots", source.source_id, "snapshot_id"),
+            )
+        source_node_id = (
+            _paper_session_node_id(source.source_id)
+            if source.source_type == "PAPER_SESSION"
+            else _forward_session_node_id(source.source_id)
+        )
+        source_node_type: LineageNodeType = (
+            "PAPER_SESSION" if source.source_type == "PAPER_SESSION" else "FORWARD_SESSION"
+        )
+        source_route = (
+            _route("/paper", source.source_id, "session_id")
+            if source.source_type == "PAPER_SESSION"
+            else _route("/forward", source.source_id, "session_id")
+        )
+        return self._graph.add_node(
+            LineageNode(
+                node_id=source_node_id,
+                node_type=source_node_type,
+                artifact_id=source.source_id,
+                revision=source.strategy_fingerprint,
+                label=source.source_id,
+                created_at=source.observed_until,
+                status="RESOLVED",
+                route=source_route,
+                metadata={
+                    "strategy_id": source.strategy_id,
+                    "dataset_id": source.dataset_id,
+                    "sample_size": source.sample_size,
+                    "captured_in_report": report.drift_report_id,
+                },
+            )
+        )
+
+    def _add_drift_report(self, report: StrategyDriftReport) -> None:
+        report_node = self._graph.add_node(
+            LineageNode(
+                node_id=_drift_report_node_id(report.drift_report_id),
+                node_type="DRIFT_REPORT",
+                artifact_id=report.drift_report_id,
+                revision=report.drift_rule_version,
+                label=f"Strategy Drift · {report.baseline_id} → {report.observed_id}",
+                created_at=report.created_at,
+                status="ORPHAN",
+                route=_route("/strategy-drift", report.drift_report_id, "report_id"),
+                metadata={
+                    "overall_status": report.overall_status,
+                    "comparability": report.comparability,
+                    "first_drift_dimension": report.first_drift_dimension,
+                    "first_drift_event_id": report.first_drift_event_id,
+                },
+            )
+        )
+        self._graph.add_edge(
+            "BASELINE_FOR_DRIFT",
+            self._drift_source_node(report, baseline=True),
+            report_node,
+            "StrategyDriftReport.baseline_id",
+        )
+        self._graph.add_edge(
+            "OBSERVED_BY_DRIFT",
+            self._drift_source_node(report, baseline=False),
+            report_node,
+            "StrategyDriftReport.observed_id",
+        )
+
     def build(self) -> ResearchLineageGraph:
         self._graph = _Graph()
         self._factor_records = {}
@@ -1251,4 +1349,8 @@ class ResearchLineageBuilder:
             snapshot = self.snapshots.get(snapshot_summary.snapshot_id)
             if snapshot is not None:
                 self._add_snapshot(snapshot)
+        for drift_summary in self.drift_reports.list():
+            drift_report = self.drift_reports.get(drift_summary.drift_report_id)
+            if drift_report is not None:
+                self._add_drift_report(drift_report)
         return self._graph.graph()
