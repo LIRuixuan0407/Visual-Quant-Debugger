@@ -15,6 +15,7 @@ function ProfilePage() {
   const { language, tr } = useI18n()
   const [status, setStatus] = useState<AlpacaIntegrationStatus | null>(null)
   const [accounts, setAccounts] = useState<PaperAccount[]>([])
+  const [selectedAccountId, setSelectedAccountId] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [secretKey, setSecretKey] = useState('')
   const [feed, setFeed] = useState<AlpacaFeed>('iex')
@@ -30,6 +31,9 @@ function ProfilePage() {
       const [current, paperAccounts] = await Promise.all([getAlpacaIntegration(), listPaperAccounts()])
       setStatus(current)
       setAccounts(paperAccounts)
+      setSelectedAccountId((selected) => paperAccounts.some((item) => item.account_id === selected)
+        ? selected
+        : (paperAccounts.find((item) => item.active_session_id) ?? paperAccounts[0])?.account_id ?? '')
       setFeed(current.feed)
     }
     catch (reason) {
@@ -90,11 +94,11 @@ function ProfilePage() {
 
   const verified = status?.verification_status === 'VERIFIED'
   const stateLabel = !status?.configured ? 'NOT CONNECTED' : verified ? 'VERIFIED' : status.verification_status
-  const account = accounts.find((item) => item.active_session_id) ?? accounts[0] ?? null
+  const account = accounts.find((item) => item.account_id === selectedAccountId) ?? accounts.find((item) => item.active_session_id) ?? accounts[0] ?? null
   const allocated = account ? account.equity - account.cash : 0
   const cashShare = account && account.equity > 0 ? Math.max(0, Math.min(100, account.cash / account.equity * 100)) : 100
   const positions = account ? Object.entries(account.positions).filter(([, quantity]) => quantity !== 0) : []
-  const money = new Intl.NumberFormat(language === 'zh' ? 'zh-CN' : 'en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 })
+  const money = new Intl.NumberFormat(language === 'zh' ? 'zh-CN' : 'en-US', { style: 'currency', currency: account?.currency ?? 'USD', maximumFractionDigits: 2 })
 
   return <main className="runs-shell profile-shell">
     <header className="workspace-title">
@@ -105,6 +109,7 @@ function ProfilePage() {
     <section className="portfolio-overview">
       <article className="portfolio-primary">
         <div className="portfolio-heading"><div><span>{tr('Your portfolio')}</span><strong>{account?.name ?? tr('No paper account')}</strong></div><span className="virtual-badge">{tr('SIMULATED')}</span></div>
+        {accounts.length > 0 && <div className="profile-account-switcher"><label><span>{tr('Paper Account')}</span><select aria-label={tr('Paper Account')} value={account?.account_id ?? ''} onChange={(event) => setSelectedAccountId(event.target.value)}>{accounts.map((item) => <option key={item.account_id} value={item.account_id}>{item.name} · {item.currency}{item.active_session_id ? ` · ${tr('In use')}` : ''}</option>)}</select></label><small>{accounts.length} {tr(accounts.length === 1 ? 'virtual account' : 'virtual accounts')} · {tr('Balances stay separate by currency.')}</small></div>}
         <div className="portfolio-value">{account ? money.format(account.equity) : '—'}</div>
         <span className="portfolio-caption">{tr('Total virtual equity')}</span>
         <div className="allocation-bar" aria-label={tr('Cash and allocated capital')}><i style={{ width: `${cashShare}%` }} /><b /></div>
@@ -113,6 +118,7 @@ function ProfilePage() {
       <article className="balances-panel">
         <div className="portfolio-heading"><div><span>{tr('ACCOUNT')}</span><strong>{tr('Balances')}</strong></div><small>{account ? tr('Updated locally') : tr('Paper account required')}</small></div>
         <dl className="balance-list">
+          <div><dt>{tr('Account currency')}</dt><dd>{account?.currency ?? '—'}</dd></div>
           <div><dt>{tr('Cash')}</dt><dd>{account ? money.format(account.cash) : '—'}</dd></div>
           <div><dt>{tr('Positions value')}</dt><dd>{account ? money.format(allocated) : '—'}</dd></div>
           <div><dt>{tr('Fees paid')}</dt><dd>{account ? money.format(account.cumulative_fees) : '—'}</dd></div>

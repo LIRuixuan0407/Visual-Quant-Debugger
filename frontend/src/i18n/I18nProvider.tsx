@@ -399,6 +399,8 @@ const zh: Record<string, string> = {
   'Your portfolio': '我的研究组合', 'No paper account': '暂无虚拟账户', SIMULATED: '模拟账户',
   'Total virtual equity': '虚拟账户总权益', 'Cash and allocated capital': '现金与已配置资金', Allocated: '已配置',
   ACCOUNT: '账户', Balances: '余额', 'Updated locally': '本地实时更新', 'Paper account required': '需要虚拟账户',
+  'Account currency': '账户币种', 'virtual account': '个虚拟账户', 'virtual accounts': '个虚拟账户',
+  'Balances stay separate by currency.': '不同币种余额独立记录，不进行汇总换算。',
   'Positions value': '持仓价值', 'Fees paid': '累计手续费', 'Open positions': '当前持仓',
   'Real US equities and local datasets in one research workspace.': '在同一研究工作台管理真实美股行情与本地数据集。',
   'Live CN / HK / US equities and local datasets in one research workspace.': '在同一研究工作台管理中国A股、港股、美股实时行情与本地数据集。',

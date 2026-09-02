@@ -9,6 +9,7 @@ import sqlite3
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Literal, cast
 
 from app.paper.models import (
     MarketJournalEntry,
@@ -195,7 +196,7 @@ class PaperSessionRepository:
         return PaperAccount(
             account_id=str(row["account_id"]),
             name=str(row["name"]),
-            currency="USD",
+            currency=cast(Literal["CNY", "HKD", "USD"], str(row["currency"])),
             initial_cash=float(row["initial_cash"]),
             cash=float(row["cash"]),
             positions=json.loads(row["positions_json"]),

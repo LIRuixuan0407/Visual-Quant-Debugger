@@ -10,6 +10,7 @@ import sys
 import time
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Literal
 
 import httpx
 import pytest
@@ -533,6 +534,36 @@ def test_lifecycle_rejects_terminal_restart_and_duplicate_start_has_one_task(
         await service.shutdown()
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize(
+    ("currency", "market_session"),
+    (("CNY", "CN_REGULAR"), ("HKD", "HK_REGULAR"), ("USD", "US_REGULAR")),
+)
+def test_account_currency_survives_persistence_and_matches_market_session(
+    tmp_path: Path,
+    currency: Literal["CNY", "HKD", "USD"],
+    market_session: Literal["CN_REGULAR", "HK_REGULAR", "US_REGULAR"],
+) -> None:
+    service, base_request, _ = _service(tmp_path)
+    account = service.create_account(
+        CreatePaperAccount(
+            name=f"{currency} paper",
+            initial_cash=100_000.0,
+            currency=currency,
+        )
+    )
+
+    persisted = service.get_account(account.account_id)
+    assert persisted.currency == currency
+
+    snapshot = service.create(
+        base_request.model_copy(
+            update={"account_id": account.account_id, "market_session": market_session}
+        )
+    )
+    assert snapshot.account_id == account.account_id
+    assert snapshot.market_session == market_session
 
 
 def test_account_ownership_uses_active_manifests_and_survives_session_history(
