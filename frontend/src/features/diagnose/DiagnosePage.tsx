@@ -206,6 +206,8 @@ function severityClass(severity: FailureSeverity) { return severity.toLowerCase(
 function FailureFingerprintSection({ report }: { report: DiagnosisReport }) {
   const { tr } = useI18n()
   const fingerprint = report.failure_fingerprint
+  const severityOrder: Record<FailureSeverity, number> = { HIGH: 0, MEDIUM: 1, LOW: 2, NOT_AVAILABLE: 3 }
+  const dimensions = fingerprint ? [...fingerprint.dimensions].sort((left, right) => severityOrder[left.severity] - severityOrder[right.severity]) : []
   return <section id="diagnose-fingerprint" className="diagnose-section failure-fingerprint-section">
     <div className="section-heading"><h2>{tr('Strategy failure fingerprint')}</h2><span>{tr('Deterministic diagnostic triage')}</span></div>
     {!fingerprint ? <p className="capability-unavailable"><strong>{tr('Not available in this cached report')}</strong><span>{tr('Run diagnostics again to calculate the failure fingerprint.')}</span></p> : <>
@@ -213,7 +215,7 @@ function FailureFingerprintSection({ report }: { report: DiagnosisReport }) {
         <div><span className="section-kicker">{tr('Summary')}</span><strong>{fingerprint.high_severity_count} {tr('high severity')} · {fingerprint.medium_severity_count} {tr('medium severity')}</strong></div>
         <p>{tr(fingerprint.summary)}</p>
       </article>
-      <div className="fingerprint-grid">{fingerprint.dimensions.map((dimension) => <article className={`fingerprint-card ${severityClass(dimension.severity)}`} key={dimension.key}>
+      <div className="fingerprint-grid">{dimensions.map((dimension) => <article className={`fingerprint-card ${severityClass(dimension.severity)}`} key={dimension.key}>
         <header><span>{tr(dimension.title)}</span><strong className={`fingerprint-severity ${severityClass(dimension.severity)}`}>{tr(dimension.severity)}</strong></header>
         <ul>{dimension.evidence.map((item) => <li key={item}>{tr(item)}</li>)}</ul>
         <details><summary>{tr('Calculation details')}</summary>{dimension.calculation_details.map((item) => <p key={item}>{tr(item)}</p>)}</details>
@@ -230,19 +232,28 @@ function RegimeDiagnosticsSection({ report }: { report: DiagnosisReport }) {
   const diagnostics = report.regime_diagnostics
   const order = { LOW: 0, NORMAL: 1, HIGH: 2, UPTREND: 0, SIDEWAYS: 1, DOWNTREND: 2 } as const
   const performance = diagnostics ? [...diagnostics.performance].sort((left, right) => order[left.volatility_regime] - order[right.volatility_regime] || order[left.trend_regime] - order[right.trend_regime]) : []
+  const evaluable = performance.filter((item) => item.status === 'OK')
+  const ranked = [...evaluable].sort((left, right) => right.sharpe - left.sharpe)
+  const best = ranked[0]
+  const weakest = ranked.at(-1)
   return <section id="diagnose-regime" className="diagnose-section regime-diagnostics-section">
     <div className="section-heading"><h2>{tr('Market regime diagnostics')}</h2><span>{tr('Volatility × trend')}</span></div>
     {!diagnostics ? <p className="capability-unavailable"><strong>{tr('Not available in this cached report')}</strong><span>{tr('Run diagnostics again to calculate market-regime evidence.')}</span></p> : <>
       <article className={`diagnostic-verdict ${diagnostics.status === 'OK' ? '' : 'unavailable'}`}>
         <span className="section-kicker">{tr('Verdict')}</span><strong>{tr(diagnostics.verdict)}</strong><p>{tr(diagnostics.summary)}</p>
       </article>
-      {performance.length > 0 ? <div className="regime-table" role="table" aria-label={tr('Strategy performance by market regime')}>
+      {evaluable.length > 0 && <div className="regime-summary-strip">
+        <div><span>{tr('Evaluable regimes')}</span><strong>{evaluable.length}</strong><small>{performance.length} {tr('total buckets')}</small></div>
+        <div><span>{tr('Best regime')}</span><strong>{best ? `${tr(best.volatility_regime)} / ${tr(best.trend_regime)}` : '—'}</strong><small>{best ? `${tr('Sharpe')} ${best.sharpe.toFixed(2)}` : '—'}</small></div>
+        <div><span>{tr('Weakest regime')}</span><strong>{weakest ? `${tr(weakest.volatility_regime)} / ${tr(weakest.trend_regime)}` : '—'}</strong><small>{weakest ? `${tr('Sharpe')} ${weakest.sharpe.toFixed(2)}` : '—'}</small></div>
+      </div>}
+      {performance.length > 0 ? <details className="advanced-disclosure evidence-table-disclosure regime-table-disclosure"><summary>{tr('View regime table')}<span>{performance.length} {tr('buckets')}</span></summary><div className="regime-table" role="table" aria-label={tr('Strategy performance by market regime')}>
         <div className="regime-row header"><span>{tr('Regime')}</span><span>{tr('Bars')}</span><span>{tr('Return')}</span><span>{tr('Sharpe')}</span><span>{tr('Drawdown')}</span><span>{tr('Hit rate')}</span><span>{tr('Trades')}</span><span>{tr('Turnover')}</span></div>
         {performance.map((item) => <div className={`regime-row ${item.status === 'OK' ? '' : 'insufficient'}`} key={regimeLabel(item)}>
           <strong><span className={`volatility-regime ${item.volatility_regime.toLowerCase()}`}>{tr(item.volatility_regime)}</span> / {tr(item.trend_regime)}</strong>
           <code>{item.observation_count}</code><code>{percent(item.total_return)}</code><code>{item.sharpe.toFixed(2)}</code><code>{percent(item.max_drawdown)}</code><code>{percent(item.hit_rate)}</code><code>{item.trade_count}</code><code>{item.turnover.toFixed(2)}×</code>
         </div>)}
-      </div> : <p className="empty-copy">{tr('No market-regime bucket has enough aligned evidence yet.')}</p>}
+      </div></details> : <p className="empty-copy">{tr('No market-regime bucket has enough aligned evidence yet.')}</p>}
       <details className="advanced-disclosure regime-methodology"><summary>{tr('Calculation details')}</summary><div className="method-notes">{diagnostics.calculation_details.map((detail) => <p key={detail}>{tr(detail)}</p>)}</div></details>
     </>}
   </section>
@@ -277,21 +288,42 @@ function ParameterSensitivitySection({ report }: { report: DiagnosisReport }) {
     <div className="section-heading"><h2>{tr(parameter && parameter !== 'lookback' ? `${parameter} sensitivity` : 'Lookback sensitivity')}</h2>{report.sensitivity_available !== false && <div className="chart-legend"><span><i className="legend-train" /> {tr('Train Sharpe')}</span><span><i className="legend-test" /> {tr('Test Sharpe')}</span></div>}</div>
     {supported === 'NOT_SUPPORTED' || report.sensitivity_available === false || report.lookback_sensitivity.length === 0
       ? <p className="capability-unavailable"><strong>{tr('Not supported for this run')}</strong><span>{tr('This adapter cannot reproduce parameter sensitivity without changing framework semantics.')}</span></p>
-      : <><SensitivityChart report={report} /><div className="dense-table sensitivity-table"><div className="dense-row header"><span>{tr(parameter ?? 'Lookback')}</span><span>{tr('Train Sharpe')}</span><span>{tr('Test Sharpe')}</span><span>{tr('Status')}</span></div>{report.lookback_sensitivity.map((point) => <div className="dense-row" key={point.lookback}><code>{point.lookback}{point.is_current ? ` · ${tr('current')}` : ''}</code><code>{sharpeDisplay(point.train)}</code><code>{sharpeDisplay(point.test)}</code><span>{tr(point.train.status)} / {tr(point.test.status)}</span></div>)}</div></>}
+      : <><SensitivityChart report={report} /><details className="advanced-disclosure evidence-table-disclosure"><summary>{tr('View sensitivity table')}<span>{report.lookback_sensitivity.length} {tr('candidates')}</span></summary><div className="dense-table sensitivity-table"><div className="dense-row header"><span>{tr(parameter ?? 'Lookback')}</span><span>{tr('Train Sharpe')}</span><span>{tr('Test Sharpe')}</span><span>{tr('Status')}</span></div>{report.lookback_sensitivity.map((point) => <div className="dense-row" key={point.lookback}><code>{point.lookback}{point.is_current ? ` · ${tr('current')}` : ''}</code><code>{sharpeDisplay(point.train)}</code><code>{sharpeDisplay(point.test)}</code><span>{tr(point.train.status)} / {tr(point.test.status)}</span></div>)}</div></details></>}
   </section>
 }
 
 function BatchStressEvidence({ report }: { report: DiagnosisReport }) {
   const { tr } = useI18n()
   const supported = report.support ?? { train_test: 'AVAILABLE', parameter_sensitivity: 'AVAILABLE', cost_stress: 'AVAILABLE', execution_delay: 'AVAILABLE' }
+  const baselineFriction = report.source_run.fee_bps + report.source_run.slippage_bps
+  const costPoints = [...report.cost_stress].sort((left, right) => left.total_friction_bps - right.total_friction_bps)
+  const baselineCost = costPoints.find((point) => point.total_friction_bps === baselineFriction) ?? costPoints[0]
+  const highestCost = costPoints.at(-1)
+  const delayPoints = [...report.execution_delay].sort((left, right) => left.additional_delay_bars - right.additional_delay_bars)
+  const baselineDelay = delayPoints.find((point) => point.additional_delay_bars === 0) ?? delayPoints[0]
+  const longestDelay = delayPoints.at(-1)
   return <>
     <section id="diagnose-cost-stress" className="diagnose-section">
       <div className="section-heading"><h2>{tr('Cost stress')}</h2><span>{tr('Full-pipeline reruns')}</span></div>
-      {supported.cost_stress === 'NOT_SUPPORTED' ? <p className="capability-unavailable"><strong>{tr('Not supported for this run')}</strong><span>{tr('Cost stress requires a framework-native rerun contract that this adapter does not provide.')}</span></p> : <div className="dense-table cost-stress-table"><div className="dense-row header"><span>{tr('Total friction')}</span><span>{tr('Fee / Slippage')}</span><span>{tr('Return')}</span><span>{tr('Sharpe')}</span></div>{report.cost_stress.map((point) => <div className="dense-row" key={point.total_friction_bps}><code>{point.total_friction_bps} bps</code><code>{point.fee_bps} / {point.slippage_bps}</code><code>{percent(point.metrics.return)}</code><code>{sharpeDisplay(point.metrics)}</code></div>)}</div>}
+      {supported.cost_stress === 'NOT_SUPPORTED' ? <p className="capability-unavailable"><strong>{tr('Not supported for this run')}</strong><span>{tr('Cost stress requires a framework-native rerun contract that this adapter does not provide.')}</span></p> : <>
+        {baselineCost && highestCost && <div className="stress-summary-strip">
+          <div><span>{tr('Baseline Sharpe')}</span><strong>{sharpeDisplay(baselineCost.metrics)}</strong><small>{baselineCost.total_friction_bps} bps</small></div>
+          <div><span>{tr('Highest friction')}</span><strong>{highestCost.total_friction_bps} bps</strong><small>{tr('Sharpe')} {sharpeDisplay(highestCost.metrics)}</small></div>
+          <div><span>{tr('Sharpe change')}</span><strong>{baselineCost.metrics.status === 'OK' && highestCost.metrics.status === 'OK' ? (highestCost.metrics.sharpe - baselineCost.metrics.sharpe).toFixed(2) : 'N/A'}</strong><small>{tr('Baseline')} → {tr('Stress')}</small></div>
+        </div>}
+        <details className="advanced-disclosure evidence-table-disclosure"><summary>{tr('View stress table')}<span>{costPoints.length} {tr('scenarios')}</span></summary><div className="dense-table cost-stress-table"><div className="dense-row header"><span>{tr('Total friction')}</span><span>{tr('Fee / Slippage')}</span><span>{tr('Return')}</span><span>{tr('Sharpe')}</span></div>{costPoints.map((point) => <div className="dense-row" key={point.total_friction_bps}><code>{point.total_friction_bps} bps</code><code>{point.fee_bps} / {point.slippage_bps}</code><code>{percent(point.metrics.return)}</code><code>{sharpeDisplay(point.metrics)}</code></div>)}</div></details>
+      </>}
     </section>
     <section id="diagnose-execution-delay" className="diagnose-section">
       <div className="section-heading"><h2>{tr('Execution delay')}</h2><span>{tr('0 = baseline close(t+1)')}</span></div>
-      {supported.execution_delay === 'NOT_SUPPORTED' ? <p className="capability-unavailable"><strong>{tr('Not supported for this run')}</strong><span>{tr('Execution delay cannot be inferred from persisted results.')}</span></p> : <div className="dense-table execution-delay-table"><div className="dense-row header"><span>{tr('Additional delay')}</span><span>{tr('Effective execution')}</span><span>{tr('Return')}</span><span>{tr('Unfilled')}</span></div>{report.execution_delay.map((point) => <div className="dense-row" key={point.additional_delay_bars}><code>+{point.additional_delay_bars} {tr('bars')}</code><code>close(t+{point.execution_offset_bars})</code><code>{percent(point.metrics.return)}</code><code>{point.unfilled_signal_count}</code></div>)}</div>}
+      {supported.execution_delay === 'NOT_SUPPORTED' ? <p className="capability-unavailable"><strong>{tr('Not supported for this run')}</strong><span>{tr('Execution delay cannot be inferred from persisted results.')}</span></p> : <>
+        {baselineDelay && longestDelay && <div className="stress-summary-strip">
+          <div><span>{tr('Baseline return')}</span><strong>{percent(baselineDelay.metrics.return)}</strong><small>close(t+{baselineDelay.execution_offset_bars})</small></div>
+          <div><span>{tr('Longest delay')}</span><strong>+{longestDelay.additional_delay_bars} {tr('bars')}</strong><small>close(t+{longestDelay.execution_offset_bars})</small></div>
+          <div><span>{tr('Unfilled signals')}</span><strong>{longestDelay.unfilled_signal_count}</strong><small>{tr('at longest delay')}</small></div>
+        </div>}
+        <details className="advanced-disclosure evidence-table-disclosure"><summary>{tr('View execution-delay table')}<span>{delayPoints.length} {tr('scenarios')}</span></summary><div className="dense-table execution-delay-table"><div className="dense-row header"><span>{tr('Additional delay')}</span><span>{tr('Effective execution')}</span><span>{tr('Return')}</span><span>{tr('Unfilled')}</span></div>{delayPoints.map((point) => <div className="dense-row" key={point.additional_delay_bars}><code>+{point.additional_delay_bars} {tr('bars')}</code><code>close(t+{point.execution_offset_bars})</code><code>{percent(point.metrics.return)}</code><code>{point.unfilled_signal_count}</code></div>)}</div></details>
+      </>}
     </section>
   </>
 }
@@ -372,8 +404,8 @@ function DiagnosisOverview({ report }: { report: DiagnosisReport }) {
 function DiagnosisJumpNav() {
   const { tr } = useI18n()
   const items = [
-    ['#diagnose-train-test', 'Train / Test'],
     ['#diagnose-fingerprint', 'Strategy failure fingerprint'],
+    ['#diagnose-train-test', 'Train / Test'],
     ['#diagnose-sensitivity', 'Lookback sensitivity'],
     ['#diagnose-cost-stress', 'Cost stress'],
     ['#diagnose-execution-delay', 'Execution delay'],
@@ -395,6 +427,8 @@ function DiagnoseContent({ report, onOpenReplay }: { report: DiagnosisReport; on
     <DiagnosisOverview report={report} />
     <DiagnosisJumpNav />
 
+    <FailureFingerprintSection report={report} />
+
     <section id="diagnose-train-test" className="diagnose-section">
       <div className="section-heading"><h2>{tr('Train / Test · 70 / 30')}</h2><span>{split.train_bar_count} + {split.test_bar_count} {tr('bars')}</span></div>
       <div className="comparison-table train-test-table" role="table">
@@ -410,8 +444,6 @@ function DiagnoseContent({ report, onOpenReplay }: { report: DiagnosisReport; on
       </div>
       <details className="advanced-disclosure methodology-disclosure"><summary>{tr('Methodology')}</summary><div className="method-notes"><p>{tr(split.feature_context_policy)}</p><p>{tr(split.pnl_isolation_policy)}</p></div></details>
     </section>
-
-    <FailureFingerprintSection report={report} />
 
     <ParameterSensitivitySection report={report} />
 

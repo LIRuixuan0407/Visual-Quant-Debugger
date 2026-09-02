@@ -113,7 +113,7 @@ it('renders backend risk decomposition without optimizing weights', async () => 
 
   render(<I18nProvider><PortfolioLabPage onOpenReplay={() => undefined} onRunComplete={() => undefined} /></I18nProvider>)
 
-  expect(await screen.findByText('Risk Decomposition')).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: 'Risk Decomposition' })).toBeInTheDocument()
   expect(screen.getByRole('navigation', { name: 'Evidence map' })).toHaveTextContent('Risk Decomposition')
   expect(screen.getByText('18.00%')).toBeInTheDocument()
   expect(screen.getByText('Expected Shortfall 95%')).toBeInTheDocument()
