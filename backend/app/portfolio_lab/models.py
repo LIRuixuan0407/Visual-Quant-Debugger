@@ -22,6 +22,8 @@ CombinationMethod = Literal[
 SelectionMethod = Literal["TOP_N", "TOP_PERCENT"]
 WeightingMethod = Literal["EQUAL_WEIGHT", "SCORE_WEIGHTED"]
 RebalanceRule = Literal["DAILY", "WEEKLY", "MONTHLY"]
+RiskDecompositionStatus = Literal["AVAILABLE", "INSUFFICIENT_DATA"]
+RiskVolatilityBasis = Literal["ANNUALIZED", "PER_OBSERVATION"]
 
 
 class PortfolioModel(BaseModel):
@@ -161,12 +163,56 @@ class TransactionCostPreview(PortfolioModel):
     rebalance_count: int
 
 
+class RiskMatrix(PortfolioModel):
+    symbols: tuple[str, ...]
+    values: tuple[tuple[float, ...], ...]
+
+
+class AssetRiskContribution(PortfolioModel):
+    symbol: str
+    portfolio_weight: float = Field(ge=0.0)
+    invested_weight: float = Field(ge=0.0, le=1.0)
+    marginal_contribution_to_volatility: float
+    component_contribution_to_volatility: float
+    component_risk_share: float
+    risk_weight_gap: float
+    low_weight_high_risk: bool
+
+
+class PortfolioRiskDecomposition(PortfolioModel):
+    status: RiskDecompositionStatus
+    verdict: str
+    snapshot_timestamp: datetime | None
+    dataset_frequency: str
+    observations: int = Field(ge=0)
+    annualization_factor: int | None = Field(default=None, gt=0)
+    volatility_basis: RiskVolatilityBasis
+    portfolio_volatility: float | None = Field(default=None, ge=0.0)
+    per_observation_volatility: float | None = Field(default=None, ge=0.0)
+    historical_var_95: float | None = Field(default=None, ge=0.0)
+    expected_shortfall_95: float | None = Field(default=None, ge=0.0)
+    confidence_level: float = Field(default=0.95, gt=0.0, lt=1.0)
+    covariance: RiskMatrix | None
+    correlation: RiskMatrix | None
+    contributions: tuple[AssetRiskContribution, ...]
+    calculation_details: tuple[str, ...]
+    boundary_disclosure: str
+
+    @field_validator("snapshot_timestamp")
+    @classmethod
+    def snapshot_is_aware(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("Risk decomposition snapshot timestamps must be timezone-aware")
+        return value
+
+
 class PortfolioStageResult(PortfolioModel):
     stage: ResearchStage
     period: ResearchPeriod
     factor_checks: tuple[PortfolioFactorCheck, ...]
     snapshots: tuple[PortfolioRebalanceSnapshot, ...]
     cost_preview: TransactionCostPreview
+    risk_decomposition: PortfolioRiskDecomposition | None = None
 
 
 class PortfolioStrategyArtifact(PortfolioModel):

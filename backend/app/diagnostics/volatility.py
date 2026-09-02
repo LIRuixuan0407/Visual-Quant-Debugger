@@ -14,10 +14,19 @@ from app.diagnostics.models import (
 from app.trace.models import BacktestTrace, TimelineEvent
 
 DEFAULT_ROLLING_WINDOW = 21
-DEFAULT_EWMA_DECAY = 0.94
+FIXED_EWMA_DECAY = 0.94
 DEFAULT_ANNUALIZATION_FACTOR = 252
 DEFAULT_LOW_VOL_THRESHOLD = 0.15
 DEFAULT_HIGH_VOL_THRESHOLD = 0.30
+
+
+def annualization_factor_for_frequency(dataset_frequency: str | None) -> int | None:
+    if dataset_frequency is None:
+        return None
+    normalized = dataset_frequency.strip().lower().replace(" ", "")
+    if normalized in {"1d", "1day", "daily", "86400s"}:
+        return 252
+    return None
 
 
 def classify_volatility_regime(
@@ -57,7 +66,7 @@ def rolling_historical_volatility(
 def ewma_volatility(
     returns: tuple[float | None, ...],
     *,
-    decay: float = DEFAULT_EWMA_DECAY,
+    decay: float = FIXED_EWMA_DECAY,
     annualization_factor: int = DEFAULT_ANNUALIZATION_FACTOR,
 ) -> tuple[float | None, ...]:
     if not 0.0 < decay < 1.0:
@@ -69,9 +78,7 @@ def ewma_volatility(
             output.append(None)
             continue
         variance = (
-            value * value
-            if variance is None
-            else decay * variance + (1.0 - decay) * value * value
+            value * value if variance is None else decay * variance + (1.0 - decay) * value * value
         )
         volatility = math.sqrt(variance * annualization_factor)
         output.append(volatility if math.isfinite(volatility) else None)
@@ -102,7 +109,7 @@ def _market_returns(trace: BacktestTrace) -> tuple[float | None, ...]:
 
 def _verdict(
     *,
-    status: Literal["OK", "INSUFFICIENT_DATA"],
+    status: Literal["OK", "INSUFFICIENT_DATA", "UNSUPPORTED"],
     drawdown_count: int,
     evaluable_count: int,
     rising_count: int,
@@ -112,7 +119,10 @@ def _verdict(
     "LIMITED_VOLATILITY_OVERLAP",
     "NO_DRAWDOWNS",
     "INSUFFICIENT_DATA",
+    "UNSUPPORTED",
 ]:
+    if status == "UNSUPPORTED":
+        return "UNSUPPORTED"
     if status != "OK" or evaluable_count == 0:
         return "NO_DRAWDOWNS" if drawdown_count == 0 and status == "OK" else "INSUFFICIENT_DATA"
     if rising_count * 2 > evaluable_count:
@@ -125,20 +135,52 @@ def _verdict(
 def build_volatility_diagnostics(
     trace: BacktestTrace,
     *,
+    dataset_frequency: str | None = None,
     rolling_window: int = DEFAULT_ROLLING_WINDOW,
-    ewma_decay: float = DEFAULT_EWMA_DECAY,
-    annualization_factor: int = DEFAULT_ANNUALIZATION_FACTOR,
 ) -> VolatilityDiagnostics:
     market_returns = _market_returns(trace) if trace.timeline else ()
+    frequency = dataset_frequency.strip() if dataset_frequency else "unavailable"
+    annualization_factor = annualization_factor_for_frequency(dataset_frequency)
+    if annualization_factor is None:
+        return VolatilityDiagnostics(
+            status="UNSUPPORTED",
+            dataset_frequency=frequency,
+            rolling_window=rolling_window,
+            ewma_decay=FIXED_EWMA_DECAY,
+            annualization_factor=None,
+            market_return_method=(
+                "At each bar, compute each recorded symbol's simple close-to-close return, "
+                "then take their equal-weight mean."
+            ),
+            thresholds=VolatilityRegimeThresholds(),
+            points=tuple(
+                VolatilityPoint(timestamp=event.timestamp, market_return=market_returns[index])
+                for index, event in enumerate(trace.timeline)
+            ),
+            drawdown_overlap=(),
+            evaluable_drawdown_count=0,
+            rising_volatility_start_count=0,
+            regime_change_start_count=0,
+            verdict="UNSUPPORTED",
+            summary=(
+                f"Annualized volatility is unsupported for dataset frequency '{frequency}'."
+            ),
+            calculation_details=(
+                f"Dataset frequency '{frequency}' does not provide a reliable "
+                "observations-per-year factor.",
+                "Intraday annualization requires explicit trading-session and calendar "
+                "semantics; VQD does not infer them from bar spacing.",
+                "VQD v1 uses a fixed EWMA decay of lambda=0.94; it is displayed rather "
+                "than presented as a configurable setting.",
+            ),
+        )
     historical = rolling_historical_volatility(
         market_returns, window=rolling_window, annualization_factor=annualization_factor
     )
     ewma = ewma_volatility(
-        market_returns, decay=ewma_decay, annualization_factor=annualization_factor
+        market_returns, decay=FIXED_EWMA_DECAY, annualization_factor=annualization_factor
     )
-    regimes = tuple(
-        None if value is None else classify_volatility_regime(value) for value in ewma
-    )
+    regimes = tuple(None if value is None else classify_volatility_regime(value) for value in ewma)
     points = tuple(
         VolatilityPoint(
             timestamp=event.timestamp,
@@ -193,7 +235,7 @@ def build_volatility_diagnostics(
     evaluable = sum(item.ewma_rising_at_start is not None for item in overlaps)
     rising_count = sum(item.ewma_rising_at_start is True for item in overlaps)
     regime_change_count = sum(item.regime_changed_at_start is True for item in overlaps)
-    status: Literal["OK", "INSUFFICIENT_DATA"] = (
+    status: Literal["OK", "INSUFFICIENT_DATA", "UNSUPPORTED"] = (
         "OK" if any(value is not None for value in historical) else "INSUFFICIENT_DATA"
     )
     if overlaps and evaluable:
@@ -207,8 +249,9 @@ def build_volatility_diagnostics(
         summary = "Drawdown overlap is unavailable until volatility warm-up is complete."
     return VolatilityDiagnostics(
         status=status,
+        dataset_frequency=frequency,
         rolling_window=rolling_window,
-        ewma_decay=ewma_decay,
+        ewma_decay=FIXED_EWMA_DECAY,
         annualization_factor=annualization_factor,
         market_return_method=(
             "At each bar, compute each recorded symbol's simple close-to-close return, then "
@@ -233,9 +276,12 @@ def build_volatility_diagnostics(
         ),
         summary=summary,
         calculation_details=(
+            f"Dataset frequency '{frequency}' maps to {annualization_factor} observations "
+            "per year.",
             f"Historical volatility uses the sample standard deviation of {rolling_window} "
             f"equal-weight market returns, annualized by sqrt({annualization_factor}).",
-            f"EWMA variance uses lambda={ewma_decay:.2f} and zero-mean returns: variance[t] = "
+            f"EWMA variance uses the fixed VQD v1 lambda={FIXED_EWMA_DECAY:.2f} and "
+            "zero-mean returns: variance[t] = "
             "lambda * variance[t-1] + (1-lambda) * return[t]^2.",
             "Regimes use annualized EWMA volatility: Low below 15%, Normal from 15% to "
             "below 30%, High at or above 30%.",

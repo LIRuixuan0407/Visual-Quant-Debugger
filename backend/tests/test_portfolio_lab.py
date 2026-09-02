@@ -263,6 +263,22 @@ def test_portfolio_lab_combines_market_and_sec_factors_with_backend_lineage(tmp_
     assert research.cost_preview.rebalance_count == len(research.snapshots)
     assert research.cost_preview.fees >= 0
     assert research.cost_preview.slippage >= 0
+    risk = research.risk_decomposition
+    assert risk is not None
+    assert risk.status == "AVAILABLE"
+    assert risk.annualization_factor == 252
+    assert risk.volatility_basis == "ANNUALIZED"
+    assert risk.portfolio_volatility is not None and risk.portfolio_volatility >= 0.0
+    assert risk.expected_shortfall_95 is not None
+    assert risk.historical_var_95 is not None
+    assert risk.expected_shortfall_95 >= risk.historical_var_95
+    assert risk.correlation is not None and risk.covariance is not None
+    assert risk.correlation.symbols == risk.covariance.symbols
+    assert sum(item.component_risk_share for item in risk.contributions) == pytest.approx(1.0)
+    assert sum(
+        item.component_contribution_to_volatility for item in risk.contributions
+    ) == pytest.approx(risk.portfolio_volatility)
+    assert "not a forecast" in risk.boundary_disclosure
 
     snapshots_with_googl = [
         snapshot

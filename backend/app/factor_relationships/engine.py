@@ -29,6 +29,11 @@ from .models import (
     FactorCluster,
     FactorRelationshipRecord,
     IncrementalInformation,
+    LatentFactorEvidence,
+    PcaComponentName,
+    PcaFactorLoading,
+    PcaFactorStructure,
+    PrincipalComponent,
     RedundancyAssessment,
     RedundancyStatus,
     RollingCorrelationPoint,
@@ -525,6 +530,168 @@ class FactorRelationshipEngine:
             )
         return tuple(clusters)
 
+    @staticmethod
+    def _pca_factor_structure(
+        research_ids: tuple[str, ...],
+        factor_names: tuple[str, ...],
+        return_grids: tuple[ValueGrid, ...],
+        redundancy_threshold: float,
+    ) -> PcaFactorStructure:
+        common_timestamps = (
+            set.intersection(*(set(grid) for grid in return_grids)) if return_grids else set()
+        )
+        timestamps = tuple(sorted(common_timestamps))
+        observations = len(timestamps)
+        base_details = (
+            "Each PCA row is one timestamp shared by every selected factor; each column is that "
+            "factor's direction-adjusted Q5-minus-Q1 forward-return series.",
+            "Columns are centered and divided by sample standard deviation (ddof=1), so PCA is "
+            "performed on the sample correlation matrix rather than scale-dependent raw returns.",
+            "Eigenvalues and eigenvectors use numpy.linalg.eigh on the symmetric correlation "
+            "matrix, sorted by descending eigenvalue. Explained variance is eigenvalue divided "
+            "by the sum of all eigenvalues.",
+            "Displayed loadings are correlation loadings: eigenvector × sqrt(eigenvalue). Each "
+            "component sign is fixed by making its largest-absolute loading positive.",
+        )
+        boundary = (
+            "PCA describes historical latent factor structure. VQD does not automatically delete "
+            "or reweight factors, produce an optimal factor set, or make a trading recommendation."
+        )
+        if observations < 20:
+            return PcaFactorStructure(
+                status="INSUFFICIENT_DATA",
+                verdict="INSUFFICIENT_PCA_HISTORY",
+                observations=observations,
+                standardization="SAMPLE_Z_SCORE_OF_ALIGNED_FACTOR_RETURNS",
+                components=(),
+                latent_factor_evidence=(),
+                calculation_details=(
+                    *base_details,
+                    "At least 20 timestamps shared by every selected factor are required for PCA.",
+                ),
+                boundary_disclosure=boundary,
+            )
+
+        matrix = np.asarray(
+            [
+                [grid[timestamp]["factor_return"] for grid in return_grids]
+                for timestamp in timestamps
+            ],
+            dtype=np.float64,
+        )
+        means = np.mean(matrix, axis=0)
+        standard_deviations = np.std(matrix, axis=0, ddof=1)
+        constant_indexes = np.flatnonzero(standard_deviations <= 1e-12)
+        if constant_indexes.size:
+            constant_names = ", ".join(factor_names[int(index)] for index in constant_indexes)
+            return PcaFactorStructure(
+                status="INSUFFICIENT_DATA",
+                verdict="INSUFFICIENT_FACTOR_VARIATION",
+                observations=observations,
+                standardization="SAMPLE_Z_SCORE_OF_ALIGNED_FACTOR_RETURNS",
+                components=(),
+                latent_factor_evidence=(),
+                calculation_details=(
+                    *base_details,
+                    f"PCA requires non-zero sample variation; constant factor-return columns: "
+                    f"{constant_names}.",
+                ),
+                boundary_disclosure=boundary,
+            )
+
+        standardized = (matrix - means) / standard_deviations
+        correlation = standardized.T @ standardized / (observations - 1)
+        eigenvalues, eigenvectors = np.linalg.eigh(correlation)
+        order = np.argsort(eigenvalues)[::-1]
+        sorted_eigenvalues = np.maximum(eigenvalues[order], 0.0)
+        total_eigenvalue = float(np.sum(sorted_eigenvalues))
+        labels: tuple[PcaComponentName, ...] = ("PC1", "PC2", "PC3")
+        components: list[PrincipalComponent] = []
+        loading_arrays: list[np.ndarray] = []
+        cumulative = 0.0
+        for component_index, label in enumerate(labels[: min(3, len(research_ids))]):
+            eigenvalue = float(sorted_eigenvalues[component_index])
+            vector = eigenvectors[:, int(order[component_index])].copy()
+            loadings = vector * math.sqrt(eigenvalue)
+            anchor = int(np.argmax(np.abs(loadings)))
+            if loadings[anchor] < 0.0:
+                loadings *= -1.0
+            explained = eigenvalue / total_eigenvalue if total_eigenvalue > 1e-15 else 0.0
+            cumulative = min(1.0, cumulative + explained)
+            loading_arrays.append(loadings)
+            components.append(
+                PrincipalComponent(
+                    component=label,
+                    eigenvalue=eigenvalue,
+                    explained_variance=min(1.0, max(0.0, explained)),
+                    cumulative_explained_variance=cumulative,
+                    loadings=tuple(
+                        PcaFactorLoading(
+                            factor_research_id=research_id,
+                            factor_name=factor_name,
+                            loading=float(loadings[index]),
+                        )
+                        for index, (research_id, factor_name) in enumerate(
+                            zip(research_ids, factor_names, strict=True)
+                        )
+                    ),
+                )
+            )
+
+        latent_evidence: list[LatentFactorEvidence] = []
+        for component, loadings in zip(components, loading_arrays, strict=True):
+            candidate_indexes = [
+                index for index, loading in enumerate(loadings) if abs(float(loading)) >= 0.60
+            ]
+            if len(candidate_indexes) < 3:
+                continue
+            pairwise = [
+                abs(float(correlation[left_index, right_index]))
+                for left_index, right_index in combinations(candidate_indexes, 2)
+            ]
+            maximum_pairwise = max(pairwise, default=0.0)
+            if maximum_pairwise >= redundancy_threshold:
+                continue
+            candidate_ids = tuple(research_ids[index] for index in candidate_indexes)
+            latent_evidence.append(
+                LatentFactorEvidence(
+                    component=component.component,
+                    factor_research_ids=candidate_ids,
+                    minimum_absolute_loading=min(
+                        abs(float(loadings[index])) for index in candidate_indexes
+                    ),
+                    maximum_absolute_pairwise_return_correlation=maximum_pairwise,
+                    reason=(
+                        "At least three factors load at |loading| >= 0.60 on this component while "
+                        "their largest absolute pairwise factor-return correlation stays below "
+                        f"the study threshold {redundancy_threshold:.2f}. This is latent-structure "
+                        "evidence, not an instruction to remove a factor."
+                    ),
+                )
+            )
+
+        if latent_evidence:
+            verdict = "LATENT_REDUNDANCY_SIGNAL"
+        elif components and components[0].explained_variance >= 0.60:
+            verdict = "CONCENTRATED_FACTOR_STRUCTURE"
+        else:
+            verdict = "DISTRIBUTED_FACTOR_STRUCTURE"
+        return PcaFactorStructure(
+            status="AVAILABLE",
+            verdict=verdict,
+            observations=observations,
+            standardization="SAMPLE_Z_SCORE_OF_ALIGNED_FACTOR_RETURNS",
+            components=tuple(components),
+            latent_factor_evidence=tuple(latent_evidence),
+            calculation_details=(
+                *base_details,
+                "A latent redundancy signal requires at least three |loading| values >= 0.60 on "
+                "one displayed component while their maximum absolute pairwise return correlation "
+                f"is below {redundancy_threshold:.2f}.",
+            ),
+            boundary_disclosure=boundary,
+        )
+
     def create(self, request: CreateFactorRelationship) -> FactorRelationshipRecord:
         records = self._records(request)
         first = records[0]
@@ -691,6 +858,12 @@ class FactorRelationshipEngine:
             exposure_overlap=tuple(overlaps[pair] for pair in distinct_pairs),
             incremental_information=tuple(incremental),
             clusters=self._clusters(ids, rank_cells, request.redundancy_threshold),
+            pca=self._pca_factor_structure(
+                ids,
+                tuple(item.factor.name for item in records),
+                return_grids,
+                request.redundancy_threshold,
+            ),
             correlation_methodology=(
                 "FACTOR_VALUES correlates aligned raw observations; FACTOR_RANKS correlates "
                 "aligned within-date cross-sectional percentile ranks; FACTOR_RETURNS correlates "

@@ -142,6 +142,18 @@ const zh: Record<string, string> = {
   'Correlation Matrix': '相关矩阵', 'Factor Values': '因子值', 'Rank Correlation': '秩相关', 'Factor Return Correlation': '因子收益相关', 'Rolling Correlation': '滚动相关', 'Pair and semantic': '因子对与语义',
   Redundancy: '冗余度', Overlap: '重叠率', 'Top Quantile Overlap & Jaccard': '顶部组合重叠与 Jaccard', Pair: '因子对', Intersection: '交集数量', Union: '并集数量', Date: '日期',
   'Incremental Information': '增量信息', 'Base + Added': '基础因子 + 新增因子', 'Portfolio effect': '组合效果关联', 'Factor Cluster': '因子聚类',
+  'PCA Factor Structure': 'PCA 因子结构', 'Aligned observations': '对齐观测数', 'Explained variance': '解释方差', Cumulative: '累计',
+  'Latent factor evidence': '潜在共同因子证据', 'No latent redundancy signal crossed the deterministic rule.': '没有潜在冗余信号达到确定性规则阈值。',
+  'PCA is unavailable because the selected factors do not have enough aligned, varying history.': '所选因子缺少足够的对齐且有变化的历史数据，无法进行 PCA。',
+  'Calculation details': '计算详情', 'CONCENTRATED FACTOR STRUCTURE': '因子结构较集中', 'DISTRIBUTED FACTOR STRUCTURE': '因子结构较分散',
+  'LATENT REDUNDANCY SIGNAL': '存在潜在冗余信号', 'INSUFFICIENT PCA HISTORY': 'PCA 历史数据不足', 'INSUFFICIENT FACTOR VARIATION': '因子变化不足',
+  'Risk Decomposition': '风险拆解', 'Annualized portfolio volatility': '组合年化波动率', 'Per-observation portfolio volatility': '单观测组合波动率',
+  'Historical VaR 95%': '历史 VaR 95%', 'Expected Shortfall 95%': 'Expected Shortfall 95%', 'One-observation loss': '单观测损失', 'Mean loss beyond VaR': '超过 VaR 后的平均损失',
+  'Risk basis': '风险口径', Asset: '资产', 'Portfolio weight': '组合权重', 'Invested weight': '已投资权重', 'Risk share': '风险贡献占比', 'Weight → risk gap': '权重 → 风险差值',
+  Correlation: '相关矩阵', Covariance: '协方差矩阵',
+  'Component volatility': '风险贡献波动率', 'Low weight · high risk': '低权重 · 高风险贡献', observations: '个观测',
+  'Risk decomposition needs at least 20 aligned return observations for the latest portfolio snapshot.': '风险拆解至少需要最新组合快照对应的 20 个对齐收益观测。',
+  'LOW WEIGHT HIGH RISK': '低权重高风险贡献', 'RISK CONCENTRATED BEYOND WEIGHT': '风险集中度高于权重', 'RISK BROADLY ALIGNED WITH WEIGHT': '风险与权重大致一致', 'NO VARIABLE RISK OBSERVED': '未观察到可变风险', 'INSUFFICIENT RISK HISTORY': '风险历史不足',
   'Multi-factor portfolio research': '多因子组合研究', 'Stability research': '稳定性研究', 'Factor relationship research': '因子关系研究',
   'Hypothesis workbench': '研究假设工作台', 'Hypothesis · Evidence · Lineage': '研究假设 · 证据 · 追溯链路',
   'Strategy Discovery': '策略发现',
@@ -679,7 +691,7 @@ const zh: Record<string, string> = {
   'Lag-1 squared-return autocorrelation': '一阶平方收益率自相关',
   'Some ACF values are unavailable because the return series is too short or constant.': '收益序列过短或为常数，因此部分 ACF 数值不可用。',
   'Pair mean-reversion evidence': '配对均值回归证据',
-  'Valid spread observations': '有效价差观测数', 'Spread lag-1 ACF': '价差一阶 ACF',
+  'Valid spread observations': '有效价差观测数', 'Time-adjacent AR(1) pairs': '时间相邻的 AR(1) 样本对', 'Spread lag-1 ACF': '价差一阶 ACF',
   'Half-life': '半衰期', 'Hedge ratio mean / std': '对冲比率均值 / 标准差', Unavailable: '不可用',
   'This is diagnostic evidence, not proof of stationarity or cointegration.': '这些结果是诊断证据，不是平稳性或协整关系的证明。',
   'Not available in this cached report': '此缓存报告中不可用',
@@ -690,9 +702,11 @@ const zh: Record<string, string> = {
   MIXED_VOLATILITY_OVERLAP: '主要回撤开始时的波动率状态不一致',
   LIMITED_VOLATILITY_OVERLAP: '主要回撤很少与波动率上升同时出现',
   NO_DRAWDOWNS: '没有可叠加分析的策略回撤',
+  UNSUPPORTED: '不支持',
   'Historical and EWMA volatility with strategy drawdown overlays': '历史波动率、EWMA 波动率与策略回撤叠加图',
   'd historical vol': '日历史波动率', 'Major drawdowns': '主要回撤',
   'Volatility regime': '波动率状态', 'EWMA volatility': 'EWMA 波动率',
+  'Dataset frequency': '数据集频率', 'Annualization factor': '年化因子',
   'Rising-vol drawdown starts': '波动率上升时开始的回撤',
   'Regime-change drawdown starts': '状态切换时开始的回撤',
   LOW: '低', NORMAL: '正常', HIGH: '高',
@@ -713,6 +727,8 @@ const zh: Record<string, string> = {
   'Drawdown overlap is descriptive and does not establish causality.': '回撤叠加仅作描述，不构成因果关系证明。',
   'No strategy drawdown episodes are available for volatility overlap analysis.': '没有可用于波动率叠加分析的策略回撤阶段。',
   'Drawdown overlap is unavailable until volatility warm-up is complete.': '波动率预热完成前，回撤叠加分析不可用。',
+  'Intraday annualization requires explicit trading-session and calendar semantics; VQD does not infer them from bar spacing.': '日内频率年化需要明确的交易时段与交易日历语义；VQD 不会根据 K 线间隔自行推断。',
+  'VQD v1 uses a fixed EWMA decay of lambda=0.94; it is displayed rather than presented as a configurable setting.': 'VQD v1 固定使用 λ=0.94 的 EWMA 衰减参数；界面仅展示该参数，不再将其表述为可配置项。',
   'Regimes use annualized EWMA volatility: Low below 15%, Normal from 15% to below 30%, High at or above 30%.': '波动率状态使用年化 EWMA 波动率划分：低于 15% 为低，15% 至 30% 以下为正常，30% 及以上为高。',
   'Drawdown overlays come from the recorded strategy equity curve; overlap is descriptive and does not establish causality.': '回撤叠加来自已记录的策略权益曲线；这种重合仅作描述，不构成因果关系证明。',
   'Full-pipeline reruns': '完整流程重跑', 'Lookback sensitivity': '回看窗口敏感性',
@@ -1199,10 +1215,18 @@ function translateDynamic(rawText: string): string {
   if (delayEvidence) return `${delayEvidence[1]} 收益 ${delayEvidence[2]}；${delayEvidence[3]} 收益 ${delayEvidence[4]}；${delayEvidence[5]} 未成交信号 ${delayEvidence[6]} 个。`
   const volatilityOverlap = text.match(/^(\d+) of the (\d+) evaluable largest drawdowns began while EWMA volatility was rising\.$/)
   if (volatilityOverlap) return `${volatilityOverlap[1]} / ${volatilityOverlap[2]} 个可评估的主要回撤开始于 EWMA 波动率上升期间。`
+  const unsupportedVolatility = text.match(/^Annualized volatility is unsupported for dataset frequency '(.+)'\.$/)
+  if (unsupportedVolatility) return `数据集频率“${unsupportedVolatility[1]}”无法可靠计算年化波动率。`
+  const unsupportedFrequency = text.match(/^Dataset frequency '(.+)' does not provide a reliable observations-per-year factor\.$/)
+  if (unsupportedFrequency) return `数据集频率“${unsupportedFrequency[1]}”无法提供可靠的年观测数因子。`
+  const frequencyFactor = text.match(/^Dataset frequency '(.+)' maps to (\d+) observations per year\.$/)
+  if (frequencyFactor) return `数据集频率“${frequencyFactor[1]}”对应每年 ${frequencyFactor[2]} 个观测。`
+  const pairMinimum = text.match(/^At least (\d+) time-adjacent, non-constant spread pairs are required for AR\(1\)\. Missing bars are never bridged\.$/)
+  if (pairMinimum) return `AR(1) 至少需要 ${pairMinimum[1]} 对时间相邻且非常数的价差样本；缺失 K 线绝不会被跨越拼接。`
   const historicalVolMethod = text.match(/^Historical volatility uses the sample standard deviation of (\d+) equal-weight market returns, annualized by sqrt\((\d+)\)\.$/)
   if (historicalVolMethod) return `历史波动率使用 ${historicalVolMethod[1]} 个等权市场收益率的样本标准差，并按 √${historicalVolMethod[2]} 年化。`
-  const ewmaMethod = text.match(/^EWMA variance uses lambda=(.+) and zero-mean returns: variance\[t\] = lambda \* variance\[t-1\] \+ \(1-lambda\) \* return\[t\]\^2\.$/)
-  if (ewmaMethod) return `EWMA 方差使用 λ=${ewmaMethod[1]} 和零均值收益率：variance[t] = λ × variance[t-1] + (1-λ) × return[t]^2。`
+  const ewmaMethod = text.match(/^EWMA variance uses the fixed VQD v1 lambda=(.+) and zero-mean returns: variance\[t\] = lambda \* variance\[t-1\] \+ \(1-lambda\) \* return\[t\]\^2\.$/)
+  if (ewmaMethod) return `EWMA 方差固定使用 VQD v1 的 λ=${ewmaMethod[1]} 和零均值收益率：variance[t] = λ × variance[t-1] + (1-λ) × return[t]^2。`
   const whatIfSharpe = text.match(/^Sharpe changes from (.+) to (.+)\.$/)
   if (whatIfSharpe) return `夏普比率从 ${whatIfSharpe[1]} 变为 ${whatIfSharpe[2]}。`
   const whatIfNet = text.match(/^Net P&L changes from (.+) to (.+)\.$/)

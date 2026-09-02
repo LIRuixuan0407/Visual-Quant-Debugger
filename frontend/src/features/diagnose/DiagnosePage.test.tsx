@@ -14,7 +14,7 @@ afterEach(() => {
   window.localStorage.clear()
 })
 
-test('renders statistical and volatility evidence before the unified What-if Lab', async () => {
+test('keeps parameter and batch stress evidence with statistical, volatility, and What-if diagnostics', async () => {
   const onOpenReplay = vi.fn()
   const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(diagnosisReport))
   render(<DiagnosePage traceId="trace-custom" onOpenReplay={onOpenReplay} />)
@@ -23,11 +23,18 @@ test('renders statistical and volatility evidence before the unified What-if Lab
   const trainTestHeading = screen.getByRole('heading', { name: 'Train / Test · 70 / 30' })
   expect(trainTestHeading).toBeInTheDocument()
   expect(trainTestHeading.closest('section')?.querySelector('.train-test-table')).toBeInTheDocument()
+  const parameterHeading = screen.getByRole('heading', { name: 'Lookback sensitivity' })
+  expect(screen.getByRole('img', { name: 'Train and test Sharpe across lookback candidates' })).toBeInTheDocument()
+  const costStressSection = screen.getByRole('heading', { name: 'Cost stress' }).closest('section') as HTMLElement
+  const delaySection = screen.getByRole('heading', { name: 'Execution delay' }).closest('section') as HTMLElement
+  expect(within(costStressSection).getByText('20 bps')).toBeInTheDocument()
+  expect(within(delaySection).getByText('close(t+3)')).toBeInTheDocument()
   const statisticalHeading = screen.getByRole('heading', { name: 'Statistical diagnostics' })
   expect(statisticalHeading).toBeInTheDocument()
   expect(screen.getByRole('img', { name: 'Return and squared return autocorrelation by lag' })).toBeInTheDocument()
   expect(screen.getByText('0.180')).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: 'Pair mean-reversion evidence' })).toBeInTheDocument()
+  expect(screen.getByText('Time-adjacent AR(1) pairs').closest('div')).toHaveTextContent('35')
   expect(screen.getByText('This is diagnostic evidence, not proof of stationarity or cointegration.')).toBeInTheDocument()
   const volatilityHeading = screen.getByRole('heading', { name: 'Volatility diagnostics' })
   const volatilityChart = screen.getByRole('img', { name: 'Historical and EWMA volatility with strategy drawdown overlays' })
@@ -37,12 +44,11 @@ test('renders statistical and volatility evidence before the unified What-if Lab
   expect(screen.getByText('1 of the 1 evaluable largest drawdowns began while EWMA volatility was rising.')).toBeInTheDocument()
   const whatIfHeading = screen.getByRole('heading', { name: 'What-if Lab' })
   expect(whatIfHeading).toBeInTheDocument()
+  expect(parameterHeading.compareDocumentPosition(statisticalHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(statisticalHeading.compareDocumentPosition(volatilityHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(volatilityHeading.compareDocumentPosition(whatIfHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(screen.getByText('BASELINE_READY')).toBeInTheDocument()
   expect(screen.getByText('Total return').closest('.what-if-row')).toHaveTextContent('1.20%1.20%0.00 pp')
-  expect(screen.queryByRole('heading', { name: 'Cost stress' })).not.toBeInTheDocument()
-  expect(screen.queryByRole('heading', { name: 'Execution delay' })).not.toBeInTheDocument()
   expect(screen.getByText('Execution timing changes are measured, not inferred')).toBeInTheDocument()
   expect(fetchMock).toHaveBeenCalledWith('/api/diagnostics', expect.objectContaining({ method: 'POST' }))
 
@@ -66,7 +72,11 @@ test('runs a combined What-if scenario and keeps baseline beside stressed metric
   const whatIfSection = screen.getByRole('heading', { name: 'What-if Lab' }).closest('section') as HTMLElement
   expect(within(whatIfSection).getByText('Sharpe').closest('.what-if-row')).toHaveTextContent('1.400.71-0.69')
   expect(within(whatIfSection).getByText('Net P&L').closest('.what-if-row')).toHaveTextContent('$1,200.00$600.00-$600.00')
+  expect(within(whatIfSection).getByText('Turnover').closest('.what-if-row')?.querySelector('code:last-child')).toHaveClass('neutral')
+  expect(within(whatIfSection).getByText('Trade count').closest('.what-if-row')?.querySelector('code:last-child')).toHaveClass('neutral')
   expect(screen.getByText('Sharpe changes from 1.400 to 0.710.')).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Cost stress' })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Execution delay' })).toBeInTheDocument()
   expect(fetchMock).toHaveBeenLastCalledWith('/api/diagnostics/what-if', expect.objectContaining({
     method: 'POST', body: expect.stringContaining('"fee_bps":20'),
   }))
@@ -93,9 +103,33 @@ test('labels unsupported framework reruns instead of rendering empty diagnostics
     what_if: { status: 'NOT_SUPPORTED', baseline_inputs: null, baseline_metrics: null, parameter: null, calculation_details: [] },
   }))
   render(<DiagnosePage traceId="trace-framework" onOpenReplay={() => undefined} />)
-  expect(await screen.findAllByText('Not supported for this run')).toHaveLength(1)
+  expect(await screen.findAllByText('Not supported for this run')).toHaveLength(4)
   expect(screen.getByText('What-if requires a native VQD rerun contract.')).toBeInTheDocument()
   expect(screen.getByRole('img', { name: /Historical and EWMA volatility/ })).toBeInTheDocument()
+})
+
+test('renders unreliable dataset frequency as unsupported without an annualized chart', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
+    ...diagnosisReport,
+    volatility_diagnostics: {
+      ...diagnosisReport.volatility_diagnostics!,
+      status: 'UNSUPPORTED', dataset_frequency: '1Hour', annualization_factor: null,
+      points: diagnosisReport.volatility_diagnostics!.points.map((point) => ({
+        ...point, rolling_historical_vol: null, ewma_vol: null, regime: null,
+      })),
+      current_regime: null, current_historical_vol: null, current_ewma_vol: null,
+      drawdown_overlap: [], evaluable_drawdown_count: 0,
+      rising_volatility_start_count: 0, regime_change_start_count: 0,
+      verdict: 'UNSUPPORTED',
+      summary: "Annualized volatility is unsupported for dataset frequency '1Hour'.",
+    },
+  }))
+  render(<DiagnosePage traceId="trace-hourly" onOpenReplay={() => undefined} />)
+
+  expect(await screen.findByText("Annualized volatility is unsupported for dataset frequency '1Hour'.")).toBeInTheDocument()
+  expect(screen.queryByRole('img', { name: /Historical and EWMA volatility/ })).not.toBeInTheDocument()
+  expect(screen.getByText('1Hour')).toBeInTheDocument()
+  expect(screen.getAllByText('Unavailable')).toHaveLength(2)
 })
 
 test('hides pair evidence for non-pairs strategies while retaining return diagnostics', async () => {

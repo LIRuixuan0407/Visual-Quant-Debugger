@@ -12,9 +12,10 @@ from app.diagnostics.models import (
 from app.trace.models import BacktestTrace
 
 _ACF_LAGS = tuple(range(1, 11))
+_MIN_PAIR_AR1_PAIRS = 20
 
 
-def _finite_values(values: tuple[float, ...]) -> np.ndarray:
+def _finite_values(values: tuple[float | None, ...]) -> np.ndarray:
     array = np.asarray(values, dtype=np.float64)
     return array[np.isfinite(array)]
 
@@ -77,24 +78,41 @@ def calculate_return_diagnostics(equity: tuple[float, ...]) -> ReturnDiagnostics
 
 
 def calculate_pair_mean_reversion(
-    spreads: tuple[float, ...], hedge_ratios: tuple[float, ...]
+    spreads: tuple[float | None, ...], hedge_ratios: tuple[float | None, ...]
 ) -> PairMeanReversionEvidence:
     spread_values = _finite_values(spreads)
     hedge_values = _finite_values(hedge_ratios)
+    adjacent = tuple(
+        (float(previous), float(current))
+        for previous, current in zip(spreads, spreads[1:], strict=False)
+        if previous is not None
+        and current is not None
+        and math.isfinite(previous)
+        and math.isfinite(current)
+    )
+    previous = np.asarray([pair[0] for pair in adjacent], dtype=np.float64)
+    current = np.asarray([pair[1] for pair in adjacent], dtype=np.float64)
     phi: float | None = None
-    if spread_values.size >= 3:
-        previous = spread_values[:-1]
-        current = spread_values[1:]
+    spread_acf: float | None = None
+    if previous.size >= _MIN_PAIR_AR1_PAIRS:
         centered_previous = previous - float(np.mean(previous))
-        denominator = float(np.dot(centered_previous, centered_previous))
-        if denominator != 0.0:
+        centered_current = current - float(np.mean(current))
+        previous_sum_squares = float(np.dot(centered_previous, centered_previous))
+        current_sum_squares = float(np.dot(centered_current, centered_current))
+        if previous_sum_squares != 0.0:
             candidate = float(
-                np.dot(centered_previous, current - float(np.mean(current))) / denominator
+                np.dot(centered_previous, centered_current) / previous_sum_squares
             )
             if math.isfinite(candidate):
                 phi = candidate
+        correlation_denominator = math.sqrt(previous_sum_squares * current_sum_squares)
+        if correlation_denominator != 0.0:
+            candidate = float(
+                np.dot(centered_previous, centered_current) / correlation_denominator
+            )
+            if math.isfinite(candidate):
+                spread_acf = candidate
 
-    spread_acf = _autocorrelation(spread_values, 1)
     half_life: float | None = None
     if phi is not None and 0.0 < phi < 1.0:
         candidate = -math.log(2.0) / math.log(phi)
@@ -107,6 +125,7 @@ def calculate_pair_mean_reversion(
     return PairMeanReversionEvidence(
         status=status,
         observation_count=int(spread_values.size),
+        consecutive_pair_count=int(previous.size),
         hedge_ratio_observation_count=int(hedge_values.size),
         phi=phi,
         spread_lag_1_autocorrelation=spread_acf,
@@ -116,17 +135,20 @@ def calculate_pair_mean_reversion(
         note=(
             None
             if status == "OK"
-            else "The recorded spread does not contain enough non-constant observations for AR(1)."
+            else (
+                f"At least {_MIN_PAIR_AR1_PAIRS} time-adjacent, non-constant spread pairs "
+                "are required for AR(1). Missing bars are never bridged."
+            )
         ),
     )
 
 
-def _feature_values(trace: BacktestTrace, name: str) -> tuple[float, ...]:
-    values: list[float] = []
+def _feature_values(trace: BacktestTrace, name: str) -> tuple[float | None, ...]:
+    values: list[float | None] = []
     for event in trace.timeline:
         snapshot = next((item for item in event.feature_snapshots if item.name == name), None)
-        if snapshot is not None and snapshot.value is not None and math.isfinite(snapshot.value):
-            values.append(snapshot.value)
+        value = None if snapshot is None else snapshot.value
+        values.append(value if value is not None and math.isfinite(value) else None)
     return tuple(values)
 
 

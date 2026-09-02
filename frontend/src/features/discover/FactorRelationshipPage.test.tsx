@@ -99,6 +99,31 @@ const record: FactorRelationshipRecord = {
     portfolio_effect: 0.003,
   }],
   clusters: [{ cluster_id: 'cluster-1', factor_research_ids: ids, rule: 'Connected component at 0.75' }],
+  pca: {
+    status: 'AVAILABLE',
+    verdict: 'CONCENTRATED_FACTOR_STRUCTURE',
+    observations: 120,
+    standardization: 'SAMPLE_Z_SCORE_OF_ALIGNED_FACTOR_RETURNS',
+    components: [
+      {
+        component: 'PC1', eigenvalue: 1.44, explained_variance: 0.72, cumulative_explained_variance: 0.72,
+        loadings: [
+          { factor_research_id: ids[0], factor_name: 'Momentum', loading: 0.84 },
+          { factor_research_id: ids[1], factor_name: 'Reversal', loading: -0.84 },
+        ],
+      },
+      {
+        component: 'PC2', eigenvalue: 0.56, explained_variance: 0.28, cumulative_explained_variance: 1,
+        loadings: [
+          { factor_research_id: ids[0], factor_name: 'Momentum', loading: 0.53 },
+          { factor_research_id: ids[1], factor_name: 'Reversal', loading: 0.53 },
+        ],
+      },
+    ],
+    latent_factor_evidence: [],
+    calculation_details: ['PCA uses standardized aligned factor-return series.'],
+    boundary_disclosure: 'PCA is descriptive evidence only; no factor is removed or reweighted.',
+  },
   correlation_methodology: 'Three correlation semantics are computed separately by the backend.',
   incremental_disclosure: 'These are associations, not causal improvement claims.',
   crowding_disclosure: 'Internal VQD portfolio overlap is not market crowding evidence.',
@@ -136,6 +161,10 @@ it('renders all backend relationship evidence and submits both thresholds', asyn
   expect(screen.getByText('Top Quantile Overlap & Jaccard')).toBeInTheDocument()
   expect(screen.getByText('Incremental Information')).toBeInTheDocument()
   expect(screen.getByText('Factor Cluster')).toBeInTheDocument()
+  expect(screen.getByText('PCA Factor Structure')).toBeInTheDocument()
+  expect(screen.getByText('72.00%')).toBeInTheDocument()
+  expect(screen.getByText('No latent redundancy signal crossed the deterministic rule.')).toBeInTheDocument()
+  expect(screen.getByText('PCA is descriptive evidence only; no factor is removed or reweighted.')).toBeInTheDocument()
   expect(screen.getByText('Internal VQD portfolio overlap is not market crowding evidence.')).toBeInTheDocument()
 
   screen.getAllByRole('checkbox').forEach((checkbox) => fireEvent.click(checkbox))

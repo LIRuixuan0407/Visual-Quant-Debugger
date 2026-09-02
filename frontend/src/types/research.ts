@@ -9,7 +9,10 @@ export interface FactorScoreEvidence { research_id: string; factor_id: string; f
 export interface PortfolioFactorCheck { research_id: string; factor_id: string; factor_name: string; origin: 'BUILT_IN' | 'CUSTOM'; category: 'PRICE_VOLUME' | 'VALUE' | 'QUALITY' | 'GROWTH' | 'LEVERAGE' | 'MIXED'; data_source: 'MARKET' | 'FUNDAMENTAL' | 'MIXED'; direction: 'HIGH' | 'LOW'; effective_weight: number; available_observations: number; expected_observations: number; missing_observations: number; coverage: number }
 export interface PortfolioPositionLineage { symbol: string; selected: boolean; liquidity: number | null; volatility: number | null; filter_status: string[]; factors: FactorScoreEvidence[]; composite_score: number | null; portfolio_rank: number | null; target_weight: number }
 export interface CostPreview { gross_return: number; fees: number; slippage: number; net_return: number; turnover: number; max_drawdown: number; positions: number; rebalance_count: number }
-export interface PortfolioStageResult { stage: ResearchStage; period: { start: string; end: string }; factor_checks: PortfolioFactorCheck[]; snapshots: Array<{ timestamp: string; stage: ResearchStage; eligible_count: number; selected_symbols: string[]; positions: PortfolioPositionLineage[] }>; cost_preview: CostPreview }
+export interface RiskMatrix { symbols: string[]; values: number[][] }
+export interface AssetRiskContribution { symbol: string; portfolio_weight: number; invested_weight: number; marginal_contribution_to_volatility: number; component_contribution_to_volatility: number; component_risk_share: number; risk_weight_gap: number; low_weight_high_risk: boolean }
+export interface PortfolioRiskDecomposition { status: 'AVAILABLE' | 'INSUFFICIENT_DATA'; verdict: string; snapshot_timestamp: string | null; dataset_frequency: string; observations: number; annualization_factor: number | null; volatility_basis: 'ANNUALIZED' | 'PER_OBSERVATION'; portfolio_volatility: number | null; per_observation_volatility: number | null; historical_var_95: number | null; expected_shortfall_95: number | null; confidence_level: number; covariance: RiskMatrix | null; correlation: RiskMatrix | null; contributions: AssetRiskContribution[]; calculation_details: string[]; boundary_disclosure: string }
+export interface PortfolioStageResult { stage: ResearchStage; period: { start: string; end: string }; factor_checks: PortfolioFactorCheck[]; snapshots: Array<{ timestamp: string; stage: ResearchStage; eligible_count: number; selected_symbols: string[]; positions: PortfolioPositionLineage[] }>; cost_preview: CostPreview; risk_decomposition?: PortfolioRiskDecomposition | null }
 export interface PortfolioResearchRecord {
   portfolio_research_id: string; name: string; created_at: string; dataset_id: string; dataset_fingerprint: string; universe: string[]; factor_refs: PortfolioFactorRef[]; factor_ids: string[]; factor_names: string[]; combination: CombinationMethod; filters: { minimum_liquidity: number | null; maximum_volatility: number | null; require_factor_availability: boolean; include_symbols: string[]; exclude_symbols: string[] }; construction: { selection: 'TOP_N' | 'TOP_PERCENT'; top_n: number; top_percent: number; weighting: 'EQUAL_WEIGHT' | 'SCORE_WEIGHTED'; max_single_position_weight: number }; rebalance: RebalanceRule; gross_notional: number; initial_cash: number; fee_bps: number; slippage_bps: number; revealed_stage: ResearchStage; stages: PortfolioStageResult[]; strategy: { strategy_id: string; source_fingerprint: string } | null
 }
@@ -28,6 +31,10 @@ export interface RollingCorrelationSeries { left_research_id: string; right_rese
 export interface ExposureOverlapPoint { timestamp: string; intersection_count: number; union_count: number; overlap_percent: number; jaccard: number }
 export interface ExposureOverlap { left_research_id: string; right_research_id: string; top_percent: number; mean_intersection_count: number; mean_union_count: number; mean_overlap: number; mean_jaccard: number; timestamps: number; points: ExposureOverlapPoint[] }
 export interface IncrementalInformation { base_research_id: string; added_research_id: string; normalization: 'DIRECTION_ADJUSTED_PERCENTILE_RANK_AVERAGE'; base_rank_ic: number | null; composite_rank_ic: number | null; rank_ic_delta: number | null; base_spread: number | null; composite_spread: number | null; spread_delta: number | null; base_coverage: number; composite_coverage: number; coverage_delta: number; base_turnover: number | null; composite_turnover: number | null; turnover_delta: number | null; base_portfolio_return: number | null; composite_portfolio_return: number | null; portfolio_effect: number | null }
+export interface PcaFactorLoading { factor_research_id: string; factor_name: string; loading: number }
+export interface PrincipalComponent { component: 'PC1' | 'PC2' | 'PC3'; eigenvalue: number; explained_variance: number; cumulative_explained_variance: number; loadings: PcaFactorLoading[] }
+export interface LatentFactorEvidence { component: 'PC1' | 'PC2' | 'PC3'; factor_research_ids: string[]; minimum_absolute_loading: number; maximum_absolute_pairwise_return_correlation: number; reason: string }
+export interface PcaFactorStructure { status: 'AVAILABLE' | 'INSUFFICIENT_DATA'; verdict: string; observations: number; standardization: string; components: PrincipalComponent[]; latent_factor_evidence: LatentFactorEvidence[]; calculation_details: string[]; boundary_disclosure: string }
 export interface FactorRelationshipRecord {
   relationship_id: string
   name: string
@@ -54,6 +61,7 @@ export interface FactorRelationshipRecord {
   exposure_overlap: ExposureOverlap[]
   incremental_information: IncrementalInformation[]
   clusters: Array<{ cluster_id: string; factor_research_ids: string[]; rule: string }>
+  pca?: PcaFactorStructure | null
   correlation_methodology: string
   incremental_disclosure: string
   crowding_disclosure: string

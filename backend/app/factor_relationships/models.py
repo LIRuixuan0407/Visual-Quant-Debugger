@@ -10,6 +10,8 @@ from app.factors.models import ResearchPeriod, ResearchStage
 CorrelationSemantic = Literal["FACTOR_VALUES", "FACTOR_RANKS", "FACTOR_RETURNS"]
 RedundancyStatus = Literal["HIGH_REDUNDANCY", "RELATED", "LOW_REDUNDANCY"]
 Horizon = Literal[1, 5, 20]
+PcaStatus = Literal["AVAILABLE", "INSUFFICIENT_DATA"]
+PcaComponentName = Literal["PC1", "PC2", "PC3"]
 
 
 def _aware(value: datetime) -> datetime:
@@ -125,6 +127,39 @@ class FactorCluster(RelationshipModel):
     rule: str
 
 
+class PcaFactorLoading(RelationshipModel):
+    factor_research_id: str
+    factor_name: str
+    loading: float
+
+
+class PrincipalComponent(RelationshipModel):
+    component: PcaComponentName
+    eigenvalue: float = Field(ge=0.0)
+    explained_variance: float = Field(ge=0.0, le=1.0)
+    cumulative_explained_variance: float = Field(ge=0.0, le=1.0)
+    loadings: tuple[PcaFactorLoading, ...]
+
+
+class LatentFactorEvidence(RelationshipModel):
+    component: PcaComponentName
+    factor_research_ids: tuple[str, ...]
+    minimum_absolute_loading: float = Field(ge=0.0)
+    maximum_absolute_pairwise_return_correlation: float = Field(ge=0.0, le=1.0)
+    reason: str
+
+
+class PcaFactorStructure(RelationshipModel):
+    status: PcaStatus
+    verdict: str
+    observations: int = Field(ge=0)
+    standardization: str
+    components: tuple[PrincipalComponent, ...]
+    latent_factor_evidence: tuple[LatentFactorEvidence, ...]
+    calculation_details: tuple[str, ...]
+    boundary_disclosure: str
+
+
 class FactorRelationshipRecord(RelationshipModel):
     relationship_id: str
     name: str
@@ -151,6 +186,7 @@ class FactorRelationshipRecord(RelationshipModel):
     exposure_overlap: tuple[ExposureOverlap, ...]
     incremental_information: tuple[IncrementalInformation, ...]
     clusters: tuple[FactorCluster, ...]
+    pca: PcaFactorStructure | None = None
     correlation_methodology: str
     incremental_disclosure: str
     crowding_disclosure: str

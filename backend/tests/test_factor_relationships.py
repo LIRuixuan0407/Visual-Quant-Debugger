@@ -225,6 +225,20 @@ def test_factor_relationships_reports_overlap_redundancy_incremental_clusters_an
     assert set().union(*(set(item.factor_research_ids) for item in record.clusters)) == set(
         research_ids
     )
+    assert record.pca is not None
+    assert record.pca.status == "AVAILABLE"
+    assert record.pca.observations >= 20
+    assert record.pca.components
+    assert record.pca.components[0].component == "PC1"
+    assert (
+        record.pca.components[0].explained_variance
+        >= record.pca.components[-1].explained_variance
+    )
+    assert record.pca.components[-1].cumulative_explained_variance == pytest.approx(1.0)
+    assert {item.factor_research_id for item in record.pca.components[0].loadings} == set(
+        research_ids
+    )
+    assert "does not automatically delete" in record.pca.boundary_disclosure
     assert "not causal improvement" in record.incremental_disclosure
     assert "not evidence" in record.crowding_disclosure
 

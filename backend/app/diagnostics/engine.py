@@ -34,6 +34,11 @@ from app.strategies.definition import get_strategy_definition
 from app.trace.models import BacktestTrace
 
 
+def _dataset_frequency(dataset_id: str) -> str | None:
+    definition = dataset_registry.get(dataset_id)
+    return None if definition is None else definition.frequency
+
+
 def _lookback_candidates(train_bar_count: int, current: int) -> tuple[int, ...]:
     maximum = max(2, (train_bar_count + 1) // 2)
     values = {round(2 + index * (maximum - 2) / 6) for index in range(7)}
@@ -231,9 +236,7 @@ def _what_if_support(record: BacktestRunRecord) -> WhatIfSupport:
         fee_bps=float((record.parameter_values or {}).get("fee_bps", 5.0)),
         slippage_bps=float((record.parameter_values or {}).get("slippage_bps", 5.0)),
         additional_execution_delay_bars=0,
-        strategy_parameters=(
-            {} if parameter is None else {parameter.key: parameter.current_value}
-        ),
+        strategy_parameters=({} if parameter is None else {parameter.key: parameter.current_value}),
     )
     return WhatIfSupport(
         status="AVAILABLE",
@@ -425,7 +428,9 @@ def _diagnose_native_run(trace_id: str, record: BacktestRunRecord) -> DiagnosisR
         observations=_observations(train, test, costs, delays),
         sensitivity_available=sensitivity_parameter is not None,
         statistical_diagnostics=build_statistical_diagnostics(baseline),
-        volatility_diagnostics=build_volatility_diagnostics(baseline),
+        volatility_diagnostics=build_volatility_diagnostics(
+            baseline, dataset_frequency=_dataset_frequency(record.dataset_id)
+        ),
         what_if=_what_if_support(record),
     )
 
@@ -500,7 +505,9 @@ def diagnose_framework_trace(
             execution_delay="NOT_SUPPORTED",
         ),
         statistical_diagnostics=build_statistical_diagnostics(trace),
-        volatility_diagnostics=build_volatility_diagnostics(trace),
+        volatility_diagnostics=build_volatility_diagnostics(
+            trace, dataset_frequency=_dataset_frequency(trace.metadata.dataset_id)
+        ),
         what_if=WhatIfSupport(
             status="NOT_SUPPORTED",
             calculation_details=(

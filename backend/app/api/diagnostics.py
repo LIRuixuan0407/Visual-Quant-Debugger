@@ -1,5 +1,5 @@
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, ValidationError
 
 from app.diagnostics.engine import diagnose_framework_trace, diagnose_run, run_what_if_scenario
 from app.diagnostics.models import DiagnosisReport, WhatIfInputs, WhatIfScenario
@@ -24,7 +24,10 @@ class WhatIfRequest(BaseModel):
 def _current_cached_report(cached: bytes | None) -> DiagnosisReport | None:
     if cached is None:
         return None
-    report = DiagnosisReport.model_validate_json(cached)
+    try:
+        report = DiagnosisReport.model_validate_json(cached)
+    except ValidationError:
+        return None
     if (
         report.statistical_diagnostics is None
         or report.volatility_diagnostics is None

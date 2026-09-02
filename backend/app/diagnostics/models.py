@@ -125,6 +125,7 @@ class ReturnDiagnostics(DiagnosisModel):
 class PairMeanReversionEvidence(DiagnosisModel):
     status: Literal["OK", "INSUFFICIENT_DATA"]
     observation_count: int = Field(ge=0)
+    consecutive_pair_count: int = Field(ge=0)
     hedge_ratio_observation_count: int = Field(ge=0)
     phi: float | None = None
     spread_lag_1_autocorrelation: float | None = None
@@ -161,9 +162,9 @@ class VolatilityPoint(DiagnosisModel):
     ewma_vol: float | None = None
     regime: Literal["LOW", "NORMAL", "HIGH"] | None = None
 
-    _finite_values = field_validator(
-        "market_return", "rolling_historical_vol", "ewma_vol"
-    )(_finite_optional)
+    _finite_values = field_validator("market_return", "rolling_historical_vol", "ewma_vol")(
+        _finite_optional
+    )
 
 
 class VolatilityDrawdownOverlap(DiagnosisModel):
@@ -181,10 +182,11 @@ class VolatilityDrawdownOverlap(DiagnosisModel):
 
 
 class VolatilityDiagnostics(DiagnosisModel):
-    status: Literal["OK", "INSUFFICIENT_DATA"]
+    status: Literal["OK", "INSUFFICIENT_DATA", "UNSUPPORTED"]
+    dataset_frequency: str
     rolling_window: int = Field(ge=2)
     ewma_decay: float = Field(gt=0, lt=1)
-    annualization_factor: int = Field(gt=0)
+    annualization_factor: int | None = Field(default=None, gt=0)
     market_return_method: str
     thresholds: VolatilityRegimeThresholds
     points: tuple[VolatilityPoint, ...]
@@ -201,13 +203,12 @@ class VolatilityDiagnostics(DiagnosisModel):
         "LIMITED_VOLATILITY_OVERLAP",
         "NO_DRAWDOWNS",
         "INSUFFICIENT_DATA",
+        "UNSUPPORTED",
     ]
     summary: str
     calculation_details: tuple[str, ...]
 
-    _finite_values = field_validator("current_historical_vol", "current_ewma_vol")(
-        _finite_optional
-    )
+    _finite_values = field_validator("current_historical_vol", "current_ewma_vol")(_finite_optional)
 
 
 class WhatIfInputs(DiagnosisModel):
@@ -220,9 +221,7 @@ class WhatIfInputs(DiagnosisModel):
 
     @field_validator("strategy_parameters")
     @classmethod
-    def finite_strategy_parameters(
-        cls, values: dict[str, int | float]
-    ) -> dict[str, int | float]:
+    def finite_strategy_parameters(cls, values: dict[str, int | float]) -> dict[str, int | float]:
         for key, value in values.items():
             if not key or isinstance(value, bool):
                 raise ValueError("What-if strategy parameters must be named finite numbers")

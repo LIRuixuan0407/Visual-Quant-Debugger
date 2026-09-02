@@ -14,6 +14,7 @@ import type {
 const num = (value: number | null | undefined) => value == null ? '—' : value.toFixed(4)
 const pct = (value: number | null | undefined) => value == null ? '—' : `${(value * 100).toFixed(2)}%`
 const day = (value: string) => value.slice(0, 10)
+const humanize = (value: string) => value.replaceAll('_', ' ')
 
 function factorName(record: FactorRelationshipRecord, researchId: string) {
   const index = record.factor_research_ids.indexOf(researchId)
@@ -187,6 +188,53 @@ export default function FactorRelationshipPage() {
               <CorrelationMatrix record={record} cells={record.return_correlations} title={tr('Factor Return Correlation')} />
             </div>
           </section>
+
+          {record.pca && <section className="workspace-panel relationship-section pca-factor-structure">
+            <div className="section-heading">
+              <div><span className="section-kicker">LATENT FACTOR STRUCTURE · NO AUTO ACTION</span><h2>{tr('PCA Factor Structure')}</h2></div>
+              <span>{tr(humanize(record.pca.verdict))}</span>
+            </div>
+            {record.pca.status === 'AVAILABLE'
+              ? <>
+                <div className="pca-summary-strip">
+                  <div><span>{tr('Aligned observations')}</span><strong>{record.pca.observations}</strong></div>
+                  {record.pca.components.map((component) => <div key={component.component}>
+                    <span>{component.component} · {tr('Explained variance')}</span>
+                    <strong>{pct(component.explained_variance)}</strong>
+                    <small>{tr('Cumulative')} {pct(component.cumulative_explained_variance)}</small>
+                  </div>)}
+                </div>
+                <div className="pca-component-grid">
+                  {record.pca.components.map((component) => <article key={component.component}>
+                    <header><strong>{component.component}</strong><span>λ {num(component.eigenvalue)}</span></header>
+                    <div className="pca-loading-list">
+                      {component.loadings.map((loading) => <div key={loading.factor_research_id}>
+                        <span>{tr(loading.factor_name)}</span>
+                        <div className="pca-loading-track"><i className={loading.loading < 0 ? 'negative' : ''} style={{ width: `${Math.min(100, Math.abs(loading.loading) * 100)}%` }} /></div>
+                        <code>{loading.loading >= 0 ? '+' : ''}{loading.loading.toFixed(3)}</code>
+                      </div>)}
+                    </div>
+                  </article>)}
+                </div>
+                <div className="pca-evidence-block">
+                  <strong>{tr('Latent factor evidence')}</strong>
+                  {record.pca.latent_factor_evidence.length
+                    ? record.pca.latent_factor_evidence.map((evidence) => <article key={`${evidence.component}:${evidence.factor_research_ids.join(':')}`}>
+                      <span>{evidence.component}</span>
+                      <b>{evidence.factor_research_ids.map((id) => factorName(record, id)).join(' · ')}</b>
+                      <code>|loading| ≥ {evidence.minimum_absolute_loading.toFixed(2)} · max |r| {evidence.maximum_absolute_pairwise_return_correlation.toFixed(2)}</code>
+                      <p>{evidence.reason}</p>
+                    </article>)
+                    : <p>{tr('No latent redundancy signal crossed the deterministic rule.')}</p>}
+                </div>
+              </>
+              : <p className="relationship-empty-evidence">{tr('PCA is unavailable because the selected factors do not have enough aligned, varying history.')}</p>}
+            <details className="evidence-calculation-details">
+              <summary>{tr('Calculation details')}</summary>
+              {record.pca.calculation_details.map((detail) => <p key={detail}>{detail}</p>)}
+            </details>
+            <p className="relationship-disclosure">{record.pca.boundary_disclosure}</p>
+          </section>}
 
           <section className="workspace-panel relationship-section">
             <div className="section-heading"><div><span className="section-kicker">TRAILING BACKEND SERIES</span><h2>{tr('Rolling Correlation')}</h2></div>{selectedRolling && <span>{selectedRolling.window} timestamps</span>}</div>

@@ -1,14 +1,72 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type KeyboardEvent, type MouseEvent } from 'react'
 
 import { createDiagnosis, createWhatIfScenario } from '../../api/diagnostics'
 import { useI18n } from '../../i18n/I18nProvider'
 import type { DiagnosisReport, DiagnosticMetrics, ReturnDiagnostics, VolatilityDiagnostics, WhatIfMetrics, WhatIfScenario } from '../../types/diagnostics'
+import { nearestChartIndex, pointerToViewBoxX } from '../discover/chartInteraction'
 import { formatCurrency } from '../replay/utils/format'
 
 function percent(value: number) { return `${(value * 100).toFixed(2)}%` }
 function decimal(value: number) { return value.toFixed(2) }
 function sharpeDisplay(metrics: DiagnosticMetrics) { return metrics.status === 'OK' ? decimal(metrics.sharpe) : 'N/A' }
 function diagnosticValue(value: number | null, digits = 3) { return value === null ? 'N/A' : value.toFixed(digits) }
+
+function SensitivityChart({ report }: { report: DiagnosisReport }) {
+  const { tr } = useI18n()
+  const points = report.lookback_sensitivity
+  const currentIndex = Math.max(points.findIndex((point) => point.is_current), 0)
+  const [activeIndex, setActiveIndex] = useState(currentIndex)
+  const chart = useMemo(() => {
+    const validValues = points.flatMap((point) => [point.train, point.test]).filter((item) => item.status === 'OK').map((item) => item.sharpe)
+    const values = validValues.length ? validValues : [0]
+    const minimum = Math.min(...values); const maximum = Math.max(...values); const range = maximum - minimum || 1
+    const x = (index: number) => 48 + index * (824 / Math.max(points.length - 1, 1))
+    const y = (value: number) => 174 - ((value - minimum) / range) * 128
+    const line = (key: 'train' | 'test') => points.map((point, index) => ({ point, index })).filter(({ point }) => point[key].status === 'OK').map(({ point, index }) => `${x(index)},${y(point[key].sharpe)}`).join(' ')
+    return { train: line('train'), test: line('test'), x, y }
+  }, [points])
+  const safeIndex = Math.min(Math.max(activeIndex, 0), Math.max(points.length - 1, 0))
+  const active = points[safeIndex]
+  const activeX = chart.x(safeIndex)
+  const tooltipWidth = 190
+  const tooltipX = activeX > 460 ? activeX - tooltipWidth - 12 : activeX + 12
+
+  function handleHover(event: MouseEvent<SVGSVGElement>) {
+    const pointerX = pointerToViewBoxX(event.clientX, event.currentTarget.getBoundingClientRect(), 920, 220)
+    setActiveIndex(nearestChartIndex(pointerX, points.length, 48, 872))
+  }
+
+  function handleKeyDown(event: KeyboardEvent<SVGSVGElement>) {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+    event.preventDefault()
+    if (event.key === 'Home') setActiveIndex(0)
+    else if (event.key === 'End') setActiveIndex(points.length - 1)
+    else setActiveIndex((current) => Math.min(points.length - 1, Math.max(0, current + (event.key === 'ArrowRight' ? 1 : -1))))
+  }
+
+  return <>
+    <svg className="sensitivity-chart interactive-research-chart" viewBox="0 0 920 220" role="img" tabIndex={0} aria-label={tr('Train and test Sharpe across lookback candidates')} onMouseMove={handleHover} onKeyDown={handleKeyDown}>
+      <line className="diagnostic-axis" x1="48" x2="872" y1="174" y2="174" />
+      <polyline className="train-line" points={chart.train} /><polyline className="test-line" points={chart.test} />
+      {points.map((point, index) => <g key={point.lookback}>
+        {point.is_current && <line className="current-candidate" x1={chart.x(index)} x2={chart.x(index)} y1="28" y2="184" />}
+        {point.train.status === 'OK' && <circle className="train-point" cx={chart.x(index)} cy={chart.y(point.train.sharpe)} r={safeIndex === index ? 6 : 4} />}
+        {point.test.status === 'OK' && <circle className="test-point" cx={chart.x(index)} cy={chart.y(point.test.sharpe)} r={safeIndex === index ? 6 : 4} />}
+        <text x={chart.x(index)} y="204" textAnchor="middle">{point.lookback}</text>
+      </g>)}
+      {active && <>
+        <line className="research-hover-guide" x1={activeX} x2={activeX} y1="28" y2="184" />
+        <g className="research-chart-tooltip" transform={`translate(${tooltipX} 28)`}>
+          <rect width={tooltipWidth} height="72" rx="5" />
+          <text className="tooltip-date" x="10" y="18">{tr('Lookback')} {active.lookback}{active.is_current ? ` · ${tr('current')}` : ''}</text>
+          <text x="10" y="41">{tr('Train Sharpe')}</text><text className="tooltip-value" x={tooltipWidth - 10} y="41" textAnchor="end">{sharpeDisplay(active.train)}</text>
+          <text x="10" y="61">{tr('Test Sharpe')}</text><text className="tooltip-value" x={tooltipWidth - 10} y="61" textAnchor="end">{sharpeDisplay(active.test)}</text>
+        </g>
+      </>}
+    </svg>
+    <p className="empty-copy">{tr('Hover the chart or use left and right arrow keys to inspect each lookback.')}</p>
+  </>
+}
 
 function ReturnAcfChart({ diagnostics }: { diagnostics: ReturnDiagnostics }) {
   const { tr } = useI18n()
@@ -67,11 +125,13 @@ function StatisticalDiagnosticsSection({ report }: { report: DiagnosisReport }) 
       <div className="section-heading"><div><span className="section-kicker">AR(1)</span><h3>{tr('Pair mean-reversion evidence')}</h3></div><span className={`metric-status ${pair.status === 'OK' ? 'ok' : 'warning'}`}>{tr(pair.status)}</span></div>
       <dl>
         <div><dt>{tr('Valid spread observations')}</dt><dd>{pair.observation_count}</dd></div>
+        <div><dt>{tr('Time-adjacent AR(1) pairs')}</dt><dd>{pair.consecutive_pair_count}</dd></div>
         <div><dt>phi (φ)</dt><dd>{diagnosticValue(pair.phi)}</dd></div>
         <div><dt>{tr('Spread lag-1 ACF')}</dt><dd>{diagnosticValue(pair.spread_lag_1_autocorrelation)}</dd></div>
         <div><dt>{tr('Half-life')}</dt><dd>{pair.half_life_bars === null ? tr('Unavailable') : `${pair.half_life_bars.toFixed(2)} ${tr('bars')}`}</dd></div>
         <div><dt>{tr('Hedge ratio mean / std')}</dt><dd>{diagnosticValue(pair.hedge_ratio_mean)} / {diagnosticValue(pair.hedge_ratio_std)}</dd></div>
       </dl>
+      {pair.note && <p className="statistical-note">{tr(pair.note)}</p>}
       <p>{tr('This is diagnostic evidence, not proof of stationarity or cointegration.')}</p>
     </article>}
   </section>
@@ -120,12 +180,14 @@ function VolatilityDiagnosticsSection({ report }: { report: DiagnosisReport }) {
         <strong>{tr(diagnostics.verdict)}</strong>
         <p>{tr(diagnostics.summary)}</p>
       </article>
-      <div className="volatility-evidence-grid">
-        <div className="volatility-chart-panel">
+      <div className={`volatility-evidence-grid ${diagnostics.status === 'UNSUPPORTED' ? 'unsupported' : ''}`}>
+        {diagnostics.status !== 'UNSUPPORTED' && <div className="volatility-chart-panel">
           <div className="chart-legend"><span><i className="legend-historical-vol" /> {diagnostics.rolling_window}{tr('d historical vol')}</span><span><i className="legend-ewma-vol" /> EWMA λ={diagnostics.ewma_decay.toFixed(2)}</span><span><i className="legend-drawdown-overlay" /> {tr('Major drawdowns')}</span></div>
           <VolatilityChart diagnostics={diagnostics} />
-        </div>
+        </div>}
         <dl className="volatility-summary">
+          <div><dt>{tr('Dataset frequency')}</dt><dd>{diagnostics.dataset_frequency}</dd></div>
+          <div><dt>{tr('Annualization factor')}</dt><dd>{diagnostics.annualization_factor ?? tr('Unavailable')}</dd></div>
           <div><dt>{tr('Volatility regime')}</dt><dd><span className={`volatility-regime ${(diagnostics.current_regime ?? 'unavailable').toLowerCase()}`}>{diagnostics.current_regime ? tr(diagnostics.current_regime) : tr('Unavailable')}</span></dd></div>
           <div><dt>{diagnostics.rolling_window}{tr('d historical vol')}</dt><dd>{diagnostics.current_historical_vol === null ? 'N/A' : percent(diagnostics.current_historical_vol)}</dd></div>
           <div><dt>{tr('EWMA volatility')}</dt><dd>{diagnostics.current_ewma_vol === null ? 'N/A' : percent(diagnostics.current_ewma_vol)}</dd></div>
@@ -150,6 +212,40 @@ function whatIfMetric(value: number, key: WhatIfMetricKey) {
 function whatIfDelta(value: number, key: WhatIfMetricKey) {
   if (key === 'total_return' || key === 'max_drawdown') return `${(value * 100).toFixed(2)} pp`
   return whatIfMetric(value, key)
+}
+
+function whatIfDeltaTone(value: number, key: WhatIfMetricKey) {
+  if (key === 'turnover' || key === 'trade_count') return 'neutral'
+  if (value < 0) return 'negative'
+  if (value > 0) return 'positive'
+  return ''
+}
+
+function ParameterSensitivitySection({ report }: { report: DiagnosisReport }) {
+  const { tr } = useI18n()
+  const supported = report.support?.parameter_sensitivity ?? 'AVAILABLE'
+  const parameter = report.source_run.sensitivity_parameter
+  return <section className="diagnose-section parameter-sensitivity-section">
+    <div className="section-heading"><h2>{tr(parameter && parameter !== 'lookback' ? `${parameter} sensitivity` : 'Lookback sensitivity')}</h2>{report.sensitivity_available !== false && <div className="chart-legend"><span><i className="legend-train" /> {tr('Train Sharpe')}</span><span><i className="legend-test" /> {tr('Test Sharpe')}</span></div>}</div>
+    {supported === 'NOT_SUPPORTED' || report.sensitivity_available === false || report.lookback_sensitivity.length === 0
+      ? <p className="capability-unavailable"><strong>{tr('Not supported for this run')}</strong><span>{tr('This adapter cannot reproduce parameter sensitivity without changing framework semantics.')}</span></p>
+      : <><SensitivityChart report={report} /><div className="dense-table sensitivity-table"><div className="dense-row header"><span>{tr(parameter ?? 'Lookback')}</span><span>{tr('Train Sharpe')}</span><span>{tr('Test Sharpe')}</span><span>{tr('Status')}</span></div>{report.lookback_sensitivity.map((point) => <div className="dense-row" key={point.lookback}><code>{point.lookback}{point.is_current ? ` · ${tr('current')}` : ''}</code><code>{sharpeDisplay(point.train)}</code><code>{sharpeDisplay(point.test)}</code><span>{tr(point.train.status)} / {tr(point.test.status)}</span></div>)}</div></>}
+  </section>
+}
+
+function BatchStressEvidence({ report }: { report: DiagnosisReport }) {
+  const { tr } = useI18n()
+  const supported = report.support ?? { train_test: 'AVAILABLE', parameter_sensitivity: 'AVAILABLE', cost_stress: 'AVAILABLE', execution_delay: 'AVAILABLE' }
+  return <>
+    <section className="diagnose-section">
+      <div className="section-heading"><h2>{tr('Cost stress')}</h2><span>{tr('Full-pipeline reruns')}</span></div>
+      {supported.cost_stress === 'NOT_SUPPORTED' ? <p className="capability-unavailable"><strong>{tr('Not supported for this run')}</strong><span>{tr('Cost stress requires a framework-native rerun contract that this adapter does not provide.')}</span></p> : <div className="dense-table cost-stress-table"><div className="dense-row header"><span>{tr('Total friction')}</span><span>{tr('Fee / Slippage')}</span><span>{tr('Return')}</span><span>{tr('Sharpe')}</span></div>{report.cost_stress.map((point) => <div className="dense-row" key={point.total_friction_bps}><code>{point.total_friction_bps} bps</code><code>{point.fee_bps} / {point.slippage_bps}</code><code>{percent(point.metrics.return)}</code><code>{sharpeDisplay(point.metrics)}</code></div>)}</div>}
+    </section>
+    <section className="diagnose-section">
+      <div className="section-heading"><h2>{tr('Execution delay')}</h2><span>{tr('0 = baseline close(t+1)')}</span></div>
+      {supported.execution_delay === 'NOT_SUPPORTED' ? <p className="capability-unavailable"><strong>{tr('Not supported for this run')}</strong><span>{tr('Execution delay cannot be inferred from persisted results.')}</span></p> : <div className="dense-table execution-delay-table"><div className="dense-row header"><span>{tr('Additional delay')}</span><span>{tr('Effective execution')}</span><span>{tr('Return')}</span><span>{tr('Unfilled')}</span></div>{report.execution_delay.map((point) => <div className="dense-row" key={point.additional_delay_bars}><code>+{point.additional_delay_bars} {tr('bars')}</code><code>close(t+{point.execution_offset_bars})</code><code>{percent(point.metrics.return)}</code><code>{point.unfilled_signal_count}</code></div>)}</div>}
+    </section>
+  </>
 }
 
 function WhatIfLab({ report }: { report: DiagnosisReport }) {
@@ -206,7 +302,7 @@ function WhatIfLab({ report }: { report: DiagnosisReport }) {
     </article>
     <div className="what-if-comparison" role="table">
       <div className="what-if-row header"><span>{tr('Metric')}</span><span>{tr('Baseline')}</span><span>{tr('Stress')}</span><span>{tr('Change')}</span></div>
-      {rows.map((row) => <div className="what-if-row" key={row.key}><span>{tr(row.label)}</span><code>{whatIfMetric(baseline[row.key], row.key)}</code><code>{whatIfMetric(stressed[row.key], row.key)}</code><code className={deltas[row.key] < 0 ? 'negative' : deltas[row.key] > 0 ? 'positive' : ''}>{whatIfDelta(deltas[row.key], row.key)}</code></div>)}
+      {rows.map((row) => <div className="what-if-row" key={row.key}><span>{tr(row.label)}</span><code>{whatIfMetric(baseline[row.key], row.key)}</code><code>{whatIfMetric(stressed[row.key], row.key)}</code><code className={whatIfDeltaTone(deltas[row.key], row.key)}>{whatIfDelta(deltas[row.key], row.key)}</code></div>)}
     </div>
     <div className="what-if-evidence"><h3>{tr('Evidence')}</h3><ul>{(scenario?.evidence ?? [tr('Change assumptions, then run a scenario to produce stressed evidence.')]).map((item) => <li key={item}>{tr(item)}</li>)}</ul></div>
     <details className="advanced-disclosure what-if-methodology"><summary>{tr('Calculation details')}</summary><div className="method-notes">{(scenario?.calculation_details ?? support.calculation_details).map((detail) => <p key={detail}>{tr(detail)}</p>)}</div></details>
@@ -233,6 +329,10 @@ function DiagnoseContent({ report, onOpenReplay }: { report: DiagnosisReport; on
       </div>
       <details className="advanced-disclosure methodology-disclosure"><summary>{tr('Methodology')}</summary><div className="method-notes"><p>{tr(split.feature_context_policy)}</p><p>{tr(split.pnl_isolation_policy)}</p></div></details>
     </section>
+
+    <ParameterSensitivitySection report={report} />
+
+    <BatchStressEvidence report={report} />
 
     <StatisticalDiagnosticsSection report={report} />
 

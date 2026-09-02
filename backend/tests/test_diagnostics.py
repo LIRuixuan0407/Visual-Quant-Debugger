@@ -1,5 +1,7 @@
 import asyncio
+import json
 import math
+from typing import cast
 
 import httpx
 import numpy as np
@@ -12,6 +14,8 @@ from app.diagnostics.statistical import (
     calculate_return_diagnostics,
 )
 from app.diagnostics.volatility import (
+    annualization_factor_for_frequency,
+    build_volatility_diagnostics,
     classify_volatility_regime,
     ewma_volatility,
     rolling_historical_volatility,
@@ -138,6 +142,7 @@ def test_pairs_mean_reversion_reads_recorded_trace_features() -> None:
     )
 
     assert evidence["observation_count"] == len(spreads)
+    assert evidence["consecutive_pair_count"] == len(spreads) - 1
     assert evidence["hedge_ratio_observation_count"] == len(hedge_ratios)
     assert evidence["phi"] == pytest.approx(expected_phi)
     assert evidence["hedge_ratio_mean"] == pytest.approx(np.mean(hedge_ratios))
@@ -151,9 +156,8 @@ def test_pairs_mean_reversion_reads_recorded_trace_features() -> None:
 def test_statistical_boundaries_do_not_fabricate_values_or_half_life() -> None:
     returns = calculate_return_diagnostics((100.0,) * 15)
     short_returns = calculate_return_diagnostics((100.0, 101.0, 100.0, 102.0))
-    explosive_pair = calculate_pair_mean_reversion(
-        (1.0, 2.0, 4.0, 8.0, 16.0), (0.8, 0.9, 1.0, 1.1, 1.2)
-    )
+    explosive_spread = tuple(float(2**index) for index in range(25))
+    explosive_pair = calculate_pair_mean_reversion(explosive_spread, (1.0,) * 25)
     short_pair = calculate_pair_mean_reversion((1.0, 1.0), ())
 
     assert returns.status == "INSUFFICIENT_DATA"
@@ -168,6 +172,31 @@ def test_statistical_boundaries_do_not_fabricate_values_or_half_life() -> None:
     assert short_pair.status == "INSUFFICIENT_DATA"
     assert short_pair.phi is None
     assert short_pair.half_life_bars is None
+
+
+def test_pair_ar1_requires_time_adjacent_pairs_and_a_larger_sample() -> None:
+    spreads = (
+        *tuple(float(index) for index in range(12)),
+        None,
+        *tuple(float(100 + index) for index in range(12)),
+    )
+    evidence = calculate_pair_mean_reversion(spreads, (1.0,) * len(spreads))
+    too_short = calculate_pair_mean_reversion(tuple(float(index) for index in range(20)), ())
+
+    previous = np.asarray([*range(11), *range(100, 111)], dtype=np.float64)
+    current = np.asarray([*range(1, 12), *range(101, 112)], dtype=np.float64)
+    expected_phi = float(
+        np.dot(previous - np.mean(previous), current - np.mean(current))
+        / np.dot(previous - np.mean(previous), previous - np.mean(previous))
+    )
+
+    assert evidence.observation_count == 24
+    assert evidence.consecutive_pair_count == 22
+    assert evidence.phi == pytest.approx(expected_phi)
+    assert evidence.status == "OK"
+    assert too_short.consecutive_pair_count == 19
+    assert too_short.status == "INSUFFICIENT_DATA"
+    assert too_short.phi is None
 
 
 def test_diagnosis_report_accepts_legacy_cache_without_new_diagnostic_fields() -> None:
@@ -186,6 +215,29 @@ def test_diagnosis_report_accepts_legacy_cache_without_new_diagnostic_fields() -
     assert restored.what_if is None
 
 
+def test_stale_diagnostic_cache_is_recomputed_for_frequency_and_pair_contracts() -> None:
+    trace_id = _create_trace_id()
+    payload = _diagnose(trace_id)
+    record = run_ledger.execution_record(trace_id)
+    assert record is not None
+    volatility = cast(dict[str, object], payload["volatility_diagnostics"])
+    statistical = cast(dict[str, object], payload["statistical_diagnostics"])
+    pair = cast(dict[str, object], statistical["pair_mean_reversion"])
+    del volatility["dataset_frequency"]
+    del pair["consecutive_pair_count"]
+    run_ledger.repository.save_derived(
+        record.run_id, "diagnostics", json.dumps(payload).encode()
+    )
+
+    refreshed = _diagnose(trace_id)
+    refreshed_volatility = cast(dict[str, object], refreshed["volatility_diagnostics"])
+    refreshed_statistical = cast(dict[str, object], refreshed["statistical_diagnostics"])
+    refreshed_pair = cast(dict[str, object], refreshed_statistical["pair_mean_reversion"])
+
+    assert refreshed_volatility["dataset_frequency"] == "1D"
+    assert cast(int, refreshed_pair["consecutive_pair_count"]) >= 20
+
+
 def test_historical_volatility_annualization_ewma_and_regime_boundaries() -> None:
     returns = (0.01, -0.02, 0.03)
     historical = rolling_historical_volatility(returns, window=3, annualization_factor=252)
@@ -200,6 +252,11 @@ def test_historical_volatility_annualization_ewma_and_regime_boundaries() -> Non
     assert classify_volatility_regime(0.15) == "NORMAL"
     assert classify_volatility_regime(0.2999) == "NORMAL"
     assert classify_volatility_regime(0.30) == "HIGH"
+    assert annualization_factor_for_frequency("1D") == 252
+    assert annualization_factor_for_frequency("1Day") == 252
+    assert annualization_factor_for_frequency("86400s") == 252
+    assert annualization_factor_for_frequency("1Hour") is None
+    assert annualization_factor_for_frequency("unknown") is None
 
 
 def test_volatility_diagnostics_use_recorded_market_prices_and_drawdown_evidence() -> None:
@@ -220,6 +277,7 @@ def test_volatility_diagnostics_use_recorded_market_prices_and_drawdown_evidence
     assert diagnostics["status"] == "OK"
     assert diagnostics["rolling_window"] == 21
     assert diagnostics["ewma_decay"] == pytest.approx(0.94)
+    assert diagnostics["dataset_frequency"] == "1D"
     assert diagnostics["annualization_factor"] == 252
     assert points[1]["market_return"] == pytest.approx(expected_return)
     assert points[21]["rolling_historical_vol"] == pytest.approx(
@@ -238,6 +296,25 @@ def test_volatility_calculations_return_clean_unavailable_values_for_short_data(
     assert ewma[1] == pytest.approx(0.01 * math.sqrt(252))
 
 
+def test_volatility_diagnostics_reject_unreliable_frequency_annualization() -> None:
+    trace_id = _create_trace_id()
+    record = run_ledger.execution_record(trace_id)
+    assert record is not None
+
+    diagnostics = build_volatility_diagnostics(
+        record.trace, dataset_frequency="1Hour"
+    )
+
+    assert diagnostics.status == "UNSUPPORTED"
+    assert diagnostics.verdict == "UNSUPPORTED"
+    assert diagnostics.dataset_frequency == "1Hour"
+    assert diagnostics.annualization_factor is None
+    assert diagnostics.current_historical_vol is None
+    assert diagnostics.current_ewma_vol is None
+    assert all(point.rolling_historical_vol is None for point in diagnostics.points)
+    assert "unsupported" in diagnostics.summary.lower()
+
+
 def test_what_if_preserves_baseline_and_higher_cost_does_not_improve_net_pnl() -> None:
     trace_id = _create_trace_id()
     report = _diagnose(trace_id)
@@ -251,9 +328,9 @@ def test_what_if_preserves_baseline_and_higher_cost_does_not_improve_net_pnl() -
     assert scenario["baseline_inputs"]["fee_bps"] == 5.0
     assert scenario["inputs"]["fee_bps"] == 25.0
     assert scenario["inputs"]["strategy_parameters"] == {"lookback": 5}
-    assert scenario["stressed_metrics"]["trade_count"] == scenario["baseline_metrics"][
-        "trade_count"
-    ]
+    assert (
+        scenario["stressed_metrics"]["trade_count"] == scenario["baseline_metrics"]["trade_count"]
+    )
     assert scenario["stressed_metrics"]["net_pnl"] <= scenario["baseline_metrics"]["net_pnl"]
     assert scenario["deltas"]["net_pnl"] <= 0
 

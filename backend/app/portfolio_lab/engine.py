@@ -5,7 +5,10 @@ import secrets
 import statistics
 from datetime import UTC, datetime
 
+import numpy as np
+
 from app.datasets import DatasetRegistry
+from app.diagnostics.volatility import annualization_factor_for_frequency
 from app.execution import ExecutionEngine
 from app.factors import FactorResearchEngine
 from app.factors.models import (
@@ -19,13 +22,16 @@ from app.portfolio import Portfolio
 from app.research_ledger import ResearchLedgerEntry, ResearchLedgerRepository, research_ledger
 
 from .models import (
+    AssetRiskContribution,
     CreatePortfolioResearch,
     FactorScoreEvidence,
     PortfolioFactorCheck,
     PortfolioPositionLineage,
     PortfolioRebalanceSnapshot,
     PortfolioResearchRecord,
+    PortfolioRiskDecomposition,
     PortfolioStageResult,
+    RiskMatrix,
     TransactionCostPreview,
 )
 
@@ -508,6 +514,213 @@ class PortfolioResearchEngine:
             rebalance_count=len(snapshots),
         )
 
+    def _risk_decomposition(
+        self,
+        *,
+        dataset_id: str,
+        universe: tuple[str, ...],
+        snapshots: tuple[PortfolioRebalanceSnapshot, ...],
+        period: ResearchPeriod,
+        dataset_frequency: str,
+    ) -> PortfolioRiskDecomposition:
+        latest = snapshots[-1] if snapshots else None
+        positions = (
+            tuple(
+                item
+                for item in latest.positions
+                if item.selected and item.target_weight > 0.0
+            )
+            if latest is not None
+            else ()
+        )
+        symbols = tuple(item.symbol for item in positions)
+        annualization_factor = annualization_factor_for_frequency(dataset_frequency)
+        volatility_basis = (
+            "ANNUALIZED" if annualization_factor is not None else "PER_OBSERVATION"
+        )
+        base_details = (
+            "The latest revealed-stage target weights are held fixed over the stage's aligned "
+            "close-to-close simple-return history; any unallocated weight is treated as zero-risk "
+            "cash.",
+            "Covariance is the sample covariance matrix (ddof=1) of aligned asset returns. "
+            "Correlation divides covariance by the corresponding sample standard deviations.",
+            "Portfolio variance is w'Σw. Marginal volatility contribution is (Σw)i / sqrt(w'Σw); "
+            "component contribution is wi times marginal contribution, and component shares sum "
+            "to one when volatility is non-zero.",
+            "Historical 95% VaR is max(0, the linear 95th percentile of one-observation losses). "
+            "Expected Shortfall is max(0, the mean loss at or beyond that unrounded percentile).",
+        )
+        if latest is None or not positions:
+            return PortfolioRiskDecomposition(
+                status="INSUFFICIENT_DATA",
+                verdict="INSUFFICIENT_RISK_HISTORY",
+                snapshot_timestamp=latest.timestamp if latest is not None else None,
+                dataset_frequency=dataset_frequency,
+                observations=0,
+                annualization_factor=annualization_factor,
+                volatility_basis=volatility_basis,
+                portfolio_volatility=None,
+                per_observation_volatility=None,
+                historical_var_95=None,
+                expected_shortfall_95=None,
+                covariance=None,
+                correlation=None,
+                contributions=(),
+                calculation_details=base_details,
+                boundary_disclosure=(
+                    "Risk decomposition is historical diagnostic evidence only. It is not a "
+                    "forecast, optimizer, position-sizing instruction, or trading recommendation."
+                ),
+            )
+
+        frames = tuple(
+            frame
+            for frame in self.datasets.load_frames(dataset_id, universe)
+            if period.start <= frame.timestamp <= period.end
+        )
+        aligned_returns: list[list[float]] = []
+        for previous, current in zip(frames, frames[1:], strict=False):
+            if any(
+                symbol not in previous.values
+                or symbol not in current.values
+                or previous.value(symbol, "close") <= 0.0
+                for symbol in symbols
+            ):
+                continue
+            aligned_returns.append(
+                [
+                    current.value(symbol, "close") / previous.value(symbol, "close") - 1.0
+                    for symbol in symbols
+                ]
+            )
+        observation_count = len(aligned_returns)
+        if observation_count < 20:
+            return PortfolioRiskDecomposition(
+                status="INSUFFICIENT_DATA",
+                verdict="INSUFFICIENT_RISK_HISTORY",
+                snapshot_timestamp=latest.timestamp,
+                dataset_frequency=dataset_frequency,
+                observations=observation_count,
+                annualization_factor=annualization_factor,
+                volatility_basis=volatility_basis,
+                portfolio_volatility=None,
+                per_observation_volatility=None,
+                historical_var_95=None,
+                expected_shortfall_95=None,
+                covariance=None,
+                correlation=None,
+                contributions=(),
+                calculation_details=(
+                    *base_details,
+                    "At least 20 aligned return observations are required for this VQD risk "
+                    "decomposition.",
+                ),
+                boundary_disclosure=(
+                    "Risk decomposition is historical diagnostic evidence only. It is not a "
+                    "forecast, optimizer, position-sizing instruction, or trading recommendation."
+                ),
+            )
+
+        returns = np.asarray(aligned_returns, dtype=np.float64)
+        weights = np.asarray([item.target_weight for item in positions], dtype=np.float64)
+        covariance = np.atleast_2d(np.cov(returns, rowvar=False, ddof=1))
+        standard_deviations = np.sqrt(np.maximum(np.diag(covariance), 0.0))
+        denominator = np.outer(standard_deviations, standard_deviations)
+        correlation = np.divide(
+            covariance,
+            denominator,
+            out=np.zeros_like(covariance),
+            where=denominator > 1e-18,
+        )
+        np.fill_diagonal(correlation, np.where(standard_deviations > 1e-12, 1.0, 0.0))
+        period_variance = max(float(weights @ covariance @ weights), 0.0)
+        period_volatility = math.sqrt(period_variance)
+        scale = math.sqrt(annualization_factor) if annualization_factor is not None else 1.0
+        portfolio_volatility = period_volatility * scale
+        invested_total = float(np.sum(weights))
+        invested_weights = weights / invested_total if invested_total > 0.0 else weights
+        median_weight = float(np.median(invested_weights))
+        covariance_times_weight = covariance @ weights
+        contributions: list[AssetRiskContribution] = []
+        for index, symbol in enumerate(symbols):
+            marginal = (
+                float(covariance_times_weight[index] / period_volatility * scale)
+                if period_volatility > 1e-15
+                else 0.0
+            )
+            component = float(weights[index] * marginal)
+            risk_share = (
+                component / portfolio_volatility if portfolio_volatility > 1e-15 else 0.0
+            )
+            gap = risk_share - float(invested_weights[index])
+            contributions.append(
+                AssetRiskContribution(
+                    symbol=symbol,
+                    portfolio_weight=float(weights[index]),
+                    invested_weight=float(invested_weights[index]),
+                    marginal_contribution_to_volatility=marginal,
+                    component_contribution_to_volatility=component,
+                    component_risk_share=risk_share,
+                    risk_weight_gap=gap,
+                    low_weight_high_risk=(
+                        invested_weights[index] <= median_weight + 1e-12 and gap >= 0.05
+                    ),
+                )
+            )
+        if period_volatility <= 1e-15:
+            verdict = "NO_VARIABLE_RISK_OBSERVED"
+        elif any(item.low_weight_high_risk for item in contributions):
+            verdict = "LOW_WEIGHT_HIGH_RISK"
+        elif any(abs(item.risk_weight_gap) >= 0.05 for item in contributions):
+            verdict = "RISK_CONCENTRATED_BEYOND_WEIGHT"
+        else:
+            verdict = "RISK_BROADLY_ALIGNED_WITH_WEIGHT"
+
+        portfolio_returns = returns @ weights
+        losses = -portfolio_returns
+        raw_var = float(np.quantile(losses, 0.95, method="linear"))
+        tail_losses = losses[losses >= raw_var]
+        historical_var = max(0.0, raw_var)
+        expected_shortfall = max(
+            0.0,
+            float(np.mean(tail_losses)) if tail_losses.size else raw_var,
+        )
+        annualization_detail = (
+            f"Dataset frequency '{dataset_frequency}' maps to {annualization_factor} "
+            f"observations per year; volatility and absolute contributions use sqrt("
+            f"{annualization_factor}) annualization."
+            if annualization_factor is not None
+            else f"Dataset frequency '{dataset_frequency}' has no reliable VQD annualization "
+            "mapping; volatility and absolute contributions remain per observation."
+        )
+        return PortfolioRiskDecomposition(
+            status="AVAILABLE",
+            verdict=verdict,
+            snapshot_timestamp=latest.timestamp,
+            dataset_frequency=dataset_frequency,
+            observations=observation_count,
+            annualization_factor=annualization_factor,
+            volatility_basis=volatility_basis,
+            portfolio_volatility=portfolio_volatility,
+            per_observation_volatility=period_volatility,
+            historical_var_95=historical_var,
+            expected_shortfall_95=expected_shortfall,
+            covariance=RiskMatrix(
+                symbols=symbols,
+                values=tuple(tuple(float(value) for value in row) for row in covariance),
+            ),
+            correlation=RiskMatrix(
+                symbols=symbols,
+                values=tuple(tuple(float(value) for value in row) for row in correlation),
+            ),
+            contributions=tuple(contributions),
+            calculation_details=(*base_details, annualization_detail),
+            boundary_disclosure=(
+                "Risk decomposition is historical diagnostic evidence only. It is not a "
+                "forecast, optimizer, position-sizing instruction, or trading recommendation."
+            ),
+        )
+
     def _stage(
         self,
         request: CreatePortfolioResearch,
@@ -548,12 +761,23 @@ class PortfolioResearchEngine:
         preview = self._cost_preview(
             request, records[0].dataset_id, records[0].universe, snapshots, period
         )
+        dataset = self.datasets.get(records[0].dataset_id)
+        if dataset is None:
+            raise KeyError(records[0].dataset_id)
+        risk_decomposition = self._risk_decomposition(
+            dataset_id=records[0].dataset_id,
+            universe=records[0].universe,
+            snapshots=snapshots,
+            period=period,
+            dataset_frequency=dataset.frequency,
+        )
         return PortfolioStageResult(
             stage=stage,
             period=period,
             factor_checks=factor_checks,
             snapshots=snapshots,
             cost_preview=preview,
+            risk_decomposition=risk_decomposition,
         )
 
     def create(self, request: CreatePortfolioResearch) -> PortfolioResearchRecord:

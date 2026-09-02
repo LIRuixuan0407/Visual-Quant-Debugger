@@ -18,15 +18,35 @@ import type {
   PortfolioResearchRecord,
   PortfolioResearchSummary,
   RebalanceRule,
+  RiskMatrix,
 } from '../../types/research'
 
 const pct = (value: number | null | undefined) => value == null ? '—' : `${(value * 100).toFixed(2)}%`
 const num = (value: number | null | undefined) => value == null ? '—' : value.toFixed(4)
+const humanize = (value: string) => value.replaceAll('_', ' ')
+const signedPp = (value: number) => `${value >= 0 ? '+' : ''}${(value * 100).toFixed(2)} pp`
 const splitSymbols = (value: string) => [...new Set(value.split(/[\s,]+/).map((item) => item.trim().toUpperCase()).filter(Boolean))]
 
 type SelectionMethod = 'TOP_N' | 'TOP_PERCENT'
 type PositionWeighting = 'EQUAL_WEIGHT' | 'SCORE_WEIGHTED'
 type DirectionChoice = 'DEFAULT' | 'HIGH' | 'LOW'
+
+function RiskMatrixTable({ matrix, kind }: { matrix: RiskMatrix; kind: 'covariance' | 'correlation' }) {
+  const { tr } = useI18n()
+  const format = (value: number) => kind === 'correlation' ? value.toFixed(3) : value.toExponential(3)
+  return <section className="risk-matrix-card">
+    <header><strong>{tr(kind === 'correlation' ? 'Correlation' : 'Covariance')}</strong><span>{matrix.symbols.length} × {matrix.symbols.length}</span></header>
+    <div>
+      <table>
+        <thead><tr><th />{matrix.symbols.map((symbol) => <th key={symbol}>{symbol}</th>)}</tr></thead>
+        <tbody>{matrix.symbols.map((symbol, rowIndex) => <tr key={symbol}>
+          <th>{symbol}</th>
+          {matrix.values[rowIndex]?.map((value, columnIndex) => <td key={`${symbol}:${matrix.symbols[columnIndex]}`}><code>{format(value)}</code></td>)}
+        </tr>)}</tbody>
+      </table>
+    </div>
+  </section>
+}
 
 export default function PortfolioLabPage({
   onOpenReplay,
@@ -61,6 +81,7 @@ export default function PortfolioLabPage({
 
   const latest = record?.stages.at(-1) ?? null
   const latestSnapshot = latest?.snapshots.at(-1) ?? null
+  const risk = latest?.risk_decomposition ?? null
   const selectedFactors = useMemo(
     () => factors.filter((item) => selected.includes(item.research_id)),
     [factors, selected],
@@ -383,6 +404,42 @@ export default function PortfolioLabPage({
               {record.strategy && <><code>{record.strategy.strategy_id}</code><button className="primary-button" disabled={busy} onClick={() => void run()}>{tr('Backtest')}</button></>}
             </div>
           </section>
+
+          {risk && <section className="workspace-panel portfolio-risk-decomposition">
+            <div className="section-heading">
+              <div><span className="section-kicker">WEIGHT ≠ RISK CONTRIBUTION</span><h2>{tr('Risk Decomposition')}</h2></div>
+              <span>{tr(humanize(risk.verdict))}</span>
+            </div>
+            {risk.status === 'AVAILABLE'
+              ? <>
+                <div className="risk-metric-strip">
+                  <div><span>{risk.volatility_basis === 'ANNUALIZED' ? tr('Annualized portfolio volatility') : tr('Per-observation portfolio volatility')}</span><strong>{pct(risk.portfolio_volatility)}</strong><small>{risk.observations} {tr('observations')}</small></div>
+                  <div><span>{tr('Historical VaR 95%')}</span><strong>{pct(risk.historical_var_95)}</strong><small>{tr('One-observation loss')}</small></div>
+                  <div><span>{tr('Expected Shortfall 95%')}</span><strong>{pct(risk.expected_shortfall_95)}</strong><small>{tr('Mean loss beyond VaR')}</small></div>
+                  <div><span>{tr('Risk basis')}</span><strong>{risk.volatility_basis}</strong><small>{risk.dataset_frequency}{risk.annualization_factor ? ` · √${risk.annualization_factor}` : ''}</small></div>
+                </div>
+                <div className="risk-contribution-table">
+                  <div className="header"><span>{tr('Asset')}</span><span>{tr('Invested weight')}</span><span>{tr('Risk share')}</span><span>{tr('Weight → risk gap')}</span><span>{tr('Component volatility')}</span></div>
+                  {risk.contributions.map((item) => <div key={item.symbol} className={item.low_weight_high_risk ? 'risk-flagged' : ''}>
+                    <span><strong>{item.symbol}</strong>{item.low_weight_high_risk && <small>{tr('Low weight · high risk')}</small>}</span>
+                    <code>{pct(item.invested_weight)}</code>
+                    <code>{pct(item.component_risk_share)}</code>
+                    <code>{signedPp(item.risk_weight_gap)}</code>
+                    <code>{pct(item.component_contribution_to_volatility)}</code>
+                  </div>)}
+                </div>
+                {(risk.covariance || risk.correlation) && <div className="risk-matrix-grid">
+                  {risk.correlation && <RiskMatrixTable matrix={risk.correlation} kind="correlation" />}
+                  {risk.covariance && <RiskMatrixTable matrix={risk.covariance} kind="covariance" />}
+                </div>}
+              </>
+              : <p className="risk-unavailable">{tr('Risk decomposition needs at least 20 aligned return observations for the latest portfolio snapshot.')}</p>}
+            <details className="evidence-calculation-details">
+              <summary>{tr('Calculation details')}</summary>
+              {risk.calculation_details.map((detail) => <p key={detail}>{detail}</p>)}
+            </details>
+            <p className="relationship-disclosure">{risk.boundary_disclosure}</p>
+          </section>}
 
           <section className="workspace-panel">
             <div className="section-heading"><div><span className="section-kicker">FACTOR CHECKS</span><h2>{tr('Direction, weight, coverage & missing data')}</h2></div><span>{tr(latest.stage)}</span></div>

@@ -31,6 +31,7 @@ export interface ReturnDiagnostics {
 export interface PairMeanReversionEvidence {
   status: 'OK' | 'INSUFFICIENT_DATA'
   observation_count: number
+  consecutive_pair_count: number
   hedge_ratio_observation_count: number
   phi: number | null
   spread_lag_1_autocorrelation: number | null
@@ -51,10 +52,11 @@ export interface VolatilityPoint {
 }
 
 export interface VolatilityDiagnostics {
-  status: 'OK' | 'INSUFFICIENT_DATA'
+  status: 'OK' | 'INSUFFICIENT_DATA' | 'UNSUPPORTED'
+  dataset_frequency: string
   rolling_window: number
   ewma_decay: number
-  annualization_factor: number
+  annualization_factor: number | null
   market_return_method: string
   thresholds: { low_upper_bound: number; high_lower_bound: number }
   points: VolatilityPoint[]
@@ -75,7 +77,7 @@ export interface VolatilityDiagnostics {
   evaluable_drawdown_count: number
   rising_volatility_start_count: number
   regime_change_start_count: number
-  verdict: 'RISING_VOLATILITY_OVERLAP' | 'MIXED_VOLATILITY_OVERLAP' | 'LIMITED_VOLATILITY_OVERLAP' | 'NO_DRAWDOWNS' | 'INSUFFICIENT_DATA'
+  verdict: 'RISING_VOLATILITY_OVERLAP' | 'MIXED_VOLATILITY_OVERLAP' | 'LIMITED_VOLATILITY_OVERLAP' | 'NO_DRAWDOWNS' | 'INSUFFICIENT_DATA' | 'UNSUPPORTED'
   summary: string
   calculation_details: string[]
 }

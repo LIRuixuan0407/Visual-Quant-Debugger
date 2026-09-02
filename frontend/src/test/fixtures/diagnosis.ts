@@ -38,13 +38,13 @@ export const diagnosisReport: DiagnosisReport = {
       lag_1_return_autocorrelation: 0.18, lag_1_squared_return_autocorrelation: 0.31, note: null,
     },
     pair_mean_reversion: {
-      status: 'OK', observation_count: 36, hedge_ratio_observation_count: 36,
+      status: 'OK', observation_count: 36, consecutive_pair_count: 35, hedge_ratio_observation_count: 36,
       phi: 0.72, spread_lag_1_autocorrelation: 0.69, half_life_bars: 2.11,
       hedge_ratio_mean: 1.08, hedge_ratio_std: 0.07, note: null,
     },
   },
   volatility_diagnostics: {
-    status: 'OK', rolling_window: 21, ewma_decay: 0.94, annualization_factor: 252,
+    status: 'OK', dataset_frequency: '1D', rolling_window: 21, ewma_decay: 0.94, annualization_factor: 252,
     market_return_method: "At each bar, compute each recorded symbol's simple close-to-close return, then take their equal-weight mean.",
     thresholds: { low_upper_bound: 0.15, high_lower_bound: 0.30 },
     points: Array.from({ length: 40 }, (_, index) => ({
