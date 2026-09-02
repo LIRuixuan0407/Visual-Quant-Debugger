@@ -872,6 +872,7 @@ const zh: Record<string, string> = {
   'Create paper portfolio': '创建虚拟投资组合',
   'Choose every stock required by this strategy before continuing.': '请先选齐该策略所需的股票。',
   'This paper account is no longer available. Choose another account.': '该虚拟账户当前不可用，请选择其他账户。',
+  'This account uses a different currency. Create a new account for the selected market.': '该账户币种与所选市场不一致，请为当前市场创建新账户。',
   'Connect Alpaca in My before creating a live paper session.': '创建实时虚拟盘前，请先在“我的”中连接 Alpaca。',
   'We could not create this paper session. Review the setup and try again.': '无法创建虚拟盘，请检查当前配置后重试。',
   'Research evidence saved': '研究证据已保存', 'Recent Fills': '最近成交',

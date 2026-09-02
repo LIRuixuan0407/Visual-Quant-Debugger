@@ -83,6 +83,7 @@ describe('Live Paper Forward workspace', () => {
 
   it('guides a two-stock A-share strategy and never submits an incomplete pair', async () => {
     const posted: Array<Record<string, unknown>> = []
+    const accountRequests: Array<Record<string, unknown>> = []
     const cnAccount = { ...account, account_id: 'paper-account-cn-0123456789abcdef01', name: 'A-share paper', currency: 'CNY' as const, initial_cash: 1_000_000, cash: 1_000_000, equity: 1_000_000 }
     const cnSnapshot: PaperSessionSnapshot = {
       ...snapshot,
@@ -94,7 +95,11 @@ describe('Live Paper Forward workspace', () => {
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const endpoint = String(input)
       if (endpoint === '/api/market-data/providers') return new Response(JSON.stringify([{ provider: 'tdx', configured: true, feeds: ['tdx'], selected_feed: 'tdx', timeframe: '1Min', market_session: 'US_REGULAR', markets: ['CN', 'HK', 'US'], requires_credentials: false, supports_live: true, supports_historical: true }]), { status: 200, headers: { 'Content-Type': 'application/json' } })
-      if (endpoint === '/api/paper-accounts') return new Response(JSON.stringify({ items: [cnAccount] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (endpoint === '/api/paper-accounts' && !init?.method) return new Response(JSON.stringify({ items: [account] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (endpoint === '/api/paper-accounts' && init?.method === 'POST') {
+        accountRequests.push(JSON.parse(String(init.body)) as Record<string, unknown>)
+        return new Response(JSON.stringify(cnAccount), { status: 201, headers: { 'Content-Type': 'application/json' } })
+      }
       if (endpoint === '/api/paper-sessions' && !init?.method) return new Response(JSON.stringify({ items: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
       if (endpoint === '/api/market-data/stocks/search?q=600519&provider=tdx&market=CN') return new Response(JSON.stringify([{ symbol: '600519.SH', name: '贵州茅台', exchange: 'SH', status: 'active', tradable: true, fractionable: false, market: 'CN', currency: 'CNY', lot_size: 100 }]), { status: 200, headers: { 'Content-Type': 'application/json' } })
       if (endpoint === '/api/market-data/stocks/search?q=000858&provider=tdx&market=CN') return new Response(JSON.stringify([{ symbol: '000858.SZ', name: '五粮液', exchange: 'SZ', status: 'active', tradable: true, fractionable: false, market: 'CN', currency: 'CNY', lot_size: 100 }]), { status: 200, headers: { 'Content-Type': 'application/json' } })
@@ -107,6 +112,7 @@ describe('Live Paper Forward workspace', () => {
     render(<LivePaperPage definition={pairsDefinition} />)
     const createButton = await screen.findByRole('button', { name: 'Create paper portfolio' })
     expect(screen.getByRole('combobox', { name: 'Market' })).toHaveValue('CN')
+    expect(screen.getByRole('combobox', { name: 'Paper Account' })).toHaveValue('__new__')
     expect(createButton).toBeDisabled()
     expect(screen.getByText('0 / 2')).toBeInTheDocument()
 
@@ -123,7 +129,9 @@ describe('Live Paper Forward workspace', () => {
     expect(createButton).toBeEnabled()
     fireEvent.click(createButton)
     await waitFor(() => expect(posted).toHaveLength(1))
+    expect(accountRequests).toEqual([{ name: 'My Paper Account', initial_cash: 1_000_000, currency: 'CNY' }])
     expect(posted[0]).toMatchObject({ strategy_id: 'pairs-trading', symbols: ['600519.SH', '000858.SZ'], provider: 'tdx', feed: 'tdx', market_session: 'CN_REGULAR', execution_mode: 'VQD_SIMULATED' })
+    expect(posted[0]).toMatchObject({ account_id: cnAccount.account_id })
   })
 
   it('blocks historical framework adapters before any forward or provider request', () => {

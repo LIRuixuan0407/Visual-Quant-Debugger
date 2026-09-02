@@ -44,6 +44,7 @@ function SessionHistory({ sessions, activeId, onOpen }: { sessions: PaperSession
 function friendlySetupError(message: string, tr: (value: string) => string) {
   if (/Strategy requires \d+ symbol\(s\); received \d+/i.test(message)) return tr('Choose every stock required by this strategy before continuing.')
   if (/Selected paper account is unavailable/i.test(message)) return tr('This paper account is no longer available. Choose another account.')
+  if (/Paper account currency .* does not match/i.test(message)) return tr('This account uses a different currency. Create a new account for the selected market.')
   if (/credentials are not configured/i.test(message)) return tr('Connect Alpaca in My before creating a live paper session.')
   return tr('We could not create this paper session. Review the setup and try again.')
 }
@@ -81,10 +82,11 @@ function LiveSetup({ definition, definitions, onDefinitionChange, onOpenProfile,
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [technicalError, setTechnicalError] = useState<string | null>(null)
-  const selectedAccountId = accountId || eligibleAccounts.find((item) => !item.active_session_id)?.account_id || '__new__'
+  const retainedAccountId = accountId === '__new__' || eligibleAccounts.some((item) => item.account_id === accountId) ? accountId : ''
+  const selectedAccountId = retainedAccountId || eligibleAccounts.find((item) => !item.active_session_id)?.account_id || '__new__'
   const selectedAccount = eligibleAccounts.find((item) => item.account_id === selectedAccountId)
   const hasRequiredSelection = securities.length === requiredCount && (requiredSymbols.length === 0 || requiredSymbols.every((symbol, index) => securities[index]?.symbol === symbol))
-  const accountReady = selectedAccountId !== '__new__' || (accountName.trim().length > 0 && initialCash > 0)
+  const accountReady = selectedAccountId === '__new__' ? accountName.trim().length > 0 && initialCash > 0 : Boolean(selectedAccount)
   const providerReady = Boolean(provider?.configured && (provider.markets ?? ['US']).includes(marketRegion))
   const canCreate = Boolean(providerReady && accountReady && hasRequiredSelection && !creating)
 
@@ -115,6 +117,7 @@ function LiveSetup({ definition, definitions, onDefinitionChange, onOpenProfile,
         ? eligibleAccounts.find((item) => item.account_id === selectedAccountId)
         : await createPaperAccount(accountName, initialCash, currency)
       if (!account) throw new Error('Selected paper account is unavailable.')
+      if (account.currency !== currency) throw new Error(`Paper account currency ${account.currency} does not match ${currency}`)
       if (selectedAccountId === '__new__') onAccountCreated(account)
       onCreated(await createPaperSession({
         account_id: account.account_id,
