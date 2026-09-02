@@ -104,7 +104,7 @@ function StatisticalDiagnosticsSection({ report }: { report: DiagnosisReport }) 
   const diagnostics = report.statistical_diagnostics
   const returns = diagnostics?.returns
   const pair = diagnostics?.pair_mean_reversion
-  return <section className="diagnose-section statistical-diagnostics-section">
+  return <section id="diagnose-statistical" className="diagnose-section statistical-diagnostics-section">
     <div className="section-heading"><h2>{tr('Statistical diagnostics')}</h2><span>{tr('Trace equity evidence')}</span></div>
     {!returns ? <p className="capability-unavailable"><strong>{tr('Not available in this cached report')}</strong><span>{tr('Run diagnostics again on a new Trace to calculate statistical evidence.')}</span></p> : <>
       <div className="statistical-diagnostics-grid">
@@ -172,7 +172,7 @@ function VolatilityChart({ diagnostics }: { diagnostics: VolatilityDiagnostics }
 function VolatilityDiagnosticsSection({ report }: { report: DiagnosisReport }) {
   const { tr } = useI18n()
   const diagnostics = report.volatility_diagnostics
-  return <section className="diagnose-section volatility-diagnostics-section">
+  return <section id="diagnose-volatility" className="diagnose-section volatility-diagnostics-section">
     <div className="section-heading"><h2>{tr('Volatility diagnostics')}</h2><span>{tr('Recorded market and strategy evidence')}</span></div>
     {!diagnostics ? <p className="capability-unavailable"><strong>{tr('Not available in this cached report')}</strong><span>{tr('Run diagnostics again to calculate volatility evidence.')}</span></p> : <>
       <article className={`diagnostic-verdict ${diagnostics.status === 'OK' ? '' : 'unavailable'}`}>
@@ -206,7 +206,7 @@ function severityClass(severity: FailureSeverity) { return severity.toLowerCase(
 function FailureFingerprintSection({ report }: { report: DiagnosisReport }) {
   const { tr } = useI18n()
   const fingerprint = report.failure_fingerprint
-  return <section className="diagnose-section failure-fingerprint-section">
+  return <section id="diagnose-fingerprint" className="diagnose-section failure-fingerprint-section">
     <div className="section-heading"><h2>{tr('Strategy failure fingerprint')}</h2><span>{tr('Deterministic diagnostic triage')}</span></div>
     {!fingerprint ? <p className="capability-unavailable"><strong>{tr('Not available in this cached report')}</strong><span>{tr('Run diagnostics again to calculate the failure fingerprint.')}</span></p> : <>
       <article className="fingerprint-summary">
@@ -230,7 +230,7 @@ function RegimeDiagnosticsSection({ report }: { report: DiagnosisReport }) {
   const diagnostics = report.regime_diagnostics
   const order = { LOW: 0, NORMAL: 1, HIGH: 2, UPTREND: 0, SIDEWAYS: 1, DOWNTREND: 2 } as const
   const performance = diagnostics ? [...diagnostics.performance].sort((left, right) => order[left.volatility_regime] - order[right.volatility_regime] || order[left.trend_regime] - order[right.trend_regime]) : []
-  return <section className="diagnose-section regime-diagnostics-section">
+  return <section id="diagnose-regime" className="diagnose-section regime-diagnostics-section">
     <div className="section-heading"><h2>{tr('Market regime diagnostics')}</h2><span>{tr('Volatility × trend')}</span></div>
     {!diagnostics ? <p className="capability-unavailable"><strong>{tr('Not available in this cached report')}</strong><span>{tr('Run diagnostics again to calculate market-regime evidence.')}</span></p> : <>
       <article className={`diagnostic-verdict ${diagnostics.status === 'OK' ? '' : 'unavailable'}`}>
@@ -273,7 +273,7 @@ function ParameterSensitivitySection({ report }: { report: DiagnosisReport }) {
   const { tr } = useI18n()
   const supported = report.support?.parameter_sensitivity ?? 'AVAILABLE'
   const parameter = report.source_run.sensitivity_parameter
-  return <section className="diagnose-section parameter-sensitivity-section">
+  return <section id="diagnose-sensitivity" className="diagnose-section parameter-sensitivity-section">
     <div className="section-heading"><h2>{tr(parameter && parameter !== 'lookback' ? `${parameter} sensitivity` : 'Lookback sensitivity')}</h2>{report.sensitivity_available !== false && <div className="chart-legend"><span><i className="legend-train" /> {tr('Train Sharpe')}</span><span><i className="legend-test" /> {tr('Test Sharpe')}</span></div>}</div>
     {supported === 'NOT_SUPPORTED' || report.sensitivity_available === false || report.lookback_sensitivity.length === 0
       ? <p className="capability-unavailable"><strong>{tr('Not supported for this run')}</strong><span>{tr('This adapter cannot reproduce parameter sensitivity without changing framework semantics.')}</span></p>
@@ -285,11 +285,11 @@ function BatchStressEvidence({ report }: { report: DiagnosisReport }) {
   const { tr } = useI18n()
   const supported = report.support ?? { train_test: 'AVAILABLE', parameter_sensitivity: 'AVAILABLE', cost_stress: 'AVAILABLE', execution_delay: 'AVAILABLE' }
   return <>
-    <section className="diagnose-section">
+    <section id="diagnose-cost-stress" className="diagnose-section">
       <div className="section-heading"><h2>{tr('Cost stress')}</h2><span>{tr('Full-pipeline reruns')}</span></div>
       {supported.cost_stress === 'NOT_SUPPORTED' ? <p className="capability-unavailable"><strong>{tr('Not supported for this run')}</strong><span>{tr('Cost stress requires a framework-native rerun contract that this adapter does not provide.')}</span></p> : <div className="dense-table cost-stress-table"><div className="dense-row header"><span>{tr('Total friction')}</span><span>{tr('Fee / Slippage')}</span><span>{tr('Return')}</span><span>{tr('Sharpe')}</span></div>{report.cost_stress.map((point) => <div className="dense-row" key={point.total_friction_bps}><code>{point.total_friction_bps} bps</code><code>{point.fee_bps} / {point.slippage_bps}</code><code>{percent(point.metrics.return)}</code><code>{sharpeDisplay(point.metrics)}</code></div>)}</div>}
     </section>
-    <section className="diagnose-section">
+    <section id="diagnose-execution-delay" className="diagnose-section">
       <div className="section-heading"><h2>{tr('Execution delay')}</h2><span>{tr('0 = baseline close(t+1)')}</span></div>
       {supported.execution_delay === 'NOT_SUPPORTED' ? <p className="capability-unavailable"><strong>{tr('Not supported for this run')}</strong><span>{tr('Execution delay cannot be inferred from persisted results.')}</span></p> : <div className="dense-table execution-delay-table"><div className="dense-row header"><span>{tr('Additional delay')}</span><span>{tr('Effective execution')}</span><span>{tr('Return')}</span><span>{tr('Unfilled')}</span></div>{report.execution_delay.map((point) => <div className="dense-row" key={point.additional_delay_bars}><code>+{point.additional_delay_bars} {tr('bars')}</code><code>close(t+{point.execution_offset_bars})</code><code>{percent(point.metrics.return)}</code><code>{point.unfilled_signal_count}</code></div>)}</div>}
     </section>
@@ -310,7 +310,7 @@ function WhatIfLab({ report }: { report: DiagnosisReport }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  if (!support || support.status === 'NOT_SUPPORTED' || !baselineInputs || !baseline) return <section className="diagnose-section what-if-section"><div className="section-heading"><h2>{tr('What-if Lab')}</h2></div><p className="capability-unavailable"><strong>{tr('Not supported for this run')}</strong><span>{tr('What-if requires a native VQD rerun contract.')}</span></p></section>
+  if (!support || support.status === 'NOT_SUPPORTED' || !baselineInputs || !baseline) return <section id="diagnose-what-if" className="diagnose-section what-if-section"><div className="section-heading"><h2>{tr('What-if Lab')}</h2></div><p className="capability-unavailable"><strong>{tr('Not supported for this run')}</strong><span>{tr('What-if requires a native VQD rerun contract.')}</span></p></section>
 
   async function runScenario(event: FormEvent) {
     event.preventDefault(); setBusy(true); setError(null)
@@ -333,7 +333,7 @@ function WhatIfLab({ report }: { report: DiagnosisReport }) {
     { key: 'max_drawdown', label: 'Max drawdown' }, { key: 'turnover', label: 'Turnover' },
     { key: 'trade_count', label: 'Trade count' }, { key: 'net_pnl', label: 'Net P&L' },
   ]
-  return <section className="diagnose-section what-if-section">
+  return <section id="diagnose-what-if" className="diagnose-section what-if-section">
     <div className="section-heading"><h2>{tr('What-if Lab')}</h2><span>{tr('Full deterministic rerun')}</span></div>
     <form className="what-if-controls" onSubmit={(event) => void runScenario(event)}>
       <label><span>{tr('Transaction cost')}</span><input aria-label={tr('Transaction cost')} type="number" min="0" max="10000" step="1" value={feeBps} onChange={(event) => { setFeeBps(Number(event.target.value)); setScenario(null) }} /><small>{tr('Baseline')}: {baselineInputs.fee_bps} bps</small></label>
@@ -357,12 +357,45 @@ function WhatIfLab({ report }: { report: DiagnosisReport }) {
   </section>
 }
 
+function DiagnosisOverview({ report }: { report: DiagnosisReport }) {
+  const { tr } = useI18n()
+  const fingerprint = report.failure_fingerprint
+  const regime = report.volatility_diagnostics?.current_regime
+  return <section className="diagnosis-overview" aria-label={tr('Diagnosis overview')}>
+    <div><span>{tr('Test Sharpe')}</span><strong>{sharpeDisplay(report.train_test.test)}</strong></div>
+    <div><span>{tr('high severity')}</span><strong>{fingerprint?.high_severity_count ?? '—'}</strong></div>
+    <div><span>{tr('medium severity')}</span><strong>{fingerprint?.medium_severity_count ?? '—'}</strong></div>
+    <div><span>{tr('Volatility regime')}</span><strong>{regime ? tr(regime) : tr('Unavailable')}</strong></div>
+  </section>
+}
+
+function DiagnosisJumpNav() {
+  const { tr } = useI18n()
+  const items = [
+    ['#diagnose-train-test', 'Train / Test'],
+    ['#diagnose-fingerprint', 'Strategy failure fingerprint'],
+    ['#diagnose-sensitivity', 'Lookback sensitivity'],
+    ['#diagnose-cost-stress', 'Cost stress'],
+    ['#diagnose-execution-delay', 'Execution delay'],
+    ['#diagnose-statistical', 'Statistical diagnostics'],
+    ['#diagnose-volatility', 'Volatility diagnostics'],
+    ['#diagnose-regime', 'Market regime diagnostics'],
+    ['#diagnose-what-if', 'What-if Lab'],
+    ['#diagnose-findings', 'Key findings'],
+  ] as const
+  return <nav className="evidence-jump-nav diagnose-jump-nav" aria-label={tr('Evidence map')}>
+    {items.map(([href, label]) => <a href={href} key={href}>{tr(label)}</a>)}
+  </nav>
+}
+
 function DiagnoseContent({ report, onOpenReplay }: { report: DiagnosisReport; onOpenReplay: () => void }) {
   const { tr } = useI18n(); const split = report.train_test
   return <main className="diagnose-shell">
     <header className="diagnose-header"><h1>{tr('Diagnose')}</h1><button className="link-button" onClick={onOpenReplay}>{tr('Open in Replay')} →</button></header>
+    <DiagnosisOverview report={report} />
+    <DiagnosisJumpNav />
 
-    <section className="diagnose-section">
+    <section id="diagnose-train-test" className="diagnose-section">
       <div className="section-heading"><h2>{tr('Train / Test · 70 / 30')}</h2><span>{split.train_bar_count} + {split.test_bar_count} {tr('bars')}</span></div>
       <div className="comparison-table train-test-table" role="table">
         <div className="comparison-row header"><span>{tr('Metric')}</span><span>{tr('Train')}</span><span>{tr('Test')}</span></div>
@@ -392,7 +425,7 @@ function DiagnoseContent({ report, onOpenReplay }: { report: DiagnosisReport; on
 
     <WhatIfLab report={report} />
 
-    <section className="diagnose-section observations"><div className="section-heading"><h2>{tr('Key findings')}</h2></div><ul className="findings-list">{report.observations.map((item) => <li key={item.observation_id}><strong>{tr(item.title)}</strong><span>{tr(item.evidence)}</span></li>)}</ul></section>
+    <section id="diagnose-findings" className="diagnose-section observations"><div className="section-heading"><h2>{tr('Key findings')}</h2></div><ul className="findings-list">{report.observations.map((item) => <li key={item.observation_id}><strong>{tr(item.title)}</strong><span>{tr(item.evidence)}</span></li>)}</ul></section>
   </main>
 }
 

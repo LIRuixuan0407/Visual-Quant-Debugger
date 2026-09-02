@@ -212,6 +212,12 @@ function StrategyPage({
       {compatibility?.reasons.map((reason) => <p className="inline-error" key={reason}>{tr(reason)}</p>)}
       {compatibilityError && <p className="inline-error">{tr(compatibilityError)}</p>}
 
+      <nav className="evidence-jump-nav strategy-workflow-nav" aria-label={tr('Evidence map')}>
+        <a href="#strategy-anatomy">{tr('Strategy anatomy')}</a>
+        <a href="#strategy-backtest-settings">{tr('Backtest settings')}</a>
+        {lastRun && <a href="#strategy-run-summary">{tr('Backtest summary')}</a>}
+      </nav>
+
       {recommendedSamplePreset && <section className="guided-demo" aria-labelledby="guided-demo-heading">
         <div className="guided-demo-copy">
           <span className="section-kicker">{tr('5-MINUTE GUIDED DEMO')}</span>
@@ -231,12 +237,12 @@ function StrategyPage({
           </>}
         </div>
       </section>}
-      <div className="anatomy-layout">
+      <div id="strategy-anatomy" className="anatomy-layout">
         <StrategyAnatomy definition={definition} selectedNodeId={selectedNode.node_id} onSelect={setSelectedNodeId} />
         <ConceptInspector definition={definition} node={selectedNode} />
       </div>
 
-      <section className="parameter-lab" aria-labelledby="parameters-heading">
+      <section id="strategy-backtest-settings" className="parameter-lab" aria-labelledby="parameters-heading">
         <div className="parameter-lab-header">
           <h2 id="parameters-heading">{tr('Backtest settings')}</h2>
           <label className="preset-select">{tr('Preset')}<select aria-label={tr('Strategy preset')} value={selectedPresetId} onChange={(event) => selectPreset(event.target.value)}>
@@ -278,7 +284,7 @@ function StrategyPage({
         </div>
         {runError && <div className="run-error" role="alert"><strong>{tr('Backtest failed')}</strong><p>{tr(runError)}</p></div>}
         {lastRun && lastRun.result.summary && lastRun.result.trace_id && (
-          <section className="run-summary" aria-labelledby="summary-heading">
+          <section id="strategy-run-summary" className="run-summary" aria-labelledby="summary-heading">
             <h3 id="summary-heading">{tr('Backtest summary')}</h3>
             <dl>
               <div><dt>{tr('Total return')}</dt><dd>{formatPercent(lastRun.result.summary.total_return)}</dd></div>

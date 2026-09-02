@@ -379,7 +379,7 @@ export default function PortfolioLabPage({
         </section>
 
         {record && latest && <>
-          <section className="workspace-panel evidence-summary">
+          <section id="portfolio-overview" className="workspace-panel evidence-summary">
             <div className="section-heading">
               <div><span className="section-kicker">TRANSACTION COST PREVIEW · {latest.stage}</span><h2>{tr(record.name)}</h2></div>
               <code>{record.portfolio_research_id}</code>
@@ -405,7 +405,14 @@ export default function PortfolioLabPage({
             </div>
           </section>
 
-          {risk && <section className="workspace-panel portfolio-risk-decomposition">
+          <nav className="evidence-jump-nav portfolio-evidence-nav" aria-label={tr('Evidence map')}>
+            <a href="#portfolio-overview">{tr('Summary')}</a>
+            {risk && <a href="#portfolio-risk">{tr('Risk Decomposition')}</a>}
+            <a href="#portfolio-factor-checks">{tr('Direction, weight, coverage & missing data')}</a>
+            {latestSnapshot && <a href="#portfolio-lineage">{tr('Position → Factor evidence')}</a>}
+          </nav>
+
+          {risk && <section id="portfolio-risk" className="workspace-panel portfolio-risk-decomposition">
             <div className="section-heading">
               <div><span className="section-kicker">WEIGHT ≠ RISK CONTRIBUTION</span><h2>{tr('Risk Decomposition')}</h2></div>
               <span>{tr(humanize(risk.verdict))}</span>
@@ -441,7 +448,7 @@ export default function PortfolioLabPage({
             <p className="relationship-disclosure">{risk.boundary_disclosure}</p>
           </section>}
 
-          <section className="workspace-panel">
+          <section id="portfolio-factor-checks" className="workspace-panel">
             <div className="section-heading"><div><span className="section-kicker">FACTOR CHECKS</span><h2>{tr('Direction, weight, coverage & missing data')}</h2></div><span>{tr(latest.stage)}</span></div>
             <div className="factor-check-table">
               <div className="header"><span>{tr('Factor')}</span><span>{tr('Type')}</span><span>{tr('Direction')}</span><span>{tr('Weight')}</span><span>{tr('Coverage')}</span><span>{tr('Missing')}</span></div>
@@ -456,7 +463,7 @@ export default function PortfolioLabPage({
             </div>
           </section>
 
-          {latestSnapshot && <section className="workspace-panel">
+          {latestSnapshot && <section id="portfolio-lineage" className="workspace-panel">
             <div className="section-heading"><div><span className="section-kicker">PORTFOLIO LINEAGE</span><h2>{tr('Position → Factor evidence')}</h2></div><span>{new Date(latestSnapshot.timestamp).toLocaleDateString()}</span></div>
             <div className="portfolio-lineage-list">
               {latestSnapshot.positions.filter((item) => item.selected).map((item) => <article key={item.symbol}>

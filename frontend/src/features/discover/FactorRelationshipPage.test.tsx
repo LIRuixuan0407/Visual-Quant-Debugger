@@ -153,6 +153,7 @@ it('renders all backend relationship evidence and submits both thresholds', asyn
 
   expect((await screen.findAllByText('Momentum × Reversal relationship')).length).toBeGreaterThanOrEqual(2)
   expect(screen.getByText('Correlation Matrix')).toBeInTheDocument()
+  expect(screen.getByRole('navigation', { name: 'Evidence map' })).toHaveTextContent('PCA Factor Structure')
   expect(screen.getAllByText('Factor Values').length).toBeGreaterThanOrEqual(1)
   expect(screen.getAllByText('Rank Correlation').length).toBeGreaterThanOrEqual(1)
   expect(screen.getAllByText('Factor Return Correlation').length).toBeGreaterThanOrEqual(1)

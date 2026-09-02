@@ -5220,3 +5220,127 @@ body { background: var(--bg); color: var(--ink); }
   .pca-evidence-block article { grid-template-columns: 1fr; }
   .pca-evidence-block article p { grid-column: auto; }
 }
+
+/* Evidence navigation + dense research-page orientation */
+.evidence-jump-nav {
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  margin-top: 10px;
+  padding: 7px;
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 1px 3px rgba(32, 46, 74, .035);
+  scrollbar-width: thin;
+  backdrop-filter: blur(10px);
+}
+
+.evidence-jump-nav a {
+  flex: 0 0 auto;
+  padding: 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--muted-strong);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.evidence-jump-nav a:hover,
+.evidence-jump-nav a:focus-visible {
+  border-color: #c8d2e8;
+  background: #f5f7fc;
+  color: var(--accent-strong);
+  outline: none;
+}
+
+.diagnose-jump-nav,
+.strategy-workflow-nav {
+  position: sticky;
+  top: 62px;
+  z-index: 12;
+}
+
+.relationship-evidence-nav,
+.portfolio-evidence-nav {
+  position: sticky;
+  top: 10px;
+  z-index: 12;
+}
+
+.diagnosis-overview {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.diagnosis-overview > div {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-soft);
+}
+
+.diagnosis-overview span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagnosis-overview strong {
+  overflow: hidden;
+  color: #33405a;
+  font: 720 15px var(--mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagnose-section[id],
+.relationship-section[id],
+.relationship-summary[id],
+.relationship-two-column[id],
+.portfolio-lab .workspace-panel[id],
+.anatomy-layout[id],
+.parameter-lab[id],
+.run-summary[id] {
+  scroll-margin-top: 116px;
+}
+
+@media (max-width: 900px) {
+  .diagnosis-overview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (max-width: 720px) {
+  .diagnose-jump-nav,
+  .strategy-workflow-nav,
+  .relationship-evidence-nav,
+  .portfolio-evidence-nav {
+    position: static;
+  }
+
+  .diagnosis-overview { grid-template-columns: 1fr 1fr; }
+  .evidence-jump-nav { padding: 6px; }
+  .evidence-jump-nav a { padding: 6px 8px; }
+
+  .diagnose-section[id],
+  .relationship-section[id],
+  .relationship-summary[id],
+  .relationship-two-column[id],
+  .portfolio-lab .workspace-panel[id],
+  .anatomy-layout[id],
+  .parameter-lab[id],
+  .run-summary[id] {
+    scroll-margin-top: 18px;
+  }
+}

@@ -20,6 +20,8 @@ test('keeps parameter, stress, statistical, regime, fingerprint, and What-if dia
   render(<DiagnosePage traceId="trace-custom" onOpenReplay={onOpenReplay} />)
 
   expect(await screen.findByRole('heading', { name: 'Diagnose' })).toBeInTheDocument()
+  expect(screen.getByRole('navigation', { name: 'Evidence map' })).toHaveTextContent('Strategy failure fingerprint')
+  expect(screen.getByRole('region', { name: 'Diagnosis overview' })).toHaveTextContent('Test Sharpe')
   const trainTestHeading = screen.getByRole('heading', { name: 'Train / Test · 70 / 30' })
   expect(trainTestHeading).toBeInTheDocument()
   expect(trainTestHeading.closest('section')?.querySelector('.train-test-table')).toBeInTheDocument()

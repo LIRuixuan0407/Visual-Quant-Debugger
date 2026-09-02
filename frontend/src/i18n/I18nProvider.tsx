@@ -687,7 +687,7 @@ const zh: Record<string, string> = {
   'Source run': '来源运行', 'Open in Replay': '在回放中打开', 'Chronological evidence': '时间序列证据',
   'Train / Test · 70 / 30': '训练 / 测试 · 70 / 30', Train: '训练', Test: '测试',
   'Train window': '训练窗口', 'Test window': '测试窗口', Return: '收益率', Sharpe: '夏普比率',
-  Methodology: '计算方法', 'Key findings': '关键发现',
+  Methodology: '计算方法', 'Key findings': '关键发现', 'Evidence map': '证据导航', 'Diagnosis overview': '诊断概览',
   Drawdown: '回撤', Turnover: '换手率', Trades: '交易数', 'End equity': '期末权益',
   'Statistical diagnostics': '统计诊断', 'Trace equity evidence': '追踪权益证据',
   'Return ACF': '收益率 ACF', 'Squared Return ACF': '平方收益率 ACF', Lag: '滞后阶数',

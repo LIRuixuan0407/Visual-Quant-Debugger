@@ -85,6 +85,7 @@ test('runs the exact draft, retains last-run summary, and opens its trace and di
   fireEvent.change(screen.getByLabelText('Lookback'), { target: { value: '10' } })
   fireEvent.click(screen.getByRole('button', { name: 'Run Backtest' }))
   expect(await screen.findByRole('heading', { name: 'Backtest summary' })).toBeInTheDocument()
+  expect(screen.getByRole('navigation', { name: 'Evidence map' })).toHaveTextContent('Backtest summary')
   expect(runBacktest).toHaveBeenCalledWith({ ...strategyDefaults, lookback: 10 })
   expect(screen.getByText('Trace matches this draft')).toBeInTheDocument()
 

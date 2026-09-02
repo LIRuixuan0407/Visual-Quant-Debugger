@@ -174,13 +174,23 @@ export default function FactorRelationshipPage() {
         </section>
 
         {record && <>
-          <section className="workspace-panel relationship-summary">
+          <section id="relationship-overview" className="workspace-panel relationship-summary">
             <div className="section-heading"><div><span className="section-kicker">{record.stage} · {day(record.period.start)} → {day(record.period.end)}</span><h2>{tr(record.name)}</h2></div><code>{record.relationship_id}</code></div>
             <div className="relationship-identity"><span>{record.factor_ids.join(' · ')}</span><code>{record.dataset_fingerprint}</code><b>{record.universe.length} securities</b></div>
             <p>{record.correlation_methodology}</p>
           </section>
 
-          <section className="workspace-panel relationship-section">
+          <nav className="evidence-jump-nav relationship-evidence-nav" aria-label={tr('Evidence map')}>
+            <a href="#relationship-overview">{tr('Summary')}</a>
+            <a href="#relationship-correlation">{tr('Correlation Matrix')}</a>
+            {record.pca && <a href="#relationship-pca">{tr('PCA Factor Structure')}</a>}
+            <a href="#relationship-rolling">{tr('Rolling Correlation')}</a>
+            <a href="#relationship-overlap">{tr('Redundancy')} / {tr('Overlap')}</a>
+            <a href="#relationship-incremental">{tr('Incremental Information')}</a>
+            <a href="#relationship-clusters">{tr('Factor Cluster')}</a>
+          </nav>
+
+          <section id="relationship-correlation" className="workspace-panel relationship-section">
             <div className="section-heading"><div><span className="section-kicker">THREE DISTINCT SEMANTICS</span><h2>{tr('Correlation Matrix')}</h2></div><span>Pearson + Spearman</span></div>
             <div className="relationship-matrices">
               <CorrelationMatrix record={record} cells={record.value_correlations} title={tr('Factor Values')} />
@@ -189,7 +199,7 @@ export default function FactorRelationshipPage() {
             </div>
           </section>
 
-          {record.pca && <section className="workspace-panel relationship-section pca-factor-structure">
+          {record.pca && <section id="relationship-pca" className="workspace-panel relationship-section pca-factor-structure">
             <div className="section-heading">
               <div><span className="section-kicker">LATENT FACTOR STRUCTURE · NO AUTO ACTION</span><h2>{tr('PCA Factor Structure')}</h2></div>
               <span>{tr(humanize(record.pca.verdict))}</span>
@@ -236,7 +246,7 @@ export default function FactorRelationshipPage() {
             <p className="relationship-disclosure">{record.pca.boundary_disclosure}</p>
           </section>}
 
-          <section className="workspace-panel relationship-section">
+          <section id="relationship-rolling" className="workspace-panel relationship-section">
             <div className="section-heading"><div><span className="section-kicker">TRAILING BACKEND SERIES</span><h2>{tr('Rolling Correlation')}</h2></div>{selectedRolling && <span>{selectedRolling.window} timestamps</span>}</div>
             <label className="rolling-selector"><span>{tr('Pair and semantic')}</span><select value={selectedRolling ? `${selectedRolling.left_research_id}|${selectedRolling.right_research_id}|${selectedRolling.semantic}` : ''} onChange={(event) => setRollingKey(event.target.value)}>{record.rolling_correlations.map((item) => {
               const key = `${item.left_research_id}|${item.right_research_id}|${item.semantic}`
@@ -251,7 +261,7 @@ export default function FactorRelationshipPage() {
             </>}
           </section>
 
-          <section className="relationship-two-column">
+          <section id="relationship-overlap" className="relationship-two-column">
             <section className="workspace-panel relationship-section">
               <div className="section-heading"><div><span className="section-kicker">ABS RANK CORR + OVERLAP RULE</span><h2>{tr('Redundancy')}</h2></div><span>NO AUTO ACTION</span></div>
               <div className="redundancy-list">{record.redundancy.map((item) => <article key={`${item.left_research_id}:${item.right_research_id}`} className={item.status.toLowerCase()}><header><strong>{factorName(record, item.left_research_id)} × {factorName(record, item.right_research_id)}</strong><span>{item.status.replaceAll('_', ' ')}</span></header><div><code>r {num(item.rank_correlation)}</code><code>{tr('Overlap')} {pct(item.top_quantile_overlap)}</code></div><p>{item.reason}</p></article>)}</div>
@@ -267,13 +277,13 @@ export default function FactorRelationshipPage() {
             </section>
           </section>
 
-          <section className="workspace-panel relationship-section">
+          <section id="relationship-incremental" className="workspace-panel relationship-section">
             <div className="section-heading"><div><span className="section-kicker">DIRECTION-ADJUSTED PERCENTILE RANK AVERAGE</span><h2>{tr('Incremental Information')}</h2></div><span>ASSOCIATION · NOT CAUSAL</span></div>
             <div className="relationship-data-table incremental-table"><div className="header"><span>{tr('Base + Added')}</span><span>Rank IC A / A+B / Δ</span><span>Q5−Q1 A / A+B / Δ</span><span>{tr('Coverage')} A / A+B / Δ</span><span>{tr('Turnover')} A / A+B / Δ</span><span>{tr('Portfolio effect')} A / A+B / Δ</span></div>{record.incremental_information.map((item) => <div key={`${item.base_research_id}:${item.added_research_id}`}><span><strong>{factorName(record, item.base_research_id)}</strong><small>+ {factorName(record, item.added_research_id)}</small></span><code>{num(item.base_rank_ic)} / {num(item.composite_rank_ic)} / {num(item.rank_ic_delta)}</code><code>{pct(item.base_spread)} / {pct(item.composite_spread)} / {pct(item.spread_delta)}</code><code>{pct(item.base_coverage)} / {pct(item.composite_coverage)} / {pct(item.coverage_delta)}</code><code>{pct(item.base_turnover)} / {pct(item.composite_turnover)} / {pct(item.turnover_delta)}</code><code>{pct(item.base_portfolio_return)} / {pct(item.composite_portfolio_return)} / {pct(item.portfolio_effect)}</code></div>)}</div>
             <p className="relationship-disclosure">{record.incremental_disclosure}</p>
           </section>
 
-          <section className="workspace-panel relationship-section">
+          <section id="relationship-clusters" className="workspace-panel relationship-section">
             <div className="section-heading"><div><span className="section-kicker">THRESHOLD GRAPH · CONNECTED COMPONENTS</span><h2>{tr('Factor Cluster')}</h2></div><span>{record.clusters.length}</span></div>
             <div className="factor-clusters">{record.clusters.map((cluster) => <article key={cluster.cluster_id}><span>{cluster.cluster_id}</span><strong>{cluster.factor_research_ids.map((id) => factorName(record, id)).join(' · ')}</strong><small>{cluster.rule}</small></article>)}</div>
           </section>
