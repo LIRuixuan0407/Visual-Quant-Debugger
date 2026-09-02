@@ -65,7 +65,7 @@ describe('Live Paper Forward workspace', () => {
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Paper Account' })).toHaveValue(account.account_id))
     fireEvent.click(screen.getByRole('button', { name: 'Search' }))
     fireEvent.click((await screen.findByText('Apple Inc.')).closest('button')!)
-    expect(screen.getByText('VQD local paper execution')).toBeInTheDocument()
+    expect(screen.getAllByText('VQD local paper execution')).toHaveLength(2)
     expect(screen.getByText('Virtual money only')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Create paper portfolio' }))
     await waitFor(() => expect(screen.getAllByText(snapshot.account_id).length).toBeGreaterThan(0))

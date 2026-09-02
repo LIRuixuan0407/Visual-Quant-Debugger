@@ -33,13 +33,17 @@ _PERIODS: dict[MarketDataTimeframe, int] = {
     "1Min": 7,
 }
 _ADJUSTMENTS: dict[TdxAdjustment, int] = {"NONE": 0, "QFQ": 1, "HFQ": 2}
-_REGION_TZ = {
+_REGION_TZ: dict[MarketRegion, ZoneInfo] = {
     "CN": ZoneInfo("Asia/Shanghai"),
     "HK": ZoneInfo("Asia/Hong_Kong"),
     "US": ZoneInfo("America/New_York"),
 }
-_REGION_CURRENCY = {"CN": "CNY", "HK": "HKD", "US": "USD"}
-_REGION_EXCHANGE = {"CN": "CN", "HK": "HKEX", "US": "US"}
+_REGION_CURRENCY: dict[MarketRegion, Literal["CNY", "HKD", "USD"]] = {
+    "CN": "CNY",
+    "HK": "HKD",
+    "US": "USD",
+}
+_REGION_EXCHANGE: dict[MarketRegion, str] = {"CN": "CN", "HK": "HKEX", "US": "US"}
 
 
 class _FrameLike(Protocol):
@@ -91,7 +95,7 @@ ClientFactory = Callable[[], TdxClientProtocol]
 def _default_client_factory() -> TdxClientProtocol:
     try:
         module = importlib.import_module("easy_tdx.unified")
-        client_class = getattr(module, "AsyncUnifiedTdxClient")
+        client_class = module.AsyncUnifiedTdxClient
     except (ImportError, AttributeError) as exc:
         raise RuntimeError(
             "easy-tdx is not installed; install the backend dependencies again"
@@ -422,9 +426,9 @@ class TdxStockReferenceClient:
                             <= start.date()
                         )
                     else:
-                        oldest_reached = bool(parsed) and min(
-                            item.event_time for item in parsed
-                        ) <= start
+                        oldest_reached = (
+                            bool(parsed) and min(item.event_time for item in parsed) <= start
+                        )
                     if not parsed or oldest_reached or len(rows) < 800:
                         break
                     offset += len(rows)
@@ -435,9 +439,7 @@ class TdxStockReferenceClient:
         unique = {(item.symbol, item.event_time): item for item in result}
         return tuple(sorted(unique.values(), key=lambda item: (item.event_time, item.symbol)))
 
-    async def snapshot(
-        self, symbol: str, *, region: MarketRegion | None = None
-    ) -> StockSnapshot:
+    async def snapshot(self, symbol: str, *, region: MarketRegion | None = None) -> StockSnapshot:
         parsed = parse_tdx_symbol(symbol, region=region)
         received = datetime.now(UTC)
         parsed, row = await self._quote_row(parsed)
@@ -508,11 +510,7 @@ class TdxStockReferenceClient:
             open_now = weekday_open and (570 <= minutes < 720 or 780 <= minutes < 960)
         else:
             open_now = weekday_open and 570 <= minutes < 960
-        age = (
-            None
-            if minute is None
-            else max(0.0, (received - minute.event_time).total_seconds())
-        )
+        age = None if minute is None else max(0.0, (received - minute.event_time).total_seconds())
         freshness = (
             "UNVERIFIED"
             if age is None
@@ -600,12 +598,13 @@ class TdxMarketDataAdapter(MarketDataAdapter):
             return None
         received = datetime.now(UTC)
         bars = [
-            self._reference._bar(symbol, row, "1Min", received, adjustment="NONE")
-            for row in rows
+            self._reference._bar(symbol, row, "1Min", received, adjustment="NONE") for row in rows
         ]
-        current_minute = received.astimezone(_REGION_TZ[self._region]).replace(
-            second=0, microsecond=0
-        ).astimezone(UTC)
+        current_minute = (
+            received.astimezone(_REGION_TZ[self._region])
+            .replace(second=0, microsecond=0)
+            .astimezone(UTC)
+        )
         completed = [bar for bar in bars if bar.event_time < current_minute]
         return None if not completed else max(completed, key=lambda item: item.event_time)
 

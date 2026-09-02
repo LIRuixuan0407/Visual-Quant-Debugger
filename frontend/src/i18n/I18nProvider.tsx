@@ -405,7 +405,7 @@ const zh: Record<string, string> = {
   'MULTI-MARKET EQUITIES': '多市场股票', 'Find current market data': '查找当前市场行情',
   'China A-shares': '中国A股', 'Hong Kong': '香港', 'United States': '美国', 'No API key': '无需 API Key',
   'Price adjustment': '价格复权', Raw: '不复权', 'Forward adjusted': '前复权', 'Backward adjusted': '后复权',
-  LIVE: '实时', DELAYED: '延迟', CLOSED: '休市', UNVERIFIED: '未验证', Lot: '每手',
+  LIVE: '实时', DELAYED: '延迟', CLOSED: '休市', Lot: '每手',
   'Data evidence sections': '数据证据分区', 'Market Datasets': '市场数据集',
   'Corporate Actions': '公司行动', 'Historical Universes': '历史股票池',
   'Import actions JSON': '导入公司行动 JSON', 'Import universe JSON': '导入历史股票池 JSON',

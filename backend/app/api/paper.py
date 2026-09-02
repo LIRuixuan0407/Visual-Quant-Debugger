@@ -177,8 +177,8 @@ async def create_historical_dataset(request: HistoricalDatasetRequest) -> Datase
         retrieved = datetime.now(UTC)
         security_names: dict[str, str] = {}
         if request.provider == "tdx":
-            client = tdx_reference_client()
-            bars = await client.historical_bars(
+            tdx_client = tdx_reference_client()
+            bars = await tdx_client.historical_bars(
                 request.symbols,
                 request.start,
                 request.end,
@@ -188,7 +188,7 @@ async def create_historical_dataset(request: HistoricalDatasetRequest) -> Datase
             )
             for symbol in request.symbols:
                 try:
-                    security = await client.get_security(symbol, region=request.market)
+                    security = await tdx_client.get_security(symbol, region=request.market)
                 except (RuntimeError, ValueError):
                     continue
                 security_names[security.symbol] = security.name
@@ -196,8 +196,8 @@ async def create_historical_dataset(request: HistoricalDatasetRequest) -> Datase
         else:
             if request.market != "US":
                 raise ValueError("Alpaca supports US equities only")
-            client = stock_reference_client()
-            bars = await client.historical_bars(
+            alpaca_client = stock_reference_client()
+            bars = await alpaca_client.historical_bars(
                 request.symbols,
                 request.start,
                 request.end,
@@ -205,7 +205,7 @@ async def create_historical_dataset(request: HistoricalDatasetRequest) -> Datase
                 feed=request.feed,
             )
             for symbol in request.symbols:
-                security = await client.get_security(symbol)
+                security = await alpaca_client.get_security(symbol)
                 security_names[security.symbol] = security.name
             feed = request.feed
         if not bars:
@@ -342,11 +342,14 @@ def create_paper_session(request: CreatePaperSession) -> PaperSessionSnapshot:
         if request.provider == "tdx":
             if request.feed != "tdx":
                 raise ValueError("TDX paper sessions must use the 'tdx' feed")
-            region: MarketRegion = {
-                "CN_REGULAR": "CN",
-                "HK_REGULAR": "HK",
-                "US_REGULAR": "US",
-            }[request.market_session]
+            region = cast(
+                MarketRegion,
+                {
+                    "CN_REGULAR": "CN",
+                    "HK_REGULAR": "HK",
+                    "US_REGULAR": "US",
+                }[request.market_session],
+            )
             for symbol in request.symbols:
                 parse_tdx_symbol(symbol, region=region)
         if request.provider == "alpaca":

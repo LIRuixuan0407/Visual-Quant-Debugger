@@ -149,7 +149,7 @@ def test_real_vectorbt_portfolio_only_is_basic_and_explicit_arrays_are_standard(
         dataset_registry_override=datasets,
     )
     assert explicit_run.trace is not None
-    assert explicit_run.manifest.runtime.framework_version == "1.1.0"
+    assert explicit_run.manifest.runtime.framework_version == "1.0.0"
     assert explicit_run.manifest.runtime.trace_fidelity == "STANDARD"
     assert explicit_run.manifest.runtime.trace_capabilities.feature_values == "AVAILABLE"
     assert explicit_run.manifest.runtime.trace_capabilities.decision_events == "AVAILABLE"

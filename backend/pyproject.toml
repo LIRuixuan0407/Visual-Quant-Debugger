@@ -33,12 +33,12 @@ framework-backtesting = [
   "backtesting>=0.6.6,<0.7",
 ]
 framework-vectorbt = [
-  "vectorbt>=1.1,<2",
+  "vectorbt>=1.0,<1.1",
   "plotly>=5.24,<7",
 ]
 frameworks = [
   "backtesting>=0.6.6,<0.7",
-  "vectorbt>=1.1,<2",
+  "vectorbt>=1.0,<1.1",
   "plotly>=5.24,<7",
 ]
 

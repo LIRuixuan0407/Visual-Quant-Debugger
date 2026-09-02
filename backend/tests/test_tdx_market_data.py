@@ -146,9 +146,7 @@ def test_tdx_historical_bars_normalize_cn_hk_and_us_without_credentials() -> Non
         hk = await reference.historical_bars(
             ("00700.HK",), start, end, timeframe="1Day", region="HK"
         )
-        us = await reference.historical_bars(
-            ("AAPL",), start, end, timeframe="1Day", region="US"
-        )
+        us = await reference.historical_bars(("AAPL",), start, end, timeframe="1Day", region="US")
 
         assert [item.symbol for item in cn] == ["600519.SH", "600519.SH"]
         assert [item.symbol for item in hk] == ["00700.HK", "00700.HK"]
@@ -159,7 +157,6 @@ def test_tdx_historical_bars_normalize_cn_hk_and_us_without_credentials() -> Non
         assert ("ex-kline", 74, "AAPL") in fake.calls
 
     asyncio.run(scenario())
-
 
 
 def test_tdx_hk_symbol_resolves_extension_market_before_loading_bars() -> None:
@@ -186,6 +183,7 @@ def test_tdx_hk_symbol_resolves_extension_market_before_loading_bars() -> None:
         assert ("ex-kline", 48, "08000") in fake.calls
 
     asyncio.run(scenario())
+
 
 def test_tdx_snapshot_exposes_market_currency_lot_and_freshness() -> None:
     async def scenario() -> None:

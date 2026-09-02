@@ -431,11 +431,14 @@ class PaperSessionService:
             CreatePaperAccount(
                 name=f"Recovered {manifest.strategy_name}",
                 initial_cash=manifest.initial_cash,
-                currency={
-                    "CN_REGULAR": "CNY",
-                    "HK_REGULAR": "HKD",
-                    "US_REGULAR": "USD",
-                }[manifest.market_session],
+                currency=cast(
+                    Literal["CNY", "HKD", "USD"],
+                    {
+                        "CN_REGULAR": "CNY",
+                        "HK_REGULAR": "HKD",
+                        "US_REGULAR": "USD",
+                    }[manifest.market_session],
+                ),
             )
         )
         return manifest.model_copy(update={"account_id": account.account_id})
@@ -445,11 +448,14 @@ class PaperSessionService:
         if manifest.provider == "fake":
             return FakeLiveMarketDataAdapter(feed=manifest.feed)
         if manifest.provider == "tdx":
-            region: MarketRegion = {
-                "CN_REGULAR": "CN",
-                "HK_REGULAR": "HK",
-                "US_REGULAR": "US",
-            }[manifest.market_session]
+            region = cast(
+                MarketRegion,
+                {
+                    "CN_REGULAR": "CN",
+                    "HK_REGULAR": "HK",
+                    "US_REGULAR": "US",
+                }[manifest.market_session],
+            )
             return TdxMarketDataAdapter(region=region)
         credentials = integration_vault.resolve_alpaca()
         return AlpacaStockMarketDataAdapter(
@@ -516,11 +522,14 @@ class PaperSessionService:
                 CreatePaperAccount(
                     name=f"{strategy.metadata.name} Paper",
                     initial_cash=request.initial_cash,
-                    currency={
-                        "CN_REGULAR": "CNY",
-                        "HK_REGULAR": "HKD",
-                        "US_REGULAR": "USD",
-                    }[request.market_session],
+                    currency=cast(
+                        Literal["CNY", "HKD", "USD"],
+                        {
+                            "CN_REGULAR": "CNY",
+                            "HK_REGULAR": "HKD",
+                            "US_REGULAR": "USD",
+                        }[request.market_session],
+                    ),
                 )
             )
             if request.account_id is None
