@@ -18,7 +18,15 @@ from app.diagnostics.models import (
     ExecutionDelayPoint,
     LookbackSensitivityPoint,
     TrainTestSplit,
+    WhatIfInputs,
+    WhatIfMetricDeltas,
+    WhatIfMetrics,
+    WhatIfParameterControl,
+    WhatIfScenario,
+    WhatIfSupport,
 )
+from app.diagnostics.statistical import build_statistical_diagnostics
+from app.diagnostics.volatility import build_volatility_diagnostics
 from app.runs import BacktestRunRecord, OpenRunResult, execute_open_run
 from app.sdk.loader import load_strategy
 from app.sdk.registry import strategy_registry
@@ -183,6 +191,142 @@ def _native_trace(result: OpenRunResult) -> BacktestTrace:
     return result.trace
 
 
+def _what_if_metrics(trace: BacktestTrace, initial_cash: float) -> WhatIfMetrics:
+    metrics = _trace_window_metrics(trace, initial_cash, 0, len(trace.timeline))
+    return WhatIfMetrics(
+        total_return=metrics.total_return,
+        sharpe=metrics.sharpe,
+        max_drawdown=metrics.max_drawdown,
+        turnover=metrics.turnover,
+        trade_count=metrics.trade_count,
+        net_pnl=metrics.final_equity - initial_cash,
+    )
+
+
+def _what_if_parameter(record: BacktestRunRecord) -> WhatIfParameterControl | None:
+    definition = get_strategy_definition(record.strategy_id)
+    if definition is None:
+        return None
+    key = definition.diagnostic_capabilities.parameter_sensitivity
+    parameter = next((item for item in definition.parameters if item.key == key), None)
+    if key is None or parameter is None:
+        return None
+    current = (record.parameter_values or {}).get(key, parameter.default_value)
+    return WhatIfParameterControl(
+        key=parameter.key,
+        label=parameter.label,
+        value_type=parameter.value_type,
+        current_value=current,
+        minimum=parameter.minimum,
+        maximum=parameter.maximum,
+        step=parameter.step,
+        unit=parameter.unit,
+    )
+
+
+def _what_if_support(record: BacktestRunRecord) -> WhatIfSupport:
+    initial_cash = float((record.parameter_values or {}).get("initial_cash", 100_000.0))
+    parameter = _what_if_parameter(record)
+    baseline_inputs = WhatIfInputs(
+        fee_bps=float((record.parameter_values or {}).get("fee_bps", 5.0)),
+        slippage_bps=float((record.parameter_values or {}).get("slippage_bps", 5.0)),
+        additional_execution_delay_bars=0,
+        strategy_parameters=(
+            {} if parameter is None else {parameter.key: parameter.current_value}
+        ),
+    )
+    return WhatIfSupport(
+        status="AVAILABLE",
+        baseline_inputs=baseline_inputs,
+        baseline_metrics=_what_if_metrics(record.trace, initial_cash),
+        parameter=parameter,
+        calculation_details=(
+            "Each scenario is a full deterministic rerun on the source run's recorded "
+            "dataset and strategy revision.",
+            "Fees and slippage are applied to each executed side; execution delay never "
+            "forces an end-of-data fill.",
+            "Baseline inputs remain the immutable assumptions recorded on the source run.",
+        ),
+    )
+
+
+def run_what_if_scenario(record: BacktestRunRecord, inputs: WhatIfInputs) -> WhatIfScenario:
+    support = _what_if_support(record)
+    baseline_inputs = support.baseline_inputs
+    baseline_metrics = support.baseline_metrics
+    if baseline_inputs is None or baseline_metrics is None:
+        raise ValueError("What-if is not available for this run")
+    parameter = support.parameter
+    allowed = set() if parameter is None else {parameter.key}
+    unexpected = sorted(set(inputs.strategy_parameters) - allowed)
+    if unexpected:
+        raise ValueError(f"Unsupported What-if strategy parameters: {', '.join(unexpected)}")
+    strategy_parameters = dict(baseline_inputs.strategy_parameters)
+    strategy_parameters.update(inputs.strategy_parameters)
+    if parameter is not None:
+        value = strategy_parameters[parameter.key]
+        if parameter.value_type == "integer" and int(value) != value:
+            raise ValueError(f"What-if parameter '{parameter.key}' must be an integer")
+        if value < parameter.minimum:
+            raise ValueError(
+                f"What-if parameter '{parameter.key}' must be at least {parameter.minimum}"
+            )
+        if parameter.maximum is not None and value > parameter.maximum:
+            raise ValueError(
+                f"What-if parameter '{parameter.key}' must be at most {parameter.maximum}"
+            )
+    effective_inputs = WhatIfInputs(
+        fee_bps=inputs.fee_bps,
+        slippage_bps=inputs.slippage_bps,
+        additional_execution_delay_bars=inputs.additional_execution_delay_bars,
+        strategy_parameters=strategy_parameters,
+    )
+    rerun_result = _native_rerun(
+        record,
+        parameter_updates={
+            "fee_bps": effective_inputs.fee_bps,
+            "slippage_bps": effective_inputs.slippage_bps,
+            **effective_inputs.strategy_parameters,
+        },
+        additional_delay=effective_inputs.additional_execution_delay_bars,
+    )
+    stressed = _what_if_metrics(
+        _native_trace(rerun_result),
+        float((record.parameter_values or {}).get("initial_cash", 100_000.0)),
+    )
+    deltas = WhatIfMetricDeltas(
+        total_return=stressed.total_return - baseline_metrics.total_return,
+        sharpe=stressed.sharpe - baseline_metrics.sharpe,
+        max_drawdown=stressed.max_drawdown - baseline_metrics.max_drawdown,
+        turnover=stressed.turnover - baseline_metrics.turnover,
+        trade_count=stressed.trade_count - baseline_metrics.trade_count,
+        net_pnl=stressed.net_pnl - baseline_metrics.net_pnl,
+    )
+    verdict: Literal["LOWER_NET_PNL", "HIGHER_NET_PNL", "UNCHANGED_NET_PNL"]
+    if deltas.net_pnl < 0:
+        verdict = "LOWER_NET_PNL"
+    elif deltas.net_pnl > 0:
+        verdict = "HIGHER_NET_PNL"
+    else:
+        verdict = "UNCHANGED_NET_PNL"
+    return WhatIfScenario(
+        baseline_inputs=baseline_inputs,
+        inputs=effective_inputs,
+        baseline_metrics=baseline_metrics,
+        stressed_metrics=stressed,
+        deltas=deltas,
+        unfilled_signal_count=rerun_result.unfilled_signal_count,
+        verdict=verdict,
+        evidence=(
+            f"Sharpe changes from {baseline_metrics.sharpe:.3f} to {stressed.sharpe:.3f}.",
+            f"Net P&L changes from {baseline_metrics.net_pnl:.2f} to {stressed.net_pnl:.2f}.",
+            f"Max drawdown changes from {baseline_metrics.max_drawdown:.4%} to "
+            f"{stressed.max_drawdown:.4%}.",
+        ),
+        calculation_details=support.calculation_details,
+    )
+
+
 def _diagnose_native_run(trace_id: str, record: BacktestRunRecord) -> DiagnosisReport:
     baseline = record.trace
     bar_count = len(baseline.timeline)
@@ -280,6 +424,9 @@ def _diagnose_native_run(trace_id: str, record: BacktestRunRecord) -> DiagnosisR
         execution_delay=delays,
         observations=_observations(train, test, costs, delays),
         sensitivity_available=sensitivity_parameter is not None,
+        statistical_diagnostics=build_statistical_diagnostics(baseline),
+        volatility_diagnostics=build_volatility_diagnostics(baseline),
+        what_if=_what_if_support(record),
     )
 
 
@@ -351,5 +498,13 @@ def diagnose_framework_trace(
             parameter_sensitivity="NOT_SUPPORTED",
             cost_stress="NOT_SUPPORTED",
             execution_delay="NOT_SUPPORTED",
+        ),
+        statistical_diagnostics=build_statistical_diagnostics(trace),
+        volatility_diagnostics=build_volatility_diagnostics(trace),
+        what_if=WhatIfSupport(
+            status="NOT_SUPPORTED",
+            calculation_details=(
+                "What-if reruns require a native VQD strategy execution contract.",
+            ),
         ),
     )

@@ -1,5 +1,5 @@
 import { readJson } from './client'
-import type { DiagnosisReport, DiagnosticMetrics } from '../types/diagnostics'
+import type { DiagnosisReport, DiagnosticMetrics, WhatIfInputs, WhatIfScenario } from '../types/diagnostics'
 
 function isMetrics(value: unknown): value is DiagnosticMetrics {
   if (typeof value !== 'object' || value === null) return false
@@ -34,3 +34,26 @@ export async function createDiagnosis(traceId: string): Promise<DiagnosisReport>
   return body
 }
 
+function isWhatIfScenario(value: unknown): value is WhatIfScenario {
+  if (typeof value !== 'object' || value === null) return false
+  const item = value as Record<string, unknown>
+  return (
+    typeof item.baseline_inputs === 'object' && item.baseline_inputs !== null &&
+    typeof item.inputs === 'object' && item.inputs !== null &&
+    typeof item.baseline_metrics === 'object' && item.baseline_metrics !== null &&
+    typeof item.stressed_metrics === 'object' && item.stressed_metrics !== null &&
+    typeof item.deltas === 'object' && item.deltas !== null &&
+    typeof item.verdict === 'string'
+  )
+}
+
+export async function createWhatIfScenario(traceId: string, inputs: WhatIfInputs): Promise<WhatIfScenario> {
+  const response = await fetch('/api/diagnostics/what-if', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ trace_id: traceId, inputs }),
+  })
+  const body = await readJson(response, 'POST /api/diagnostics/what-if')
+  if (!isWhatIfScenario(body)) throw new Error('POST /api/diagnostics/what-if returned a malformed scenario.')
+  return body
+}

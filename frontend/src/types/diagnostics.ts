@@ -12,6 +12,128 @@ export interface DiagnosticMetrics {
   note: string | null
 }
 
+export interface AutocorrelationPoint {
+  lag: number
+  status: 'OK' | 'INSUFFICIENT_DATA'
+  value: number | null
+}
+
+export interface ReturnDiagnostics {
+  status: 'OK' | 'INSUFFICIENT_DATA'
+  observation_count: number
+  return_acf: AutocorrelationPoint[]
+  squared_return_acf: AutocorrelationPoint[]
+  lag_1_return_autocorrelation: number | null
+  lag_1_squared_return_autocorrelation: number | null
+  note: string | null
+}
+
+export interface PairMeanReversionEvidence {
+  status: 'OK' | 'INSUFFICIENT_DATA'
+  observation_count: number
+  hedge_ratio_observation_count: number
+  phi: number | null
+  spread_lag_1_autocorrelation: number | null
+  half_life_bars: number | null
+  hedge_ratio_mean: number | null
+  hedge_ratio_std: number | null
+  note: string | null
+}
+
+export type VolatilityRegime = 'LOW' | 'NORMAL' | 'HIGH'
+
+export interface VolatilityPoint {
+  timestamp: string
+  market_return: number | null
+  rolling_historical_vol: number | null
+  ewma_vol: number | null
+  regime: VolatilityRegime | null
+}
+
+export interface VolatilityDiagnostics {
+  status: 'OK' | 'INSUFFICIENT_DATA'
+  rolling_window: number
+  ewma_decay: number
+  annualization_factor: number
+  market_return_method: string
+  thresholds: { low_upper_bound: number; high_lower_bound: number }
+  points: VolatilityPoint[]
+  current_regime: VolatilityRegime | null
+  current_historical_vol: number | null
+  current_ewma_vol: number | null
+  drawdown_overlap: Array<{
+    episode_id: string
+    rank_by_depth: number
+    start_time: string
+    trough_time: string
+    end_time: string
+    max_drawdown: number
+    start_regime: VolatilityRegime | null
+    ewma_rising_at_start: boolean | null
+    regime_changed_at_start: boolean | null
+  }>
+  evaluable_drawdown_count: number
+  rising_volatility_start_count: number
+  regime_change_start_count: number
+  verdict: 'RISING_VOLATILITY_OVERLAP' | 'MIXED_VOLATILITY_OVERLAP' | 'LIMITED_VOLATILITY_OVERLAP' | 'NO_DRAWDOWNS' | 'INSUFFICIENT_DATA'
+  summary: string
+  calculation_details: string[]
+}
+
+export interface WhatIfInputs {
+  fee_bps: number
+  slippage_bps: number
+  additional_execution_delay_bars: 0 | 1 | 2
+  strategy_parameters: Record<string, number>
+}
+
+export interface WhatIfMetrics {
+  total_return: number
+  sharpe: number
+  max_drawdown: number
+  turnover: number
+  trade_count: number
+  net_pnl: number
+}
+
+export interface WhatIfMetricDeltas {
+  total_return: number
+  sharpe: number
+  max_drawdown: number
+  turnover: number
+  trade_count: number
+  net_pnl: number
+}
+
+export interface WhatIfScenario {
+  baseline_inputs: WhatIfInputs
+  inputs: WhatIfInputs
+  baseline_metrics: WhatIfMetrics
+  stressed_metrics: WhatIfMetrics
+  deltas: WhatIfMetricDeltas
+  unfilled_signal_count: number
+  verdict: 'LOWER_NET_PNL' | 'HIGHER_NET_PNL' | 'UNCHANGED_NET_PNL'
+  evidence: string[]
+  calculation_details: string[]
+}
+
+export interface WhatIfSupport {
+  status: 'AVAILABLE' | 'NOT_SUPPORTED'
+  baseline_inputs: WhatIfInputs | null
+  baseline_metrics: WhatIfMetrics | null
+  parameter: {
+    key: string
+    label: string
+    value_type: 'integer' | 'number'
+    current_value: number
+    minimum: number
+    maximum: number | null
+    step: number
+    unit: string
+  } | null
+  calculation_details: string[]
+}
+
 export interface DiagnosisReport {
   report_version: '1.0'
   source_run: {
@@ -70,4 +192,10 @@ export interface DiagnosisReport {
     cost_stress: 'AVAILABLE' | 'NOT_SUPPORTED'
     execution_delay: 'AVAILABLE' | 'NOT_SUPPORTED'
   }
+  statistical_diagnostics?: {
+    returns: ReturnDiagnostics
+    pair_mean_reversion: PairMeanReversionEvidence | null
+  } | null
+  volatility_diagnostics?: VolatilityDiagnostics | null
+  what_if?: WhatIfSupport | null
 }

@@ -1,8 +1,18 @@
-import type { DiagnosisReport, DiagnosticMetrics } from '../../types/diagnostics'
+import type { DiagnosisReport, DiagnosticMetrics, WhatIfScenario } from '../../types/diagnostics'
 
 const metrics: DiagnosticMetrics = {
   status: 'OK', return: 0.012, sharpe: 1.4, max_drawdown: -0.03, turnover: 0.8,
   trade_count: 3, final_equity: 101200, bar_count: 28, note: null,
+}
+
+const whatIfBaseline = {
+  total_return: 0.012, sharpe: 1.4, max_drawdown: -0.03, turnover: 0.8,
+  trade_count: 3, net_pnl: 1200,
+}
+
+const baselineInputs = {
+  fee_bps: 5, slippage_bps: 5, additional_execution_delay_bars: 0 as const,
+  strategy_parameters: { lookback: 5 },
 }
 
 export const diagnosisReport: DiagnosisReport = {
@@ -19,6 +29,53 @@ export const diagnosisReport: DiagnosisReport = {
     pnl_isolation_policy: 'Train P&L is not counted in test return.',
     train: metrics,
     test: { ...metrics, return: -0.004, sharpe: -0.5, max_drawdown: -0.018, trade_count: 1, bar_count: 12, final_equity: 100796 },
+  },
+  statistical_diagnostics: {
+    returns: {
+      status: 'OK', observation_count: 39,
+      return_acf: [0.18, -0.12, 0.08, -0.04, 0.02, -0.01, 0.06, -0.03, 0.01, -0.02].map((value, index) => ({ lag: index + 1, status: 'OK', value })),
+      squared_return_acf: [0.31, 0.22, 0.16, 0.1, 0.08, 0.04, 0.03, 0.01, -0.02, -0.01].map((value, index) => ({ lag: index + 1, status: 'OK', value })),
+      lag_1_return_autocorrelation: 0.18, lag_1_squared_return_autocorrelation: 0.31, note: null,
+    },
+    pair_mean_reversion: {
+      status: 'OK', observation_count: 36, hedge_ratio_observation_count: 36,
+      phi: 0.72, spread_lag_1_autocorrelation: 0.69, half_life_bars: 2.11,
+      hedge_ratio_mean: 1.08, hedge_ratio_std: 0.07, note: null,
+    },
+  },
+  volatility_diagnostics: {
+    status: 'OK', rolling_window: 21, ewma_decay: 0.94, annualization_factor: 252,
+    market_return_method: "At each bar, compute each recorded symbol's simple close-to-close return, then take their equal-weight mean.",
+    thresholds: { low_upper_bound: 0.15, high_lower_bound: 0.30 },
+    points: Array.from({ length: 40 }, (_, index) => ({
+      timestamp: new Date(Date.UTC(2024, 0, index + 1, 16)).toISOString(),
+      market_return: index === 0 ? null : (index % 3 - 1) * 0.008,
+      rolling_historical_vol: index < 21 ? null : 0.18 + index * 0.002,
+      ewma_vol: index === 0 ? null : 0.14 + index * 0.004,
+      regime: index === 0 ? null : index >= 39 ? 'HIGH' as const : index >= 3 ? 'NORMAL' as const : 'LOW' as const,
+    })),
+    current_regime: 'HIGH', current_historical_vol: 0.258, current_ewma_vol: 0.296,
+    drawdown_overlap: [{
+      episode_id: 'drawdown-0001', rank_by_depth: 1,
+      start_time: '2024-01-25T16:00:00.000Z', trough_time: '2024-01-28T16:00:00.000Z', end_time: '2024-02-02T16:00:00.000Z',
+      max_drawdown: -0.03, start_regime: 'NORMAL', ewma_rising_at_start: true, regime_changed_at_start: false,
+    }],
+    evaluable_drawdown_count: 1, rising_volatility_start_count: 1, regime_change_start_count: 0,
+    verdict: 'RISING_VOLATILITY_OVERLAP',
+    summary: '1 of the 1 evaluable largest drawdowns began while EWMA volatility was rising.',
+    calculation_details: [
+      'Historical volatility uses the sample standard deviation of 21 equal-weight market returns, annualized by sqrt(252).',
+      'EWMA variance uses lambda=0.94 and zero-mean returns.',
+      'Drawdown overlap is descriptive and does not establish causality.',
+    ],
+  },
+  what_if: {
+    status: 'AVAILABLE', baseline_inputs: baselineInputs, baseline_metrics: whatIfBaseline,
+    parameter: { key: 'lookback', label: 'Lookback', value_type: 'integer', current_value: 5, minimum: 2, maximum: null, step: 1, unit: 'bars' },
+    calculation_details: [
+      "Each scenario is a full deterministic rerun on the source run's recorded dataset and strategy revision.",
+      'Baseline inputs remain the immutable assumptions recorded on the source run.',
+    ],
   },
   lookback_sensitivity: [2, 4, 5, 8, 10, 12, 14].map((lookback) => ({
     lookback, is_current: lookback === 5, train: { ...metrics, sharpe: lookback / 5 },
@@ -38,3 +95,17 @@ export const diagnosisReport: DiagnosisReport = {
   }],
 }
 
+export const whatIfScenario: WhatIfScenario = {
+  baseline_inputs: baselineInputs,
+  inputs: { ...baselineInputs, fee_bps: 20, slippage_bps: 12, additional_execution_delay_bars: 1 },
+  baseline_metrics: whatIfBaseline,
+  stressed_metrics: { total_return: 0.006, sharpe: 0.71, max_drawdown: -0.045, turnover: 0.76, trade_count: 2, net_pnl: 600 },
+  deltas: { total_return: -0.006, sharpe: -0.69, max_drawdown: -0.015, turnover: -0.04, trade_count: -1, net_pnl: -600 },
+  unfilled_signal_count: 1,
+  verdict: 'LOWER_NET_PNL',
+  evidence: ['Sharpe changes from 1.400 to 0.710.', 'Net P&L changes from 1200.00 to 600.00.'],
+  calculation_details: [
+    "Each scenario is a full deterministic rerun on the source run's recorded dataset and strategy revision.",
+    'Baseline inputs remain the immutable assumptions recorded on the source run.',
+  ],
+}

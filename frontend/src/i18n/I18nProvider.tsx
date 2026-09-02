@@ -671,6 +671,50 @@ const zh: Record<string, string> = {
   'Train window': '训练窗口', 'Test window': '测试窗口', Return: '收益率', Sharpe: '夏普比率',
   Methodology: '计算方法', 'Key findings': '关键发现',
   Drawdown: '回撤', Turnover: '换手率', Trades: '交易数', 'End equity': '期末权益',
+  'Statistical diagnostics': '统计诊断', 'Trace equity evidence': '追踪权益证据',
+  'Return ACF': '收益率 ACF', 'Squared Return ACF': '平方收益率 ACF', Lag: '滞后阶数',
+  'Return and squared return autocorrelation by lag': '按滞后阶数比较收益率与平方收益率自相关',
+  'Return observations': '有效收益观测数',
+  'Lag-1 return autocorrelation': '一阶收益率自相关',
+  'Lag-1 squared-return autocorrelation': '一阶平方收益率自相关',
+  'Some ACF values are unavailable because the return series is too short or constant.': '收益序列过短或为常数，因此部分 ACF 数值不可用。',
+  'Pair mean-reversion evidence': '配对均值回归证据',
+  'Valid spread observations': '有效价差观测数', 'Spread lag-1 ACF': '价差一阶 ACF',
+  'Half-life': '半衰期', 'Hedge ratio mean / std': '对冲比率均值 / 标准差', Unavailable: '不可用',
+  'This is diagnostic evidence, not proof of stationarity or cointegration.': '这些结果是诊断证据，不是平稳性或协整关系的证明。',
+  'Not available in this cached report': '此缓存报告中不可用',
+  'Run diagnostics again on a new Trace to calculate statistical evidence.': '请对新的追踪记录重新运行诊断，以计算统计证据。',
+  'Volatility diagnostics': '波动率诊断', 'Recorded market and strategy evidence': '已记录的市场与策略证据',
+  'Run diagnostics again to calculate volatility evidence.': '请重新运行诊断以计算波动率证据。',
+  Verdict: '诊断结论', RISING_VOLATILITY_OVERLAP: '主要回撤多与波动率上升同时出现',
+  MIXED_VOLATILITY_OVERLAP: '主要回撤开始时的波动率状态不一致',
+  LIMITED_VOLATILITY_OVERLAP: '主要回撤很少与波动率上升同时出现',
+  NO_DRAWDOWNS: '没有可叠加分析的策略回撤',
+  'Historical and EWMA volatility with strategy drawdown overlays': '历史波动率、EWMA 波动率与策略回撤叠加图',
+  'd historical vol': '日历史波动率', 'Major drawdowns': '主要回撤',
+  'Volatility regime': '波动率状态', 'EWMA volatility': 'EWMA 波动率',
+  'Rising-vol drawdown starts': '波动率上升时开始的回撤',
+  'Regime-change drawdown starts': '状态切换时开始的回撤',
+  LOW: '低', NORMAL: '正常', HIGH: '高',
+  'What-if Lab': 'What-if 实验室', 'Full deterministic rerun': '完整确定性重跑',
+  'What-if requires a native VQD rerun contract.': 'What-if 需要 VQD 原生重跑契约。',
+  'Transaction cost': '交易费用', Stress: '压力场景', Change: '变化',
+  'Running scenario…': '正在运行场景…', 'Run scenario': '运行场景',
+  BASELINE_READY: '基线已就绪，可进行比较', LOWER_NET_PNL: '所选假设降低了净盈亏',
+  HIGHER_NET_PNL: '所选假设提高了净盈亏', UNCHANGED_NET_PNL: '所选假设未改变净盈亏',
+  'The comparison reflects a full backend rerun under the selected assumptions.': '该比较来自在所选假设下执行的完整后端重跑。',
+  'Baseline metrics remain visible until a stressed scenario is run.': '在运行压力场景前，基线指标会持续显示。',
+  'Trade count': '交易数',
+  'Change assumptions, then run a scenario to produce stressed evidence.': '修改假设并运行场景后，将生成压力测试证据。',
+  "At each bar, compute each recorded symbol's simple close-to-close return, then take their equal-weight mean.": '每根 K 线先计算所有已记录标的的简单收盘到收盘收益率，再取等权均值。',
+  "Each scenario is a full deterministic rerun on the source run's recorded dataset and strategy revision.": '每个场景都会在来源运行记录的数据集与策略版本上进行完整的确定性重跑。',
+  'Fees and slippage are applied to each executed side; execution delay never forces an end-of-data fill.': '手续费和滑点应用于每个已成交方向；执行延迟不会在数据末端强制成交。',
+  'Baseline inputs remain the immutable assumptions recorded on the source run.': '基线输入始终保留来源运行中记录的不可变假设。',
+  'Drawdown overlap is descriptive and does not establish causality.': '回撤叠加仅作描述，不构成因果关系证明。',
+  'No strategy drawdown episodes are available for volatility overlap analysis.': '没有可用于波动率叠加分析的策略回撤阶段。',
+  'Drawdown overlap is unavailable until volatility warm-up is complete.': '波动率预热完成前，回撤叠加分析不可用。',
+  'Regimes use annualized EWMA volatility: Low below 15%, Normal from 15% to below 30%, High at or above 30%.': '波动率状态使用年化 EWMA 波动率划分：低于 15% 为低，15% 至 30% 以下为正常，30% 及以上为高。',
+  'Drawdown overlays come from the recorded strategy equity curve; overlap is descriptive and does not establish causality.': '回撤叠加来自已记录的策略权益曲线；这种重合仅作描述，不构成因果关系证明。',
   'Full-pipeline reruns': '完整流程重跑', 'Lookback sensitivity': '回看窗口敏感性',
   'Train Sharpe': '训练集夏普', 'Test Sharpe': '测试集夏普',
   'Train and test Sharpe across lookback candidates': '不同回看窗口下的训练集与测试集夏普比较',
@@ -1153,6 +1197,18 @@ function translateDynamic(rawText: string): string {
   if (frictionEvidence) return `${frictionEvidence[1]} 收益 ${frictionEvidence[2]}；${frictionEvidence[3]} 收益 ${frictionEvidence[4]}。`
   const delayEvidence = text.match(/^(t\+\d+) return (.+); (t\+\d+) return (.+); (t\+\d+) unfilled signals (\d+)\.$/)
   if (delayEvidence) return `${delayEvidence[1]} 收益 ${delayEvidence[2]}；${delayEvidence[3]} 收益 ${delayEvidence[4]}；${delayEvidence[5]} 未成交信号 ${delayEvidence[6]} 个。`
+  const volatilityOverlap = text.match(/^(\d+) of the (\d+) evaluable largest drawdowns began while EWMA volatility was rising\.$/)
+  if (volatilityOverlap) return `${volatilityOverlap[1]} / ${volatilityOverlap[2]} 个可评估的主要回撤开始于 EWMA 波动率上升期间。`
+  const historicalVolMethod = text.match(/^Historical volatility uses the sample standard deviation of (\d+) equal-weight market returns, annualized by sqrt\((\d+)\)\.$/)
+  if (historicalVolMethod) return `历史波动率使用 ${historicalVolMethod[1]} 个等权市场收益率的样本标准差，并按 √${historicalVolMethod[2]} 年化。`
+  const ewmaMethod = text.match(/^EWMA variance uses lambda=(.+) and zero-mean returns: variance\[t\] = lambda \* variance\[t-1\] \+ \(1-lambda\) \* return\[t\]\^2\.$/)
+  if (ewmaMethod) return `EWMA 方差使用 λ=${ewmaMethod[1]} 和零均值收益率：variance[t] = λ × variance[t-1] + (1-λ) × return[t]^2。`
+  const whatIfSharpe = text.match(/^Sharpe changes from (.+) to (.+)\.$/)
+  if (whatIfSharpe) return `夏普比率从 ${whatIfSharpe[1]} 变为 ${whatIfSharpe[2]}。`
+  const whatIfNet = text.match(/^Net P&L changes from (.+) to (.+)\.$/)
+  if (whatIfNet) return `净盈亏从 ${whatIfNet[1]} 变为 ${whatIfNet[2]}。`
+  const whatIfDrawdown = text.match(/^Max drawdown changes from (.+) to (.+)\.$/)
+  if (whatIfDrawdown) return `最大回撤从 ${whatIfDrawdown[1]} 变为 ${whatIfDrawdown[2]}。`
   const reordered = text.match(/^ROWS_REORDERED: (\d+) row positions changed$/)
   if (reordered) return `行顺序已调整：${reordered[1]} 个位置发生变化。`
   const gaps = text.match(/^DATA_ALIGNMENT_GAP: (\d+) symbol\/timestamp cells are missing; strict synchronized runs use only the intersection$/)

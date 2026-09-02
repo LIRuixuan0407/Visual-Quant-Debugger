@@ -14,6 +14,10 @@ def _finite(value: float) -> float:
     return float(value)
 
 
+def _finite_optional(value: float | None) -> float | None:
+    return None if value is None else _finite(value)
+
+
 class DiagnosisModel(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid", populate_by_name=True)
 
@@ -96,6 +100,197 @@ class DiagnosticSupportSet(DiagnosisModel):
     execution_delay: Literal["AVAILABLE", "NOT_SUPPORTED"] = "AVAILABLE"
 
 
+class AutocorrelationPoint(DiagnosisModel):
+    lag: int = Field(ge=1, le=10)
+    status: Literal["OK", "INSUFFICIENT_DATA"]
+    value: float | None = None
+
+    _finite_value = field_validator("value")(_finite_optional)
+
+
+class ReturnDiagnostics(DiagnosisModel):
+    status: Literal["OK", "INSUFFICIENT_DATA"]
+    observation_count: int = Field(ge=0)
+    return_acf: tuple[AutocorrelationPoint, ...]
+    squared_return_acf: tuple[AutocorrelationPoint, ...]
+    lag_1_return_autocorrelation: float | None = None
+    lag_1_squared_return_autocorrelation: float | None = None
+    note: str | None = None
+
+    _finite_values = field_validator(
+        "lag_1_return_autocorrelation", "lag_1_squared_return_autocorrelation"
+    )(_finite_optional)
+
+
+class PairMeanReversionEvidence(DiagnosisModel):
+    status: Literal["OK", "INSUFFICIENT_DATA"]
+    observation_count: int = Field(ge=0)
+    hedge_ratio_observation_count: int = Field(ge=0)
+    phi: float | None = None
+    spread_lag_1_autocorrelation: float | None = None
+    half_life_bars: float | None = None
+    hedge_ratio_mean: float | None = None
+    hedge_ratio_std: float | None = None
+    note: str | None = None
+
+    _finite_values = field_validator(
+        "phi",
+        "spread_lag_1_autocorrelation",
+        "half_life_bars",
+        "hedge_ratio_mean",
+        "hedge_ratio_std",
+    )(_finite_optional)
+
+
+class StatisticalDiagnostics(DiagnosisModel):
+    returns: ReturnDiagnostics
+    pair_mean_reversion: PairMeanReversionEvidence | None = None
+
+
+class VolatilityRegimeThresholds(DiagnosisModel):
+    low_upper_bound: float = 0.15
+    high_lower_bound: float = 0.30
+
+    _finite_values = field_validator("low_upper_bound", "high_lower_bound")(_finite)
+
+
+class VolatilityPoint(DiagnosisModel):
+    timestamp: datetime
+    market_return: float | None = None
+    rolling_historical_vol: float | None = None
+    ewma_vol: float | None = None
+    regime: Literal["LOW", "NORMAL", "HIGH"] | None = None
+
+    _finite_values = field_validator(
+        "market_return", "rolling_historical_vol", "ewma_vol"
+    )(_finite_optional)
+
+
+class VolatilityDrawdownOverlap(DiagnosisModel):
+    episode_id: str
+    rank_by_depth: int = Field(ge=1)
+    start_time: datetime
+    trough_time: datetime
+    end_time: datetime
+    max_drawdown: float
+    start_regime: Literal["LOW", "NORMAL", "HIGH"] | None = None
+    ewma_rising_at_start: bool | None = None
+    regime_changed_at_start: bool | None = None
+
+    _finite_drawdown = field_validator("max_drawdown")(_finite)
+
+
+class VolatilityDiagnostics(DiagnosisModel):
+    status: Literal["OK", "INSUFFICIENT_DATA"]
+    rolling_window: int = Field(ge=2)
+    ewma_decay: float = Field(gt=0, lt=1)
+    annualization_factor: int = Field(gt=0)
+    market_return_method: str
+    thresholds: VolatilityRegimeThresholds
+    points: tuple[VolatilityPoint, ...]
+    current_regime: Literal["LOW", "NORMAL", "HIGH"] | None = None
+    current_historical_vol: float | None = None
+    current_ewma_vol: float | None = None
+    drawdown_overlap: tuple[VolatilityDrawdownOverlap, ...]
+    evaluable_drawdown_count: int = Field(ge=0)
+    rising_volatility_start_count: int = Field(ge=0)
+    regime_change_start_count: int = Field(ge=0)
+    verdict: Literal[
+        "RISING_VOLATILITY_OVERLAP",
+        "MIXED_VOLATILITY_OVERLAP",
+        "LIMITED_VOLATILITY_OVERLAP",
+        "NO_DRAWDOWNS",
+        "INSUFFICIENT_DATA",
+    ]
+    summary: str
+    calculation_details: tuple[str, ...]
+
+    _finite_values = field_validator("current_historical_vol", "current_ewma_vol")(
+        _finite_optional
+    )
+
+
+class WhatIfInputs(DiagnosisModel):
+    fee_bps: float = Field(ge=0, le=10_000)
+    slippage_bps: float = Field(ge=0, le=10_000)
+    additional_execution_delay_bars: Literal[0, 1, 2] = 0
+    strategy_parameters: dict[str, int | float] = Field(default_factory=dict)
+
+    _finite_values = field_validator("fee_bps", "slippage_bps")(_finite)
+
+    @field_validator("strategy_parameters")
+    @classmethod
+    def finite_strategy_parameters(
+        cls, values: dict[str, int | float]
+    ) -> dict[str, int | float]:
+        for key, value in values.items():
+            if not key or isinstance(value, bool):
+                raise ValueError("What-if strategy parameters must be named finite numbers")
+            _finite(value)
+        return values
+
+
+class WhatIfMetrics(DiagnosisModel):
+    total_return: float
+    sharpe: float
+    max_drawdown: float
+    turnover: float
+    trade_count: int = Field(ge=0)
+    net_pnl: float
+
+    _finite_values = field_validator(
+        "total_return", "sharpe", "max_drawdown", "turnover", "net_pnl"
+    )(_finite)
+
+
+class WhatIfMetricDeltas(DiagnosisModel):
+    total_return: float
+    sharpe: float
+    max_drawdown: float
+    turnover: float
+    trade_count: int
+    net_pnl: float
+
+    _finite_values = field_validator(
+        "total_return", "sharpe", "max_drawdown", "turnover", "net_pnl"
+    )(_finite)
+
+
+class WhatIfParameterControl(DiagnosisModel):
+    key: str
+    label: str
+    value_type: Literal["integer", "number"]
+    current_value: int | float
+    minimum: int | float
+    maximum: int | float | None = None
+    step: int | float
+    unit: str
+
+    _finite_values = field_validator("current_value", "minimum", "maximum", "step")(
+        _finite_optional
+    )
+
+
+class WhatIfSupport(DiagnosisModel):
+    status: Literal["AVAILABLE", "NOT_SUPPORTED"]
+    baseline_inputs: WhatIfInputs | None = None
+    baseline_metrics: WhatIfMetrics | None = None
+    parameter: WhatIfParameterControl | None = None
+    calculation_details: tuple[str, ...] = ()
+
+
+class WhatIfScenario(DiagnosisModel):
+    baseline_inputs: WhatIfInputs
+    inputs: WhatIfInputs
+    baseline_metrics: WhatIfMetrics
+    stressed_metrics: WhatIfMetrics
+    deltas: WhatIfMetricDeltas
+    unfilled_signal_count: int = Field(ge=0)
+    verdict: Literal["LOWER_NET_PNL", "HIGHER_NET_PNL", "UNCHANGED_NET_PNL"]
+    evidence: tuple[str, ...]
+    calculation_details: tuple[str, ...]
+
+
 class DiagnosisReport(DiagnosisModel):
     report_version: Literal["1.0"] = "1.0"
     source_run: DiagnosisSourceRun
@@ -106,3 +301,6 @@ class DiagnosisReport(DiagnosisModel):
     observations: tuple[DiagnosisObservation, ...]
     sensitivity_available: bool = True
     support: DiagnosticSupportSet = DiagnosticSupportSet()
+    statistical_diagnostics: StatisticalDiagnostics | None = None
+    volatility_diagnostics: VolatilityDiagnostics | None = None
+    what_if: WhatIfSupport | None = None
