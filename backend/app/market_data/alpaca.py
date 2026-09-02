@@ -162,15 +162,32 @@ class AlpacaStockReferenceClient:
             )
             if item is not None
         ]
+        market_timestamp = max(timestamps) if timestamps else received
+        local_now = received.astimezone(ZoneInfo("America/New_York"))
+        minutes = local_now.hour * 60 + local_now.minute
+        regular_session = local_now.weekday() < 5 and 570 <= minutes < 960
+        age = max(0.0, (received - market_timestamp).total_seconds())
+        freshness = (
+            "CLOSED"
+            if not regular_session
+            else "LIVE"
+            if age <= 60
+            else "DELAYED"
+            if age <= 900
+            else "STALE"
+        )
         return StockSnapshot(
             security=security,
             feed=cast(Any, feed),
-            market_timestamp=max(timestamps) if timestamps else received,
+            market_timestamp=market_timestamp,
             received_at=received,
             latest_trade_price=None if trade is None else float(cast(float, trade["p"])),
             latest_trade_size=None if trade is None else float(cast(float, trade["s"])),
             minute_bar=minute,
             daily_bar=daily,
+            market="US",
+            freshness_status=cast(Any, freshness),
+            freshness_seconds=age,
         )
 
     async def historical_bars(

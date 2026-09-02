@@ -25,6 +25,8 @@ from app.market_data import (
     FakeLiveMarketDataAdapter,
     MarketBar,
     MarketDataAdapter,
+    MarketRegion,
+    TdxMarketDataAdapter,
 )
 from app.paper.lifecycle import recovery_target_status
 from app.paper.models import (
@@ -427,7 +429,13 @@ class PaperSessionService:
                 pass
         account = self.create_account(
             CreatePaperAccount(
-                name=f"Recovered {manifest.strategy_name}", initial_cash=manifest.initial_cash
+                name=f"Recovered {manifest.strategy_name}",
+                initial_cash=manifest.initial_cash,
+                currency={
+                    "CN_REGULAR": "CNY",
+                    "HK_REGULAR": "HKD",
+                    "US_REGULAR": "USD",
+                }[manifest.market_session],
             )
         )
         return manifest.model_copy(update={"account_id": account.account_id})
@@ -436,6 +444,13 @@ class PaperSessionService:
     def _default_adapter(manifest: PaperSessionManifest) -> MarketDataAdapter:
         if manifest.provider == "fake":
             return FakeLiveMarketDataAdapter(feed=manifest.feed)
+        if manifest.provider == "tdx":
+            region: MarketRegion = {
+                "CN_REGULAR": "CN",
+                "HK_REGULAR": "HK",
+                "US_REGULAR": "US",
+            }[manifest.market_session]
+            return TdxMarketDataAdapter(region=region)
         credentials = integration_vault.resolve_alpaca()
         return AlpacaStockMarketDataAdapter(
             api_key=None if credentials is None else credentials.api_key,
@@ -499,12 +514,28 @@ class PaperSessionService:
         account = (
             self.create_account(
                 CreatePaperAccount(
-                    name=f"{strategy.metadata.name} Paper", initial_cash=request.initial_cash
+                    name=f"{strategy.metadata.name} Paper",
+                    initial_cash=request.initial_cash,
+                    currency={
+                        "CN_REGULAR": "CNY",
+                        "HK_REGULAR": "HKD",
+                        "US_REGULAR": "USD",
+                    }[request.market_session],
                 )
             )
             if request.account_id is None
             else self.repository.get_account(request.account_id)
         )
+        expected_currency = {
+            "CN_REGULAR": "CNY",
+            "HK_REGULAR": "HKD",
+            "US_REGULAR": "USD",
+        }[request.market_session]
+        if account.currency != expected_currency:
+            raise ValueError(
+                f"Paper account currency {account.currency} does not match "
+                f"{request.market_session} ({expected_currency})"
+            )
         active_session_id = self._active_session_id_for_account(account.account_id)
         if active_session_id is not None:
             raise ValueError(

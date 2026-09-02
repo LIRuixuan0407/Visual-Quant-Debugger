@@ -39,9 +39,9 @@ export async function listPaperAccounts(): Promise<PaperAccount[]> {
   return (value as { items: PaperAccount[] }).items
 }
 
-export async function createPaperAccount(name: string, initialCash: number): Promise<PaperAccount> {
+export async function createPaperAccount(name: string, initialCash: number, currency: 'CNY' | 'HKD' | 'USD' = 'USD'): Promise<PaperAccount> {
   const endpoint = '/api/paper-accounts'
-  const value = await requestJson(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, initial_cash: initialCash, currency: 'USD' }) })
+  const value = await requestJson(endpoint, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, initial_cash: initialCash, currency }) })
   if (typeof value !== 'object' || value === null || typeof (value as { account_id?: unknown }).account_id !== 'string') throw new Error(`${endpoint} returned a malformed account.`)
   return value as PaperAccount
 }

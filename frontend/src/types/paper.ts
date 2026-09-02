@@ -4,6 +4,8 @@ export type PaperSessionStatus = 'CREATED' | 'RUNNING' | 'PAUSED' | 'STOPPED' | 
 export type FeedStatus = 'CONNECTED' | 'RECONNECTING' | 'STALE' | 'DISCONNECTED'
 export type RecoveryStatus = 'READY' | 'RECOVERING' | 'RECOVERY_DIVERGENCE'
 export type PaperExecutionMode = 'VQD_SIMULATED' | 'ALPACA_PAPER'
+export type PaperMarketRegion = 'CN' | 'HK' | 'US'
+export type PaperMarketSession = 'CN_REGULAR' | 'HK_REGULAR' | 'US_REGULAR'
 export type BrokerConnectionStatus = 'NOT_USED' | 'CONNECTED' | 'RECONNECTING' | 'DISCONNECTED' | 'ERROR'
 export type BrokerOrderStatus = 'CREATED' | 'SUBMITTED' | 'PARTIALLY_FILLED' | 'PENDING_CANCEL' | 'FILLED' | 'CANCELLED' | 'EXPIRED' | 'REJECTED' | 'REPLACED' | 'DONE_FOR_DAY' | 'HELD' | 'SUSPENDED' | 'UNKNOWN'
 export type JournalDisposition = 'BUFFERED' | 'EVALUATED' | 'EVALUATION_SKIPPED_PAUSED' | 'CORRECTION_APPLIED' | 'DUPLICATE_IGNORED' | 'OUT_OF_ORDER_REJECTED'
@@ -62,7 +64,12 @@ export interface MarketDataProviderStatus {
   feeds: string[]
   selected_feed: string
   timeframe: '1Min'
-  market_session: 'US_REGULAR'
+  market_session: PaperMarketSession
+  markets?: PaperMarketRegion[]
+  requires_credentials?: boolean
+  supports_live?: boolean
+  supports_historical?: boolean
+  note?: string | null
 }
 
 export interface MarketClockSnapshot {
@@ -70,7 +77,7 @@ export interface MarketClockSnapshot {
   is_open: boolean
   next_open: string
   next_close: string
-  session: 'US_REGULAR'
+  session: PaperMarketSession
 }
 
 export interface PaperMarketEvent {
@@ -90,7 +97,7 @@ export interface PaperMarketEvent {
 export interface PaperAccount {
   account_id: string
   name: string
-  currency: 'USD'
+  currency: 'CNY' | 'HKD' | 'USD'
   initial_cash: number
   cash: number
   positions: Record<string, number>
@@ -241,7 +248,7 @@ export interface PaperSessionSnapshot {
   provider: string
   feed: string
   timeframe: '1Min'
-  market_session: 'US_REGULAR'
+  market_session: PaperMarketSession
   initial_cash: number
   created_at: string
   started_at: string | null
@@ -288,10 +295,10 @@ export interface CreatePaperSessionInput {
   symbols: string[]
   securities?: Array<{ symbol: string; name: string; exchange: string; status: 'active' | 'inactive' }>
   parameters: Record<string, number>
-  provider: 'alpaca'
-  feed: 'iex' | 'sip'
+  provider: 'tdx' | 'alpaca'
+  feed: 'tdx' | 'iex' | 'sip'
   timeframe: '1Min'
-  market_session: 'US_REGULAR'
+  market_session: PaperMarketSession
   fee_bps: number
   slippage_bps: number
   execution_mode: PaperExecutionMode

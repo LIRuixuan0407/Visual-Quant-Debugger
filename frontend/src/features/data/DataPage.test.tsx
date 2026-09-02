@@ -71,37 +71,43 @@ test('shows precise CSV validation errors', async () => {
   expect(await screen.findByRole('alert')).toHaveTextContent('Duplicate (symbol, timestamp) bars detected')
 })
 
-test('searches a real stock, shows provider identity, and saves historical bars as a Dataset', async () => {
+test('uses zero-key TDX market data and saves current A-share history as a Dataset', async () => {
   const providerDataset: DatasetDefinition = {
     ...dataset,
-    dataset_id: 'dataset-aapl-real',
-    name: 'AAPL · 1Day · Alpaca IEX',
+    dataset_id: 'dataset-600519-tdx',
+    name: '600519.SH · 1Day · TDX',
     source_type: 'PROVIDER',
+    symbols: ['600519.SH'],
     fields: ['open', 'high', 'low', 'close', 'volume'],
     provenance: {
-      provider: 'alpaca', feed: 'iex', requested_symbols: ['AAPL'],
-      requested_start: '2024-01-01T00:00:00Z', requested_end: '2024-12-31T23:59:59Z',
-      retrieved_at: '2025-01-01T00:00:00Z', market_timestamp_start: '2024-01-02T21:00:00Z', market_timestamp_end: '2024-12-31T21:00:00Z',
+      provider: 'tdx', feed: 'tdx', requested_symbols: ['600519.SH'],
+      requested_start: '2025-09-02T00:00:00Z', requested_end: '2026-09-02T23:59:59Z',
+      retrieved_at: '2026-09-02T06:31:04Z', market_timestamp_start: '2025-09-02T07:00:00Z', market_timestamp_end: '2026-09-02T07:00:00Z',
+      market: 'CN', adjustment: 'QFQ',
     },
   }
   const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = String(input)
     if (url.includes('dataset-existing') && url.endsWith('/preview')) return response({ rows: [] })
-    if (url === '/api/market-data/stocks/search?q=Apple') return response([{ symbol: 'AAPL', name: 'Apple Inc.', exchange: 'NASDAQ', status: 'active', tradable: true, fractionable: true }])
-    if (url === '/api/market-data/stocks/AAPL/snapshot?feed=iex') return response({ security: { symbol: 'AAPL', name: 'Apple Inc.', exchange: 'NASDAQ', status: 'active', tradable: true, fractionable: true }, provider: 'alpaca', feed: 'iex', market_timestamp: '2026-08-24T20:00:00Z', received_at: '2026-08-24T20:00:01Z', latest_trade_price: 227.16, latest_trade_size: 100, minute_bar: null, daily_bar: null })
+    if (url === '/api/market-data/stocks/search?q=600519&provider=tdx&market=CN') return response([{ symbol: '600519.SH', name: '贵州茅台', exchange: 'SH', status: 'active', tradable: true, fractionable: false, market: 'CN', currency: 'CNY', lot_size: 100 }])
+    if (url === '/api/market-data/stocks/600519.SH/snapshot?provider=tdx&market=CN&feed=tdx') return response({ security: { symbol: '600519.SH', name: '贵州茅台', exchange: 'SH', status: 'active', tradable: true, fractionable: false, market: 'CN', currency: 'CNY', lot_size: 100 }, provider: 'tdx', feed: 'tdx', market: 'CN', market_timestamp: '2026-09-02T06:31:00Z', received_at: '2026-09-02T06:31:04Z', latest_trade_price: 1483.2, latest_trade_size: 100, minute_bar: null, daily_bar: null, freshness_status: 'LIVE', freshness_seconds: 4 })
     if (url === '/api/market-data/historical-datasets' && init?.method === 'POST') return response(providerDataset, 201)
     throw new Error(`Unexpected ${init?.method ?? 'GET'} ${url}`)
   })
   const onImported = vi.fn()
   render(<DataPage datasets={[dataset]} onImported={onImported} />)
-  fireEvent.change(screen.getByLabelText('Symbol or company'), { target: { value: 'Apple' } })
+  expect(screen.getByText('TDX · No API key')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: 'Search' }))
-  fireEvent.click((await screen.findByText('Apple Inc.')).closest('button')!)
-  expect(await screen.findByText('$227.16')).toBeInTheDocument()
+  fireEvent.click((await screen.findByText('贵州茅台')).closest('button')!)
+  expect(await screen.findByText('CNY 1483.20')).toBeInTheDocument()
+  expect(screen.getByText(/LIVE/)).toBeInTheDocument()
+  expect(screen.getByText('Tradable · Lot 100')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: 'Save as Dataset' }))
   await waitFor(() => expect(onImported).toHaveBeenCalledWith(providerDataset))
   const request = fetchMock.mock.calls.find(([url]) => url === '/api/market-data/historical-datasets')
-  expect(JSON.parse(String(request?.[1]?.body))).toMatchObject({ symbols: ['AAPL'], timeframe: '1Day', feed: 'iex' })
+  const body = JSON.parse(String(request?.[1]?.body)) as Record<string, unknown>
+  expect(body).toMatchObject({ symbols: ['600519.SH'], timeframe: '1Day', provider: 'tdx', market: 'CN', feed: 'tdx', adjustment: 'QFQ' })
+  expect(String(body.end)).toMatch(/T23:59:59Z$/)
 })
 
 test('shows Corporate Action evidence and point-in-time Universe history', async () => {

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime
-from typing import cast
+from typing import Literal, cast
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
@@ -18,10 +18,14 @@ from app.datasets import (
 from app.market_data import (
     AlpacaStockReferenceClient,
     MarketDataTimeframe,
+    MarketRegion,
     ProviderStatus,
     StockSecurity,
     StockSnapshot,
+    TdxStockReferenceClient,
     alpaca_provider_status,
+    parse_tdx_symbol,
+    tdx_provider_status,
 )
 from app.market_data.models import HistoricalBarsRequest
 from app.paper import (
@@ -53,6 +57,9 @@ class HistoricalDatasetRequest(HistoricalBarsRequest):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     name: str = ""
+    # Backward-compatible API default. The VQD UI explicitly chooses TDX.
+    provider: Literal["tdx", "alpaca"] = "alpaca"
+    feed: Literal["tdx", "iex", "sip"] = "iex"
 
 
 class ProviderDatasetRefreshRequest(BaseModel):
@@ -78,12 +85,16 @@ def stock_reference_client() -> AlpacaStockReferenceClient:
     )
 
 
+def tdx_reference_client() -> TdxStockReferenceClient:
+    return TdxStockReferenceClient()
+
+
 def _market_error(exc: Exception) -> HTTPException:
     if isinstance(exc, RuntimeError):
         return HTTPException(status_code=503, detail=str(exc))
     if isinstance(exc, httpx.HTTPStatusError):
         status = 404 if exc.response.status_code == 404 else 502
-        return HTTPException(status_code=status, detail="Alpaca market-data request failed")
+        return HTTPException(status_code=status, detail="Market-data provider request failed")
     return HTTPException(status_code=422, detail=str(exc))
 
 
@@ -110,30 +121,47 @@ def get_paper_account(account_id: str) -> PaperAccount:
 @market_router.get("/providers", response_model=tuple[ProviderStatus, ...])
 def list_market_data_providers() -> tuple[ProviderStatus, ...]:
     credentials = integration_vault.resolve_alpaca()
-    if credentials is None:
-        return (alpaca_provider_status(),)
-    return (
-        alpaca_provider_status(
+    alpaca = (
+        alpaca_provider_status()
+        if credentials is None
+        else alpaca_provider_status(
             api_key=credentials.api_key,
             secret_key=credentials.secret_key,
             feed=credentials.feed,
-        ),
+        )
     )
+    return (alpaca, tdx_provider_status())
 
 
 @market_router.get("/stocks/search", response_model=tuple[StockSecurity, ...])
 async def search_stocks(
-    q: str = Query(min_length=1, max_length=120), limit: int = Query(default=20, ge=1, le=50)
+    q: str = Query(min_length=1, max_length=120),
+    limit: int = Query(default=20, ge=1, le=50),
+    provider: Literal["tdx", "alpaca"] = "alpaca",
+    market: MarketRegion = "US",
 ) -> tuple[StockSecurity, ...]:
     try:
+        if provider == "tdx":
+            return await tdx_reference_client().search(q, region=market, limit=limit)
+        if market != "US":
+            raise ValueError("Alpaca supports US equities only")
         return await stock_reference_client().search(q, limit=limit)
     except (httpx.HTTPError, RuntimeError, ValueError) as exc:
         raise _market_error(exc) from exc
 
 
 @market_router.get("/stocks/{symbol}/snapshot", response_model=StockSnapshot)
-async def get_stock_snapshot(symbol: str, feed: str = "iex") -> StockSnapshot:
+async def get_stock_snapshot(
+    symbol: str,
+    feed: str = "iex",
+    provider: Literal["tdx", "alpaca"] = "alpaca",
+    market: MarketRegion = "US",
+) -> StockSnapshot:
     try:
+        if provider == "tdx":
+            return await tdx_reference_client().snapshot(symbol, region=market)
+        if market != "US":
+            raise ValueError("Alpaca supports US equities only")
         return await stock_reference_client().snapshot(symbol, feed=feed)
     except (httpx.HTTPError, RuntimeError, ValueError) as exc:
         raise _market_error(exc) from exc
@@ -142,38 +170,60 @@ async def get_stock_snapshot(symbol: str, feed: str = "iex") -> StockSnapshot:
 @market_router.post("/historical-datasets", response_model=DatasetDefinition, status_code=201)
 async def create_historical_dataset(request: HistoricalDatasetRequest) -> DatasetDefinition:
     try:
+        if request.provider == "tdx" and request.feed != "tdx":
+            raise ValueError("TDX historical requests must use the 'tdx' feed")
+        if request.provider == "alpaca" and request.feed not in {"iex", "sip"}:
+            raise ValueError("Alpaca historical requests must use the IEX or SIP feed")
         retrieved = datetime.now(UTC)
-        client = stock_reference_client()
-        bars = await client.historical_bars(
-            request.symbols,
-            request.start,
-            request.end,
-            timeframe=request.timeframe,
-            feed=request.feed,
-        )
+        security_names: dict[str, str] = {}
+        if request.provider == "tdx":
+            client = tdx_reference_client()
+            bars = await client.historical_bars(
+                request.symbols,
+                request.start,
+                request.end,
+                timeframe=request.timeframe,
+                region=request.market,
+                adjustment=request.adjustment,
+            )
+            for symbol in request.symbols:
+                try:
+                    security = await client.get_security(symbol, region=request.market)
+                except (RuntimeError, ValueError):
+                    continue
+                security_names[security.symbol] = security.name
+            feed = "tdx"
+        else:
+            if request.market != "US":
+                raise ValueError("Alpaca supports US equities only")
+            client = stock_reference_client()
+            bars = await client.historical_bars(
+                request.symbols,
+                request.start,
+                request.end,
+                timeframe=request.timeframe,
+                feed=request.feed,
+            )
+            for symbol in request.symbols:
+                security = await client.get_security(symbol)
+                security_names[security.symbol] = security.name
+            feed = request.feed
         if not bars:
             raise DatasetValidationError("The provider returned no bars for this request")
-        security_names: dict[str, str] = {}
-        for symbol in request.symbols:
-            if isinstance(client, AlpacaStockReferenceClient):
-                security = await client.get_security(symbol)
-            else:
-                matches = await client.search(symbol, limit=20)
-                security = next((item for item in matches if item.symbol == symbol), None)
-            if security is not None:
-                security_names[security.symbol] = security.name
         return dataset_registry.commit_provider_bars(
             name=request.name,
             bars=bars,
             provenance=DatasetProvenance(
-                provider="alpaca",
-                feed=request.feed,
-                requested_symbols=request.symbols,
+                provider=request.provider,
+                feed=feed,
+                requested_symbols=tuple(sorted({item.symbol for item in bars})),
                 requested_start=request.start,
                 requested_end=request.end,
                 retrieved_at=retrieved,
                 market_timestamp_start=min(item.event_time for item in bars),
                 market_timestamp_end=max(item.event_time for item in bars),
+                market=request.market,
+                adjustment=request.adjustment if request.provider == "tdx" else None,
             ),
             security_names=security_names,
         )
@@ -216,14 +266,30 @@ async def refresh_provider_dataset(
     timeframe = cast(MarketDataTimeframe, dataset.frequency)
     try:
         retrieved = datetime.now(UTC)
-        client = stock_reference_client()
-        bars = await client.historical_bars(
-            dataset.provenance.requested_symbols or dataset.symbols,
-            start,
-            request.end,
-            timeframe=timeframe,
-            feed=dataset.provenance.feed,
-        )
+        symbols = dataset.provenance.requested_symbols or dataset.symbols
+        if dataset.provenance.provider == "tdx":
+            tdx = tdx_reference_client()
+            bars = await tdx.historical_bars(
+                symbols,
+                start,
+                request.end,
+                timeframe=timeframe,
+                region=dataset.provenance.market,
+                adjustment=dataset.provenance.adjustment or "NONE",
+            )
+        elif dataset.provenance.provider == "alpaca":
+            alpaca = stock_reference_client()
+            bars = await alpaca.historical_bars(
+                symbols,
+                start,
+                request.end,
+                timeframe=timeframe,
+                feed=dataset.provenance.feed,
+            )
+        else:
+            raise DatasetValidationError(
+                f"Provider '{dataset.provenance.provider}' cannot be refreshed by this build"
+            )
         if not bars:
             raise DatasetValidationError("The provider returned no bars for this refresh")
         return dataset_registry.commit_provider_bars(
@@ -232,12 +298,14 @@ async def refresh_provider_dataset(
             provenance=DatasetProvenance(
                 provider=dataset.provenance.provider,
                 feed=dataset.provenance.feed,
-                requested_symbols=dataset.provenance.requested_symbols or dataset.symbols,
+                requested_symbols=tuple(sorted({item.symbol for item in bars})),
                 requested_start=start,
                 requested_end=request.end,
                 retrieved_at=retrieved,
                 market_timestamp_start=min(item.event_time for item in bars),
                 market_timestamp_end=max(item.event_time for item in bars),
+                market=dataset.provenance.market,
+                adjustment=dataset.provenance.adjustment,
             ),
             security_names=dataset.security_names,
             dataset_family_id=dataset.dataset_family_id,
@@ -269,8 +337,23 @@ def create_paper_session(request: CreatePaperSession) -> PaperSessionSnapshot:
                 "Live Paper currently supports VQD Native Strategy only; Framework Adapters "
                 "are historical research integrations."
             )
-        if request.provider != "alpaca":
+        if request.provider == "fake":
             raise ValueError("The fake market provider is available to backend tests only")
+        if request.provider == "tdx":
+            if request.feed != "tdx":
+                raise ValueError("TDX paper sessions must use the 'tdx' feed")
+            region: MarketRegion = {
+                "CN_REGULAR": "CN",
+                "HK_REGULAR": "HK",
+                "US_REGULAR": "US",
+            }[request.market_session]
+            for symbol in request.symbols:
+                parse_tdx_symbol(symbol, region=region)
+        if request.provider == "alpaca":
+            if request.market_session != "US_REGULAR":
+                raise ValueError("Alpaca market data supports US paper sessions only")
+            if request.feed not in {"iex", "sip"}:
+                raise ValueError("Alpaca paper sessions must use the IEX or SIP feed")
         if request.execution_mode == "ALPACA_PAPER" and request.provider != "alpaca":
             raise ValueError("Alpaca Paper execution requires the Alpaca provider")
         return paper_store.service.create(request)

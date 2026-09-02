@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 
 import { createCorporateActionDataset, createHistoricalUniverse, getCorporateActionDatasets, getHistoricalUniverses } from '../../api/corporateActions'
 import { compareDatasets, getDatasetFamilies, getDatasetFamilyRevisions, getDatasetRows, importDataset, previewDataset, refreshProviderDataset } from '../../api/datasets'
-import { getStockSnapshot, saveHistoricalDataset, searchStocks } from '../../api/marketData'
+import { getStockSnapshot, saveHistoricalDataset, searchStocks, type MarketProvider, type MarketRegion } from '../../api/marketData'
 import { getResearchLineage } from '../../api/researchLineage'
 import { useI18n } from '../../i18n/I18nProvider'
 import { useWorkspace } from '../workspaces/WorkspaceContext'
@@ -13,6 +13,17 @@ import { formatTimestamp } from '../replay/utils/format'
 
 const requiredFields = ['timestamp', 'symbol', 'close'] as const
 const revisionNumber = (dataset: DatasetDefinition) => dataset.revision ?? 1
+
+function utcDateInput(date: Date): string {
+  return date.toISOString().slice(0, 10)
+}
+
+function defaultMarketDateRange(): { start: string; end: string } {
+  const end = new Date()
+  const start = new Date(end)
+  start.setUTCFullYear(start.getUTCFullYear() - 1)
+  return { start: utcDateInput(start), end: utcDateInput(end) }
+}
 
 function readableTimestamp(value: string | number): string {
   const formatted = formatTimestamp(String(value))
@@ -42,14 +53,18 @@ export default function DataPage({ datasets, onImported }: DataPageProps) {
   const [rows, setRows] = useState<Array<Record<string, string | number>>>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [stockQuery, setStockQuery] = useState('AAPL')
+  const [stockQuery, setStockQuery] = useState('600519')
+  const [marketProvider, setMarketProvider] = useState<MarketProvider>('tdx')
+  const [marketRegion, setMarketRegion] = useState<MarketRegion>('CN')
+  const [adjustment, setAdjustment] = useState<'NONE' | 'QFQ' | 'HFQ'>('QFQ')
   const [stockResults, setStockResults] = useState<StockSecurity[]>([])
   const [stock, setStock] = useState<StockSecurity | null>(null)
   const [snapshot, setSnapshot] = useState<StockSnapshot | null>(null)
   const [feed, setFeed] = useState<'iex' | 'sip'>('iex')
   const [timeframe, setTimeframe] = useState<'1Min' | '5Min' | '15Min' | '1Hour' | '1Day'>('1Day')
-  const [startDate, setStartDate] = useState('2024-01-01')
-  const [endDate, setEndDate] = useState('2024-12-31')
+  const [defaultMarketDates] = useState(defaultMarketDateRange)
+  const [startDate, setStartDate] = useState(defaultMarketDates.start)
+  const [endDate, setEndDate] = useState(defaultMarketDates.end)
   const [marketBusy, setMarketBusy] = useState(false)
   const [corporateActions, setCorporateActions] = useState<CorporateActionDataset[]>([])
   const [universes, setUniverses] = useState<HistoricalUniverse[]>([])
@@ -158,14 +173,14 @@ export default function DataPage({ datasets, onImported }: DataPageProps) {
   async function findStocks() {
     if (!stockQuery.trim()) return
     setMarketBusy(true); setError(null)
-    try { setStockResults(await searchStocks(stockQuery.trim())) }
+    try { setStockResults(await searchStocks(stockQuery.trim(), { provider: marketProvider, market: marketRegion })) }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Stock search failed.') }
     finally { setMarketBusy(false) }
   }
 
   async function selectStock(next: StockSecurity) {
     setStock(next); setMarketBusy(true); setError(null)
-    try { setSnapshot(await getStockSnapshot(next.symbol, feed)) }
+    try { setSnapshot(await getStockSnapshot(next.symbol, { provider: marketProvider, market: marketRegion, feed: marketProvider === 'tdx' ? 'tdx' : feed })) }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Market snapshot failed.') }
     finally { setMarketBusy(false) }
   }
@@ -175,12 +190,15 @@ export default function DataPage({ datasets, onImported }: DataPageProps) {
     setMarketBusy(true); setError(null)
     try {
       const saved = await saveHistoricalDataset({
-        name: `${stock.symbol} · ${timeframe} · Alpaca ${feed.toUpperCase()}`,
+        name: `${stock.symbol} · ${timeframe} · ${marketProvider.toUpperCase()}`,
         symbols: [stock.symbol],
         start: `${startDate}T00:00:00Z`,
         end: `${endDate}T23:59:59Z`,
         timeframe,
-        feed,
+        provider: marketProvider,
+        market: marketRegion,
+        feed: marketProvider === 'tdx' ? 'tdx' : feed,
+        adjustment: marketProvider === 'tdx' ? adjustment : 'NONE',
       })
       onImported(saved); setSelectedId(saved.dataset_id)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Historical download failed.') }
@@ -231,16 +249,16 @@ export default function DataPage({ datasets, onImported }: DataPageProps) {
   }
 
   return <main className="data-shell">
-    <header className="workspace-title"><div><h1>{tr('Data')}</h1><span>{tr('Real US equities and local datasets in one research workspace.')}</span></div><label className="secondary-button file-button">{tr('Import CSV')}<input aria-label={tr('Choose CSV')} type="file" accept=".csv,text/csv" onChange={(event) => void chooseFile(event.target.files?.[0])} /></label></header>
+    <header className="workspace-title"><div><h1>{tr('Data')}</h1><span>{tr('Live CN / HK / US equities and local datasets in one research workspace.')}</span></div><label className="secondary-button file-button">{tr('Import CSV')}<input aria-label={tr('Choose CSV')} type="file" accept=".csv,text/csv" onChange={(event) => void chooseFile(event.target.files?.[0])} /></label></header>
     <nav className="data-subnav" aria-label={tr('Data evidence sections')}><a href="#market-datasets">{tr('Market Datasets')}</a><a href="#corporate-actions">{tr('Corporate Actions')}</a><a href="#historical-universes">{tr('Historical Universes')}</a></nav>
     {error && <div className="compact-error" role="alert"><strong>{tr('Data operation failed')}</strong><span>{tr(error)}</span></div>}
     <section className="workspace-panel market-workspace" id="market-datasets">
-      <div className="section-heading"><div><span className="section-kicker">{tr('US EQUITY UNIVERSE')}</span><h2>{tr('Find real market data')}</h2></div><span className="evidence-label">ALPACA · {feed.toUpperCase()}</span></div>
-      <div className="market-search-bar"><label><span>{tr('Symbol or company')}</span><div className="input-action"><input value={stockQuery} placeholder="AAPL / Apple" onChange={(event) => setStockQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void findStocks() }} /><button disabled={marketBusy || !stockQuery.trim()} onClick={() => void findStocks()}>{tr('Search')}</button></div></label><label><span>{tr('Market feed')}</span><select value={feed} onChange={(event) => setFeed(event.target.value as 'iex' | 'sip')}><option value="iex">IEX</option><option value="sip">SIP</option></select></label></div>
+      <div className="section-heading"><div><span className="section-kicker">{tr('MULTI-MARKET EQUITIES')}</span><h2>{tr('Find current market data')}</h2></div><span className="evidence-label">{marketProvider.toUpperCase()} · {marketRegion}</span></div>
+      <div className="market-search-bar"><label><span>{tr('Symbol')}</span><div className="input-action"><input value={stockQuery} placeholder={marketRegion === 'CN' ? '600519' : marketRegion === 'HK' ? '00700' : 'AAPL'} onChange={(event) => setStockQuery(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void findStocks() }} /><button disabled={marketBusy || !stockQuery.trim()} onClick={() => void findStocks()}>{tr('Search')}</button></div></label><label><span>{tr('Market')}</span><select value={marketRegion} onChange={(event) => { const next = event.target.value as MarketRegion; setMarketRegion(next); if (next !== 'US') setMarketProvider('tdx'); setStock(null); setSnapshot(null); setStockResults([]); setStockQuery(next === 'CN' ? '600519' : next === 'HK' ? '00700' : 'AAPL') }}><option value="CN">{tr('China A-shares')}</option><option value="HK">{tr('Hong Kong')}</option><option value="US">{tr('United States')}</option></select></label><label><span>{tr('Provider')}</span><select value={marketProvider} onChange={(event) => { const next = event.target.value as MarketProvider; setMarketProvider(next); setStock(null); setSnapshot(null); setStockResults([]) }}><option value="tdx">TDX · {tr('No API key')}</option>{marketRegion === 'US' && <option value="alpaca">Alpaca</option>}</select></label>{marketProvider === 'alpaca' && <label><span>{tr('Market feed')}</span><select value={feed} onChange={(event) => setFeed(event.target.value as 'iex' | 'sip')}><option value="iex">IEX</option><option value="sip">SIP</option></select></label>}</div>
       {stockResults.length > 0 && <div className="stock-results" role="listbox" aria-label={tr('Stock search results')}>{stockResults.map((item) => <button className={stock?.symbol === item.symbol ? 'selected' : ''} key={item.symbol} onClick={() => void selectStock(item)}><strong>{item.symbol}</strong><span>{item.name}</span><code>{item.exchange}</code></button>)}</div>}
       {stock && <div className="market-download-workspace">
-        <div className="instrument-summary"><div><span>{tr('Selected stock')}</span><strong>{stock.symbol}</strong><small>{stock.name} · {stock.exchange}</small></div><div><span>{tr('Latest trade')}</span><strong>{snapshot?.latest_trade_price == null ? '—' : `$${snapshot.latest_trade_price.toFixed(2)}`}</strong><small>{snapshot ? readableTimestamp(snapshot.market_timestamp) : tr('Loading market snapshot…')}</small></div><div><span>{tr('Status')}</span><strong>{tr(stock.status.toUpperCase())}</strong><small>{stock.tradable ? tr('Tradable') : tr('Not tradable')}</small></div></div>
-        <div className="historical-request-grid"><label>{tr('Start date')}<input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label><label>{tr('End date')}<input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label><label>{tr('Frequency')}<select value={timeframe} onChange={(event) => setTimeframe(event.target.value as typeof timeframe)}><option value="1Day">1D</option><option value="1Hour">1H</option><option value="15Min">15m</option><option value="5Min">5m</option><option value="1Min">1m</option></select></label><button className="primary-button" disabled={marketBusy || startDate >= endDate} onClick={() => void saveMarketData()}>{tr(marketBusy ? 'Working…' : 'Save as Dataset')}</button></div>
+        <div className="instrument-summary"><div><span>{tr('Selected stock')}</span><strong>{stock.symbol}</strong><small>{stock.name} · {stock.exchange}</small></div><div><span>{tr('Latest trade')}</span><strong>{snapshot?.latest_trade_price == null ? '—' : `${stock.currency ?? (marketRegion === 'CN' ? 'CNY' : marketRegion === 'HK' ? 'HKD' : 'USD')} ${snapshot.latest_trade_price.toFixed(2)}`}</strong><small>{snapshot ? `${readableTimestamp(snapshot.market_timestamp)} · ${tr(snapshot.freshness_status ?? 'UNVERIFIED')}` : tr('Loading market snapshot…')}</small></div><div><span>{tr('Status')}</span><strong>{tr(stock.status.toUpperCase())}</strong><small>{stock.tradable ? `${tr('Tradable')} · ${tr('Lot')} ${stock.lot_size ?? 1}` : tr('Not tradable')}</small></div></div>
+        <div className="historical-request-grid"><label>{tr('Start date')}<input type="date" value={startDate} onChange={(event) => setStartDate(event.target.value)} /></label><label>{tr('End date')}<input type="date" value={endDate} onChange={(event) => setEndDate(event.target.value)} /></label><label>{tr('Frequency')}<select value={timeframe} onChange={(event) => setTimeframe(event.target.value as typeof timeframe)}><option value="1Day">1D</option><option value="1Hour">1H</option><option value="15Min">15m</option><option value="5Min">5m</option><option value="1Min">1m</option></select></label>{marketProvider === 'tdx' && <label>{tr('Price adjustment')}<select value={adjustment} onChange={(event) => setAdjustment(event.target.value as typeof adjustment)}><option value="NONE">{tr('Raw')}</option><option value="QFQ">{tr('Forward adjusted')}</option><option value="HFQ">{tr('Backward adjusted')}</option></select></label>}<button className="primary-button" disabled={marketBusy || startDate >= endDate} onClick={() => void saveMarketData()}>{tr(marketBusy ? 'Working…' : 'Save as Dataset')}</button></div>
         <p className="provenance-note">{tr('Provider timestamps, feed, requested period, retrieval time, and content fingerprint are saved with the dataset.')}</p>
       </div>}
     </section>

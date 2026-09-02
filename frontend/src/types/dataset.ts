@@ -43,6 +43,8 @@ export interface DatasetDefinition {
     retrieved_at: string
     market_timestamp_start: string
     market_timestamp_end: string
+    market?: 'CN' | 'HK' | 'US' | null
+    adjustment?: 'NONE' | 'QFQ' | 'HFQ' | null
   } | null
 }
 
@@ -53,18 +55,24 @@ export interface StockSecurity {
   status: 'active' | 'inactive'
   tradable: boolean
   fractionable: boolean
+  market?: 'CN' | 'HK' | 'US'
+  currency?: 'CNY' | 'HKD' | 'USD'
+  lot_size?: number
 }
 
 export interface StockSnapshot {
   security: StockSecurity
-  provider: 'alpaca'
-  feed: 'iex' | 'sip'
+  provider: 'tdx' | 'alpaca'
+  feed: 'tdx' | 'iex' | 'sip'
   market_timestamp: string
   received_at: string
   latest_trade_price: number | null
   latest_trade_size: number | null
   minute_bar: { close: number; volume: number; event_time: string } | null
   daily_bar: { open: number; high: number; low: number; close: number; volume: number; event_time: string } | null
+  market?: 'CN' | 'HK' | 'US'
+  freshness_status?: 'LIVE' | 'DELAYED' | 'STALE' | 'CLOSED' | 'UNVERIFIED'
+  freshness_seconds?: number | null
 }
 
 export interface DatasetPreview {

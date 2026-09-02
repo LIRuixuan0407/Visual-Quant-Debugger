@@ -6,7 +6,9 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 MarketDataConnectionState = Literal["CONNECTED", "RECONNECTING", "STALE", "DISCONNECTED"]
-MarketDataFeed = Literal["iex", "sip"]
+MarketRegion = Literal["CN", "HK", "US"]
+MarketSession = Literal["CN_REGULAR", "HK_REGULAR", "US_REGULAR"]
+MarketDataFeed = Literal["tdx", "iex", "sip"]
 MarketDataTimeframe = Literal["1Min", "5Min", "15Min", "1Hour", "1Day"]
 
 
@@ -78,7 +80,12 @@ class ProviderStatus(MarketDataModel):
     feeds: tuple[str, ...]
     selected_feed: str
     timeframe: Literal["1Min"] = "1Min"
-    market_session: Literal["US_REGULAR"] = "US_REGULAR"
+    market_session: MarketSession = "US_REGULAR"
+    markets: tuple[MarketRegion, ...] = ("US",)
+    requires_credentials: bool = True
+    supports_live: bool = True
+    supports_historical: bool = True
+    note: str | None = None
 
 
 class StockSecurity(MarketDataModel):
@@ -88,6 +95,9 @@ class StockSecurity(MarketDataModel):
     status: Literal["active", "inactive"]
     tradable: bool
     fractionable: bool = False
+    market: MarketRegion = "US"
+    currency: Literal["CNY", "HKD", "USD"] = "USD"
+    lot_size: int = Field(default=1, ge=1)
 
     @field_validator("symbol")
     @classmethod
@@ -100,7 +110,7 @@ class StockSecurity(MarketDataModel):
 
 class StockSnapshot(MarketDataModel):
     security: StockSecurity
-    provider: Literal["alpaca"] = "alpaca"
+    provider: str = "alpaca"
     feed: MarketDataFeed
     market_timestamp: datetime
     received_at: datetime
@@ -108,6 +118,9 @@ class StockSnapshot(MarketDataModel):
     latest_trade_size: float | None = None
     minute_bar: MarketBar | None = None
     daily_bar: MarketBar | None = None
+    market: MarketRegion = "US"
+    freshness_status: Literal["LIVE", "DELAYED", "STALE", "CLOSED", "UNVERIFIED"] = "UNVERIFIED"
+    freshness_seconds: float | None = Field(default=None, ge=0)
 
     _aware_market = field_validator("market_timestamp")(_aware)
     _aware_received = field_validator("received_at")(_aware)
@@ -118,7 +131,10 @@ class HistoricalBarsRequest(MarketDataModel):
     start: datetime
     end: datetime
     timeframe: MarketDataTimeframe = "1Day"
+    provider: Literal["tdx", "alpaca"] = "alpaca"
+    market: MarketRegion = "US"
     feed: MarketDataFeed = "iex"
+    adjustment: Literal["NONE", "QFQ", "HFQ"] = "NONE"
 
     _aware_times = field_validator("start", "end")(_aware)
 
@@ -142,7 +158,7 @@ class MarketClockSnapshot(MarketDataModel):
     is_open: bool
     next_open: datetime
     next_close: datetime
-    session: Literal["US_REGULAR"] = "US_REGULAR"
+    session: MarketSession = "US_REGULAR"
 
     _aware_timestamp = field_validator("timestamp")(_aware)
     _aware_next_open = field_validator("next_open")(_aware)

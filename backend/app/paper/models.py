@@ -11,6 +11,7 @@ from app.trace.models import Diagnostic, TimelineEvent, TraceScalar
 
 PaperSessionStatus = Literal["CREATED", "RUNNING", "PAUSED", "STOPPED", "ERROR"]
 PaperExecutionMode = Literal["VQD_SIMULATED", "ALPACA_PAPER"]
+PaperMarketSession = Literal["CN_REGULAR", "HK_REGULAR", "US_REGULAR"]
 BrokerConnectionStatus = Literal["NOT_USED", "DISCONNECTED", "CONNECTED", "RECONNECTING", "ERROR"]
 RecoveryStatus = Literal["READY", "RECOVERING", "RECOVERY_DIVERGENCE"]
 RecoveryReportStatus = Literal["READY", "RECOVERED", "RECOVERY_DIVERGENCE"]
@@ -59,10 +60,10 @@ class CreatePaperSession(PaperModel):
     symbols: tuple[str, ...]
     securities: tuple[PaperSecurity, ...] = ()
     parameters: dict[str, int | float] = Field(default_factory=dict)
-    provider: Literal["alpaca", "fake"] = "alpaca"
-    feed: Literal["iex", "sip"] = "iex"
+    provider: Literal["tdx", "alpaca", "fake"] = "alpaca"
+    feed: Literal["tdx", "iex", "sip"] = "iex"
     timeframe: Literal["1Min"] = "1Min"
-    market_session: Literal["US_REGULAR"] = "US_REGULAR"
+    market_session: PaperMarketSession = "US_REGULAR"
     initial_cash: float = Field(default=100_000.0, gt=0)
     fee_bps: float = Field(default=5.0, ge=0)
     slippage_bps: float = Field(default=5.0, ge=0)
@@ -154,7 +155,7 @@ class PaperSessionManifest(PaperModel):
     provider: str
     feed: str
     timeframe: Literal["1Min"] = "1Min"
-    market_session: Literal["US_REGULAR"] = "US_REGULAR"
+    market_session: PaperMarketSession = "US_REGULAR"
     initial_cash: float
     fee_bps: float
     slippage_bps: float
@@ -223,13 +224,13 @@ class PaperExecution(PaperModel):
 class CreatePaperAccount(PaperModel):
     name: str = Field(default="Paper Account", min_length=1, max_length=120)
     initial_cash: float = Field(default=100_000.0, gt=0)
-    currency: Literal["USD"] = "USD"
+    currency: Literal["CNY", "HKD", "USD"] = "USD"
 
 
 class PaperAccount(PaperModel):
     account_id: str
     name: str
-    currency: Literal["USD"] = "USD"
+    currency: Literal["CNY", "HKD", "USD"] = "USD"
     initial_cash: float
     cash: float
     positions: dict[str, float]
@@ -356,7 +357,7 @@ class PaperSessionSnapshot(PaperModel):
     provider: str
     feed: str
     timeframe: Literal["1Min"]
-    market_session: Literal["US_REGULAR"]
+    market_session: PaperMarketSession
     initial_cash: float
     created_at: datetime
     started_at: datetime | None

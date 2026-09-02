@@ -85,7 +85,7 @@ Run bundled sample
 
 ### Historical Market
 
-Work with real US-equity history or imported datasets and inspect the market as it was known at a selected date.
+Work with current and historical CN A-share, Hong Kong, and US-equity data through the zero-key TDX provider, keep Alpaca as an optional US source, or import your own datasets.
 
 VQD keeps the dataset revision, timestamps, universe information, and available fundamental records attached to the research instead of treating data as an invisible input.
 
@@ -171,9 +171,9 @@ Trace gross P&L, fees, slippage, trade attribution, open positions, and drawdown
 
 Move a strategy beyond historical batch backtesting.
 
-VQD supports incremental forward validation, persistent simulated portfolios, real Alpaca market data, and optional Alpaca Paper broker execution.
+VQD supports incremental forward validation and persistent local paper portfolios. TDX is the default no-key market-data source for CN / HK / US equities; Alpaca remains an optional US market-data provider.
 
-Real-money trading is intentionally outside the product scope.
+Paper cash, positions, orders, fills, fees, and P&L are owned by VQD. No broker account is required and real-money trading is intentionally outside the product scope.
 
 ## What makes VQD different
 
@@ -258,7 +258,7 @@ http://localhost:8000
 
 VQD stores persistent workspace data under `.vqd` locally. In the provided container setup, the persistent workspace is mounted at `/data`.
 
-For real Alpaca market data or SEC filing downloads, configure the optional provider settings in `.env.example`.
+TDX market data requires no API key. Alpaca remains optional for US market data, and SEC filing downloads can use the provider settings in `.env.example`.
 
 ## Strategy and Factor extensibility
 

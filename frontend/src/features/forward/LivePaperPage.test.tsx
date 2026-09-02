@@ -43,80 +43,87 @@ describe('Live Paper Forward workspace', () => {
     expect(screen.getByText('3').closest('.parameter-default-cell')).toBeInTheDocument()
   })
 
-  it('exposes standalone persistent Paper Trading and binds a native strategy to an account', async () => {
+  it('uses TDX as the default US market-data source while all paper fills remain local', async () => {
+    const tdxSnapshot: PaperSessionSnapshot = { ...snapshot, provider: 'tdx', feed: 'tdx', execution_mode: 'VQD_SIMULATED', broker_status: 'NOT_USED' }
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const endpoint = String(input)
-      if (endpoint === '/api/market-data/providers') return new Response(JSON.stringify([{ provider: 'alpaca', configured: true, feeds: ['iex', 'sip'], selected_feed: 'iex', timeframe: '1Min', market_session: 'US_REGULAR' }]), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (endpoint === '/api/market-data/providers') return new Response(JSON.stringify([
+        { provider: 'tdx', configured: true, feeds: ['tdx'], selected_feed: 'tdx', timeframe: '1Min', market_session: 'US_REGULAR', markets: ['CN', 'HK', 'US'], requires_credentials: false, supports_live: true, supports_historical: true },
+        { provider: 'alpaca', configured: true, feeds: ['iex', 'sip'], selected_feed: 'iex', timeframe: '1Min', market_session: 'US_REGULAR', markets: ['US'], requires_credentials: true, supports_live: true, supports_historical: true },
+      ]), { status: 200, headers: { 'Content-Type': 'application/json' } })
       if (endpoint === '/api/paper-accounts') return new Response(JSON.stringify({ items: [account] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
       if (endpoint === '/api/paper-sessions' && !init?.method) return new Response(JSON.stringify({ items: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
-      if (endpoint === '/api/market-data/stocks/search?q=Apple') return new Response(JSON.stringify([{ symbol: 'AAPL', name: 'Apple Inc.', exchange: 'NASDAQ', status: 'active', tradable: true, fractionable: true }]), { status: 200, headers: { 'Content-Type': 'application/json' } })
-      if (endpoint === '/api/paper-sessions' && init?.method === 'POST') {
-        const body = JSON.parse(String(init.body)) as Record<string, unknown>
-        return new Response(JSON.stringify({ ...snapshot, execution_mode: body.execution_mode, broker_status: body.execution_mode === 'ALPACA_PAPER' ? 'DISCONNECTED' : 'NOT_USED' }), { status: 201, headers: { 'Content-Type': 'application/json' } })
-      }
+      if (endpoint === '/api/market-data/stocks/search?q=AAPL&provider=tdx&market=US') return new Response(JSON.stringify([{ symbol: 'AAPL', name: 'Apple Inc.', exchange: 'US', status: 'active', tradable: true, fractionable: true, market: 'US', currency: 'USD', lot_size: 1 }]), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (endpoint === '/api/paper-sessions' && init?.method === 'POST') return new Response(JSON.stringify(tdxSnapshot), { status: 201, headers: { 'Content-Type': 'application/json' } })
       throw new Error(`Unexpected request ${init?.method ?? 'GET'} ${endpoint}`)
     })
     render(<LivePaperPage definition={definition} />)
     expect(await screen.findByRole('heading', { name: 'Create a paper portfolio' })).toBeInTheDocument()
-    expect(await screen.findByText('Alpaca connected')).toBeInTheDocument()
-    expect(screen.getByRole('radio', { name: /VQD simulated execution/i })).toBeChecked()
-    expect(screen.getByText('IEX · single exchange')).toBeInTheDocument()
+    expect(await screen.findByText('TDX · Market data ready')).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Market' })).toHaveValue('US')
+    expect(screen.getByRole('combobox', { name: 'Market data provider' })).toHaveValue('tdx')
     await waitFor(() => expect(screen.getByRole('combobox', { name: 'Paper Account' })).toHaveValue(account.account_id))
-    fireEvent.change(screen.getByLabelText('Find a stock'), { target: { value: 'Apple' } })
     fireEvent.click(screen.getByRole('button', { name: 'Search' }))
     fireEvent.click((await screen.findByText('Apple Inc.')).closest('button')!)
-    fireEvent.click(screen.getByRole('radio', { name: /Alpaca Paper broker/i }))
-    expect(screen.getByText('Paper orders leave VQD')).toBeInTheDocument()
+    expect(screen.getByText('VQD local paper execution')).toBeInTheDocument()
+    expect(screen.getByText('Virtual money only')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Create paper portfolio' }))
     await waitFor(() => expect(screen.getAllByText(snapshot.account_id).length).toBeGreaterThan(0))
-    expect(screen.getAllByText('ALPACA · IEX').length).toBeGreaterThan(0)
-    expect(screen.getByText('ALPACA PAPER BROKER')).toBeInTheDocument()
-    expect(screen.getByText('NO REAL MONEY')).toBeInTheDocument()
-    expect(screen.getByText('Broker · DISCONNECTED')).toBeInTheDocument()
+    expect(screen.getAllByText('TDX · TDX').length).toBeGreaterThan(0)
+    expect(screen.getByText('VQD SIMULATED EXECUTION')).toBeInTheDocument()
+    expect(screen.getByText('NO BROKER ORDER')).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /buy/i })).not.toBeInTheDocument()
     const request = fetchMock.mock.calls.find((call) => String(call[0]) === '/api/paper-sessions' && call[1]?.method === 'POST')
     const body = JSON.parse(String(request?.[1]?.body)) as Record<string, unknown>
-    expect(body).toMatchObject({ account_id: account.account_id, provider: 'alpaca', feed: 'iex', symbols: ['AAPL'], execution_mode: 'ALPACA_PAPER' })
-    expect(body).toMatchObject({ securities: [{ symbol: 'AAPL', name: 'Apple Inc.', exchange: 'NASDAQ', status: 'active' }] })
+    expect(body).toMatchObject({ account_id: account.account_id, provider: 'tdx', feed: 'tdx', market_session: 'US_REGULAR', symbols: ['AAPL'], execution_mode: 'VQD_SIMULATED' })
+    expect(body).toMatchObject({ securities: [{ symbol: 'AAPL', name: 'Apple Inc.', exchange: 'US', status: 'active' }] })
     expect(body).not.toHaveProperty('initial_cash')
     expect(JSON.stringify(body).toLowerCase()).not.toContain('secret')
   })
 
-  it('guides a two-stock strategy and never submits an incomplete pair', async () => {
+  it('guides a two-stock A-share strategy and never submits an incomplete pair', async () => {
     const posted: Array<Record<string, unknown>> = []
+    const cnAccount = { ...account, account_id: 'paper-account-cn-0123456789abcdef01', name: 'A-share paper', currency: 'CNY' as const, initial_cash: 1_000_000, cash: 1_000_000, equity: 1_000_000 }
+    const cnSnapshot: PaperSessionSnapshot = {
+      ...snapshot,
+      account_id: cnAccount.account_id,
+      provider: 'tdx', feed: 'tdx', market_session: 'CN_REGULAR', initial_cash: 1_000_000,
+      strategy_id: pairsDefinition.strategy_id, strategy_name: pairsDefinition.name, symbols: ['600519.SH', '000858.SZ'],
+      account: { ...snapshot.account, cash: 1_000_000, equity: 1_000_000 },
+    }
     vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const endpoint = String(input)
-      if (endpoint === '/api/market-data/providers') return new Response(JSON.stringify([{ provider: 'alpaca', configured: true, feeds: ['iex'], selected_feed: 'iex', timeframe: '1Min', market_session: 'US_REGULAR' }]), { status: 200, headers: { 'Content-Type': 'application/json' } })
-      if (endpoint === '/api/paper-accounts') return new Response(JSON.stringify({ items: [account] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (endpoint === '/api/market-data/providers') return new Response(JSON.stringify([{ provider: 'tdx', configured: true, feeds: ['tdx'], selected_feed: 'tdx', timeframe: '1Min', market_session: 'US_REGULAR', markets: ['CN', 'HK', 'US'], requires_credentials: false, supports_live: true, supports_historical: true }]), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (endpoint === '/api/paper-accounts') return new Response(JSON.stringify({ items: [cnAccount] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
       if (endpoint === '/api/paper-sessions' && !init?.method) return new Response(JSON.stringify({ items: [] }), { status: 200, headers: { 'Content-Type': 'application/json' } })
-      if (endpoint.includes('/api/market-data/stocks/search?q=Apple')) return new Response(JSON.stringify([{ symbol: 'AAPL', name: 'Apple Inc.', exchange: 'NASDAQ', status: 'active', tradable: true, fractionable: true }]), { status: 200, headers: { 'Content-Type': 'application/json' } })
-      if (endpoint.includes('/api/market-data/stocks/search?q=Microsoft')) return new Response(JSON.stringify([{ symbol: 'MSFT', name: 'Microsoft Corporation', exchange: 'NASDAQ', status: 'active', tradable: true, fractionable: true }]), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (endpoint === '/api/market-data/stocks/search?q=600519&provider=tdx&market=CN') return new Response(JSON.stringify([{ symbol: '600519.SH', name: '贵州茅台', exchange: 'SH', status: 'active', tradable: true, fractionable: false, market: 'CN', currency: 'CNY', lot_size: 100 }]), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (endpoint === '/api/market-data/stocks/search?q=000858&provider=tdx&market=CN') return new Response(JSON.stringify([{ symbol: '000858.SZ', name: '五粮液', exchange: 'SZ', status: 'active', tradable: true, fractionable: false, market: 'CN', currency: 'CNY', lot_size: 100 }]), { status: 200, headers: { 'Content-Type': 'application/json' } })
       if (endpoint === '/api/paper-sessions' && init?.method === 'POST') {
         posted.push(JSON.parse(String(init.body)) as Record<string, unknown>)
-        return new Response(JSON.stringify({ ...snapshot, strategy_id: pairsDefinition.strategy_id, strategy_name: pairsDefinition.name, symbols: ['AAPL', 'MSFT'] }), { status: 201, headers: { 'Content-Type': 'application/json' } })
+        return new Response(JSON.stringify(cnSnapshot), { status: 201, headers: { 'Content-Type': 'application/json' } })
       }
       throw new Error(`Unexpected request ${init?.method ?? 'GET'} ${endpoint}`)
     })
     render(<LivePaperPage definition={pairsDefinition} />)
     const createButton = await screen.findByRole('button', { name: 'Create paper portfolio' })
+    expect(screen.getByRole('combobox', { name: 'Market' })).toHaveValue('CN')
     expect(createButton).toBeDisabled()
     expect(screen.getByText('0 / 2')).toBeInTheDocument()
 
-    fireEvent.change(screen.getByLabelText('Find a stock'), { target: { value: 'Apple' } })
     fireEvent.click(screen.getByRole('button', { name: 'Search' }))
-    fireEvent.click((await screen.findByText('Apple Inc.')).closest('button')!)
+    fireEvent.click((await screen.findByText('贵州茅台')).closest('button')!)
     expect(screen.getByText('1 / 2')).toBeInTheDocument()
     expect(createButton).toBeDisabled()
     expect(posted).toHaveLength(0)
 
-    fireEvent.change(screen.getByLabelText('Find a stock'), { target: { value: 'Microsoft' } })
+    fireEvent.change(screen.getByLabelText('Find a stock'), { target: { value: '000858' } })
     fireEvent.click(screen.getByRole('button', { name: 'Search' }))
-    fireEvent.click((await screen.findByText('Microsoft Corporation')).closest('button')!)
+    fireEvent.click((await screen.findByText('五粮液')).closest('button')!)
     expect(screen.getByText('2 / 2')).toBeInTheDocument()
     expect(createButton).toBeEnabled()
     fireEvent.click(createButton)
     await waitFor(() => expect(posted).toHaveLength(1))
-    expect(posted[0]).toMatchObject({ strategy_id: 'pairs-trading', symbols: ['AAPL', 'MSFT'] })
+    expect(posted[0]).toMatchObject({ strategy_id: 'pairs-trading', symbols: ['600519.SH', '000858.SZ'], provider: 'tdx', feed: 'tdx', market_session: 'CN_REGULAR', execution_mode: 'VQD_SIMULATED' })
   })
 
   it('blocks historical framework adapters before any forward or provider request', () => {

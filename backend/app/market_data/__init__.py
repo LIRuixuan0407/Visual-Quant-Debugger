@@ -14,11 +14,19 @@ from .models import (
     MarketDataConnectionState,
     MarketDataFeed,
     MarketDataTimeframe,
+    MarketRegion,
+    MarketSession,
     ProviderStatus,
     StockSecurity,
     StockSnapshot,
 )
 from .store import MarketApplyKind, PointInTimeMarketStore
+from .tdx import (
+    TdxMarketDataAdapter,
+    TdxStockReferenceClient,
+    parse_tdx_symbol,
+    tdx_provider_status,
+)
 
 __all__ = [
     "AlpacaMarketClock",
@@ -34,9 +42,15 @@ __all__ = [
     "MarketDataConnectionState",
     "MarketDataFeed",
     "MarketDataTimeframe",
+    "MarketRegion",
+    "MarketSession",
     "PointInTimeMarketStore",
+    "TdxMarketDataAdapter",
+    "TdxStockReferenceClient",
     "ProviderStatus",
     "StockSecurity",
     "StockSnapshot",
     "alpaca_provider_status",
+    "parse_tdx_symbol",
+    "tdx_provider_status",
 ]

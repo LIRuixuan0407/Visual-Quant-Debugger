@@ -3,12 +3,6 @@ const priceFormatter = new Intl.NumberFormat('en-US', {
   minimumFractionDigits: 2,
   maximumFractionDigits: 4,
 })
-const currencyFormatter = new Intl.NumberFormat('en-US', {
-  style: 'currency',
-  currency: 'USD',
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-})
 
 export function formatNumber(value: number | null, digits = 4): string {
   if (value === null || !Number.isFinite(value)) return typeof document !== 'undefined' && document.documentElement.lang === 'zh-CN' ? '暂无数据' : 'Not available'
@@ -20,8 +14,13 @@ export function formatPrice(value: number): string {
   return priceFormatter.format(value)
 }
 
-export function formatCurrency(value: number): string {
-  return currencyFormatter.format(value)
+export function formatCurrency(value: number, currency = 'USD'): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value)
 }
 
 export function formatPercent(value: number): string {

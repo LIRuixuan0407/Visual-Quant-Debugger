@@ -39,6 +39,8 @@ class DatasetProvenance(DatasetModel):
     retrieved_at: datetime
     market_timestamp_start: datetime
     market_timestamp_end: datetime
+    market: Literal["CN", "HK", "US"] | None = None
+    adjustment: Literal["NONE", "QFQ", "HFQ"] | None = None
 
     _aware_times = field_validator(
         "requested_start",
