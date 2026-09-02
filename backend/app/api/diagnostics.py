@@ -32,6 +32,8 @@ def _current_cached_report(cached: bytes | None) -> DiagnosisReport | None:
         report.statistical_diagnostics is None
         or report.volatility_diagnostics is None
         or report.what_if is None
+        or report.regime_diagnostics is None
+        or report.failure_fingerprint is None
     ):
         return None
     return report

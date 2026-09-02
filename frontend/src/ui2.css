@@ -994,6 +994,50 @@ textarea:hover { border-color: #aeb8ca; }
   text-transform: none;
 }
 
+.guided-demo {
+  display: grid;
+  grid-template-columns: minmax(320px, 1.35fr) minmax(360px, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  margin-top: 14px;
+  padding: 16px 18px;
+  border: 1px solid #cfd8ee;
+  border-radius: var(--radius-card);
+  background: linear-gradient(135deg, #f7f9ff 0%, #ffffff 58%, #f8fafc 100%);
+  box-shadow: 0 1px 2px rgba(31, 44, 70, .025);
+}
+
+.guided-demo-copy { display: grid; gap: 5px; }
+.guided-demo-copy h2 { margin: 0; color: #1e2b46; font-size: 17px; letter-spacing: -.015em; }
+.guided-demo-copy p { max-width: 720px; margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.guided-demo-steps { display: grid; grid-template-columns: repeat(3, minmax(96px, 1fr)); gap: 8px; }
+.guided-demo-steps span {
+  display: grid;
+  grid-template-columns: 24px 1fr;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .82);
+  color: #33405b;
+  font-size: 11.5px;
+  font-weight: 650;
+}
+.guided-demo-steps b {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #e9eefb;
+  color: #40588c;
+  font: 700 10px var(--mono);
+}
+.guided-demo-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.run-summary-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 11px 13px; border-top: 1px solid var(--line); }
+
 .strategy-requirements {
   display: flex;
   flex-wrap: wrap;
@@ -2611,6 +2655,8 @@ button.live-session-row.selected { background: #eef9fb; }
   .evidence-grid,
   .waterfall-layout { grid-template-columns: 1fr; }
   .concept-inspector { position: static; }
+  .guided-demo { grid-template-columns: 1fr; align-items: stretch; }
+  .guided-demo-actions { justify-content: flex-start; }
   .research-configuration { grid-template-columns: repeat(2, 1fr); }
   .research-configuration > :nth-child(2) { border-right: 0; }
   .research-configuration > :nth-child(-n+2) { border-bottom: 1px solid var(--line); }
@@ -2659,6 +2705,7 @@ button.live-session-row.selected { background: #eef9fb; }
   .autopsy-header,
   .workspace-title,
   .forward-title { align-items: flex-start; flex-direction: column; min-height: 0; }
+  .guided-demo-steps { grid-template-columns: 1fr; }
   .research-configuration { grid-template-columns: 1fr; }
   .research-configuration > * { border-right: 0 !important; border-bottom: 1px solid var(--line); }
   .research-configuration > :last-child { border-bottom: 0; }

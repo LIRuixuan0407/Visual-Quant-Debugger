@@ -13,6 +13,7 @@ import StrategyAnatomy, { ConceptInspector } from './StrategyAnatomy'
 import { defaultsFromDefinition, parametersEqual, validateParameters } from './utils/parameters'
 
 interface LastRun {
+  datasetId: string
   parameters: StrategyParameters
   result: BacktestCreated
 }
@@ -37,6 +38,8 @@ interface StrategyPageProps {
     research_cutoff: string | null
   }) => void
   onOpenReplay: (traceId: string) => void
+  onOpenDiagnose?: (traceId: string) => void
+  onOpenAutopsy?: (traceId: string) => void
   onRunComplete?: (traceId: string, runId?: string) => void
   onStrategyImported?: (definition: StrategyDefinition) => void
   runBacktest?: (parameters: StrategyParameters) => Promise<BacktestCreated>
@@ -52,6 +55,8 @@ function StrategyPage({
   onDatasetChange,
   onConfigurationChange,
   onOpenReplay,
+  onOpenDiagnose,
+  onOpenAutopsy,
   onRunComplete,
   onStrategyImported,
   runBacktest,
@@ -130,17 +135,16 @@ function StrategyPage({
     setRunError(null)
   }
 
-  async function submitBacktest() {
-    if (!isValid || runState === 'running' || definition.available === false) return
+  async function executeBacktest(parameters: StrategyParameters) {
     setRunState('running')
     setRunError(null)
     try {
       const result = runBacktest
-        ? await runBacktest(draft)
+        ? await runBacktest(parameters)
         : await createBacktest({
           strategy_id: definition.strategy_id,
           dataset_id: selectedDatasetId,
-          parameters: draft,
+          parameters,
           research_cutoff: researchCutoff ? new Date(researchCutoff).toISOString() : null,
         })
       if (!result.trace_id || !result.summary || result.status === 'FAILED') {
@@ -149,13 +153,27 @@ function StrategyPage({
           ? `${failure.exception_type} at ${failure.timestamp}: ${failure.message}`
           : 'The run did not produce a complete trace.')
       }
-      setLastRun({ parameters: { ...draft }, result })
+      setLastRun({ datasetId: selectedDatasetId, parameters: { ...parameters }, result })
       onRunComplete?.(result.trace_id, result.run_id)
       setRunState('idle')
     } catch (reason) {
       setRunError(reason instanceof Error ? reason.message : 'Backtest failed with an unknown error.')
       setRunState('error')
     }
+  }
+
+  async function submitBacktest() {
+    if (!isValid || runState === 'running' || definition.available === false) return
+    await executeBacktest(draft)
+  }
+
+  async function runGuidedDemo() {
+    if (!recommendedSamplePreset || runState === 'running' || definition.available === false) return
+    const parameters = { ...recommendedSamplePreset.parameters }
+    setDraft(parameters)
+    setSelectedPresetId(recommendedSamplePreset.preset_id)
+    publishConfiguration(parameters)
+    await executeBacktest(parameters)
   }
 
   async function submitStrategyImport() {
@@ -194,6 +212,25 @@ function StrategyPage({
       {compatibility?.reasons.map((reason) => <p className="inline-error" key={reason}>{tr(reason)}</p>)}
       {compatibilityError && <p className="inline-error">{tr(compatibilityError)}</p>}
 
+      {recommendedSamplePreset && <section className="guided-demo" aria-labelledby="guided-demo-heading">
+        <div className="guided-demo-copy">
+          <span className="section-kicker">{tr('5-MINUTE GUIDED DEMO')}</span>
+          <h2 id="guided-demo-heading">{tr('Debug a strategy, not just its equity curve')}</h2>
+          <p>{tr('Use the bundled pairs dataset to run a reproducible backtest, replay the exact decisions, then inspect the failure fingerprint and regime evidence. No API key is required.')}</p>
+        </div>
+        <div className="guided-demo-steps" aria-label={tr('Guided demo steps')}>
+          <span><b>1</b>{tr('Run bundled sample')}</span>
+          <span><b>2</b>{tr('Replay decisions')}</span>
+          <span><b>3</b>{tr('Inspect failure fingerprint')}</span>
+        </div>
+        <div className="guided-demo-actions">
+          <button className="primary-button" type="button" disabled={runState === 'running' || definition.available === false} onClick={() => void runGuidedDemo()}>{tr(runState === 'running' ? 'Running…' : 'Run guided demo')}</button>
+          {lastRun?.datasetId === 'pairs-sample-v1' && lastRun.result.trace_id && <>
+            <button className="secondary-button" type="button" onClick={() => onOpenReplay(lastRun.result.trace_id!)}>{tr('Replay decisions')}</button>
+            {onOpenDiagnose && <button className="secondary-button" type="button" onClick={() => onOpenDiagnose(lastRun.result.trace_id!)}>{tr('Open Diagnose')}</button>}
+          </>}
+        </div>
+      </section>}
       <div className="anatomy-layout">
         <StrategyAnatomy definition={definition} selectedNodeId={selectedNode.node_id} onSelect={setSelectedNodeId} />
         <ConceptInspector definition={definition} node={selectedNode} />
@@ -249,7 +286,11 @@ function StrategyPage({
               <div><dt>{tr('Max drawdown')}</dt><dd>{formatPercent(lastRun.result.summary.max_drawdown)}</dd></div>
               <div><dt>{tr('Signals')}</dt><dd>{lastRun.result.summary.signals}</dd></div>
             </dl>
-            <button className="open-replay-button" type="button" onClick={() => onOpenReplay(lastRun.result.trace_id!)}>{tr('Open Replay')} <span aria-hidden="true">→</span></button>
+            <div className="run-summary-actions">
+              <button className="open-replay-button" type="button" onClick={() => onOpenReplay(lastRun.result.trace_id!)}>{tr('Open Replay')} <span aria-hidden="true">→</span></button>
+              {onOpenDiagnose && <button className="secondary-button" type="button" onClick={() => onOpenDiagnose(lastRun.result.trace_id!)}>{tr('Open Diagnose')}</button>}
+              {onOpenAutopsy && <button className="secondary-button" type="button" onClick={() => onOpenAutopsy(lastRun.result.trace_id!)}>{tr('Open P&L Autopsy')}</button>}
+            </div>
           </section>
         )}
       </section>

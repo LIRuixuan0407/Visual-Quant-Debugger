@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, field_validator
 
+from app.diagnostics.models import FailureFingerprint
+
 
 def _finite(value: float) -> float:
     if value != value or value in (float("inf"), -float("inf")):
@@ -162,3 +164,4 @@ class PnLAutopsyReport(AutopsyModel):
     periods: PeriodBreakdown
     trades: TradeAttributionReport
     drawdowns: tuple[DrawdownEpisode, ...]
+    failure_fingerprint: FailureFingerprint | None = None

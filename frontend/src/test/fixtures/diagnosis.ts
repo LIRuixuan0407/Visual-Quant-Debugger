@@ -69,6 +69,37 @@ export const diagnosisReport: DiagnosisReport = {
       'Drawdown overlap is descriptive and does not establish causality.',
     ],
   },
+
+  regime_diagnostics: {
+    status: 'OK', trend_window: 21, trend_threshold: 0.02,
+    performance: [
+      { volatility_regime: 'LOW', trend_regime: 'UPTREND', observation_count: 8, status: 'OK', total_return: 0.018, sharpe: 1.6, max_drawdown: -0.012, hit_rate: 0.625, trade_count: 1, turnover: 0.24 },
+      { volatility_regime: 'NORMAL', trend_regime: 'SIDEWAYS', observation_count: 9, status: 'OK', total_return: 0.004, sharpe: 0.35, max_drawdown: -0.018, hit_rate: 0.556, trade_count: 1, turnover: 0.31 },
+      { volatility_regime: 'HIGH', trend_regime: 'DOWNTREND', observation_count: 7, status: 'OK', total_return: -0.014, sharpe: -0.8, max_drawdown: -0.031, hit_rate: 0.286, trade_count: 1, turnover: 0.25 },
+    ],
+    verdict: 'REGIME_DEPENDENT',
+    summary: 'Best regime Sharpe 1.60 (LOW / UPTREND); worst -0.80 (HIGH / DOWNTREND).',
+    calculation_details: [
+      'Trend regime uses the compounded equal-weight market return over 21 observations.',
+      'Regime differences are descriptive evidence and do not establish causality or future performance.',
+    ],
+  },
+  failure_fingerprint: {
+    high_severity_count: 2, medium_severity_count: 2, available_dimension_count: 6,
+    summary: '2 high-severity and 2 medium-severity failure modes across 6 evidence-backed dimensions.',
+    calculation_details: [
+      'Failure Fingerprint uses deterministic thresholds over recorded diagnostics and rerun evidence.',
+      'It is a triage summary, not a forecast, recommendation, or composite AI score.',
+    ],
+    dimensions: [
+      { key: 'OOS_DEGRADATION', title: 'Out-of-sample degradation', severity: 'HIGH', evidence: ['Train Sharpe 1.40; test Sharpe -0.50.'], calculation_details: ['High when test Sharpe is non-positive or retention is under 40%.'] },
+      { key: 'PARAMETER_INSTABILITY', title: 'Parameter instability', severity: 'MEDIUM', evidence: ['3 of 6 alternatives retain at least 80% of the current test Sharpe.'], calculation_details: ['Medium when retention share is under 60%.'] },
+      { key: 'COST_SENSITIVITY', title: 'Transaction-cost sensitivity', severity: 'LOW', evidence: ['Return remains positive at the highest tested friction.'], calculation_details: ['Derived from deterministic cost-stress reruns.'] },
+      { key: 'EXECUTION_DELAY_SENSITIVITY', title: 'Execution-delay sensitivity', severity: 'MEDIUM', evidence: ['Delayed return retention 50.0%; unfilled signals 2.'], calculation_details: ['Derived from deterministic delayed reruns.'] },
+      { key: 'REGIME_DEPENDENCE', title: 'Market-regime dependence', severity: 'HIGH', evidence: ['Best regime Sharpe 1.60; worst -0.80.'], calculation_details: ['Severity comes from regime Sharpe dispersion.'] },
+      { key: 'MEAN_REVERSION_EVIDENCE', title: 'Mean-reversion evidence', severity: 'LOW', evidence: ['AR(1) phi 0.720; estimated half-life 2.11 bars.'], calculation_details: ['This is evidence, not a stationarity proof.'] },
+    ],
+  },
   what_if: {
     status: 'AVAILABLE', baseline_inputs: baselineInputs, baseline_metrics: whatIfBaseline,
     parameter: { key: 'lookback', label: 'Lookback', value_type: 'integer', current_value: 5, minimum: 2, maximum: null, step: 1, unit: 'bars' },

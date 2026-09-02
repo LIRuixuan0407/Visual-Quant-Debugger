@@ -100,16 +100,12 @@ def calculate_pair_mean_reversion(
         previous_sum_squares = float(np.dot(centered_previous, centered_previous))
         current_sum_squares = float(np.dot(centered_current, centered_current))
         if previous_sum_squares != 0.0:
-            candidate = float(
-                np.dot(centered_previous, centered_current) / previous_sum_squares
-            )
+            candidate = float(np.dot(centered_previous, centered_current) / previous_sum_squares)
             if math.isfinite(candidate):
                 phi = candidate
         correlation_denominator = math.sqrt(previous_sum_squares * current_sum_squares)
         if correlation_denominator != 0.0:
-            candidate = float(
-                np.dot(centered_previous, centered_current) / correlation_denominator
-            )
+            candidate = float(np.dot(centered_previous, centered_current) / correlation_denominator)
             if math.isfinite(candidate):
                 spread_acf = candidate
 

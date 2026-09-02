@@ -17,6 +17,8 @@ test('renders reconciled waterfall, period tabs, ranked trades, and drawdown Rep
 
   expect(await screen.findByRole('heading', { name: 'P&L Autopsy' })).toBeInTheDocument()
   expect(screen.getByText('Reconciled')).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: 'Strategy failure fingerprint' })).toBeInTheDocument()
+  expect(screen.getByText('Out-of-sample degradation')).toBeInTheDocument()
   expect(screen.getByLabelText('Gross P&L less fees and slippage equals net P&L')).toHaveTextContent('Gross P&L')
   expect(screen.getByRole('table', { name: 'UTC period P&L attribution' })).toHaveTextContent('2024-01')
 

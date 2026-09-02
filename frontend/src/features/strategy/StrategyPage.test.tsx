@@ -14,6 +14,14 @@ const created: BacktestCreated = {
   summary: { total_return: 0.0123, net_pnl: 1230, max_drawdown: -0.04, timeline_events: 40, signals: 6 },
 }
 
+const pairsSample: DatasetDefinition = {
+  dataset_id: 'pairs-sample-v1', name: 'Pairs Daily Sample', source_type: 'BUILT_IN', timezone: 'UTC', frequency: '1D',
+  symbols: ['AAA', 'BBB'], fields: ['close'], row_count: 120, synchronized_bar_count: 120,
+  start_time: '2025-01-01T00:00:00Z', end_time: '2025-04-30T00:00:00Z', created_at: '2025-01-01T00:00:00Z',
+  content_fingerprint: 'sha256:pairs', source_timezone: 'UTC', column_mapping: {},
+  quality: { status: 'VALID', rows: 120, symbols: 2, start: '2025-01-01T00:00:00Z', end: '2025-04-30T00:00:00Z', duplicates: 0, missing_required_values: 0, rows_reordered: 0, alignment_gaps: 0, timezone: 'UTC', issues: [] },
+}
+
 test('renders the backend-driven anatomy and inspects the Z-score node', () => {
   render(<StrategyPage definition={strategyDefinition} onOpenReplay={() => undefined} />)
 
@@ -67,10 +75,12 @@ test('blocks invalid parameters and shows specific validation errors', () => {
   expect(screen.getByText('Exit Z must be smaller than Entry Z.')).toBeInTheDocument()
 })
 
-test('runs the exact draft, retains last-run summary, and opens its trace', async () => {
+test('runs the exact draft, retains last-run summary, and opens its trace and diagnostics', async () => {
   const runBacktest = vi.fn<(parameters: typeof strategyDefaults) => Promise<BacktestCreated>>().mockResolvedValue(created)
   const onOpenReplay = vi.fn()
-  render(<StrategyPage definition={strategyDefinition} onOpenReplay={onOpenReplay} runBacktest={runBacktest} />)
+  const onOpenDiagnose = vi.fn()
+  const onOpenAutopsy = vi.fn()
+  render(<StrategyPage definition={strategyDefinition} onOpenReplay={onOpenReplay} onOpenDiagnose={onOpenDiagnose} onOpenAutopsy={onOpenAutopsy} runBacktest={runBacktest} />)
 
   fireEvent.change(screen.getByLabelText('Lookback'), { target: { value: '10' } })
   fireEvent.click(screen.getByRole('button', { name: 'Run Backtest' }))
@@ -81,7 +91,31 @@ test('runs the exact draft, retains last-run summary, and opens its trace', asyn
   fireEvent.change(screen.getByLabelText('Lookback'), { target: { value: '12' } })
   expect(screen.getByText('Parameters changed')).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: /Open Replay/ }))
+  fireEvent.click(screen.getByRole('button', { name: 'Open Diagnose' }))
+  fireEvent.click(screen.getByRole('button', { name: 'Open P&L Autopsy' }))
   expect(onOpenReplay).toHaveBeenCalledWith('trace-custom')
+  expect(onOpenDiagnose).toHaveBeenCalledWith('trace-custom')
+  expect(onOpenAutopsy).toHaveBeenCalledWith('trace-custom')
+})
+
+test('runs the bundled guided demo and exposes the replay-to-diagnose path', async () => {
+  vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: true, status: 200, json: async () => ({ strategy_id: 'pairs-trading', dataset_id: 'pairs-sample-v1', compatible: true, required_fields: ['close'], provided_fields: ['close'], required_symbol_count: 2, provided_symbol_count: 2, required_symbols: [], missing_symbols: [], minimum_history: 3, synchronized_bar_count: 120, reasons: [] }) } as Response)
+  const runBacktest = vi.fn<(parameters: typeof strategyDefaults) => Promise<BacktestCreated>>().mockResolvedValue(created)
+  const onOpenReplay = vi.fn()
+  const onOpenDiagnose = vi.fn()
+  render(<StrategyPage definition={strategyDefinition} datasets={[pairsSample]} selectedDatasetId="pairs-sample-v1" onOpenReplay={onOpenReplay} onOpenDiagnose={onOpenDiagnose} runBacktest={runBacktest} />)
+
+  expect(screen.getByRole('heading', { name: 'Debug a strategy, not just its equity curve' })).toBeInTheDocument()
+  expect(screen.getByText('Run bundled sample')).toBeInTheDocument()
+  expect(screen.getByText('Inspect failure fingerprint')).toBeInTheDocument()
+  fireEvent.click(screen.getByRole('button', { name: 'Run guided demo' }))
+
+  expect(await screen.findByRole('heading', { name: 'Backtest summary' })).toBeInTheDocument()
+  expect(runBacktest).toHaveBeenCalledWith(demoParameters)
+  fireEvent.click(screen.getByRole('button', { name: 'Replay decisions' }))
+  fireEvent.click(screen.getAllByRole('button', { name: 'Open Diagnose' })[0])
+  expect(onOpenReplay).toHaveBeenCalledWith('trace-custom')
+  expect(onOpenDiagnose).toHaveBeenCalledWith('trace-custom')
 })
 
 test('retains the draft and reports a precise backtest failure', async () => {

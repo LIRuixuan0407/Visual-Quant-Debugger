@@ -1,3 +1,5 @@
+import type { FailureFingerprint } from './diagnostics'
+
 export interface PnLAutopsyReport {
   report_version: '1.0'
   source_run: {
@@ -38,6 +40,7 @@ export interface PnLAutopsyReport {
     reconciliation_status: 'RECONCILED' | 'UNATTRIBUTED_REMAINS'
   }
   drawdowns: DrawdownEpisode[]
+  failure_fingerprint?: FailureFingerprint | null
 }
 
 export interface PeriodAttribution {

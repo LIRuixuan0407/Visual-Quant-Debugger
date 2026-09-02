@@ -290,6 +290,71 @@ class WhatIfScenario(DiagnosisModel):
     calculation_details: tuple[str, ...]
 
 
+VolatilityRegime = Literal["LOW", "NORMAL", "HIGH"]
+TrendRegime = Literal["UPTREND", "DOWNTREND", "SIDEWAYS"]
+FailureSeverity = Literal["LOW", "MEDIUM", "HIGH", "NOT_AVAILABLE"]
+FailureFingerprintKey = Literal[
+    "OOS_DEGRADATION",
+    "PARAMETER_INSTABILITY",
+    "COST_SENSITIVITY",
+    "EXECUTION_DELAY_SENSITIVITY",
+    "REGIME_DEPENDENCE",
+    "MEAN_REVERSION_EVIDENCE",
+]
+
+
+class RegimePerformance(DiagnosisModel):
+    volatility_regime: VolatilityRegime
+    trend_regime: TrendRegime
+    observation_count: int = Field(ge=0)
+    status: Literal["OK", "INSUFFICIENT_DATA"]
+    total_return: float
+    sharpe: float
+    max_drawdown: float
+    hit_rate: float = Field(ge=0, le=1)
+    trade_count: int = Field(ge=0)
+    turnover: float
+
+    _finite_values = field_validator(
+        "total_return", "sharpe", "max_drawdown", "hit_rate", "turnover"
+    )(_finite)
+
+
+class RegimeDiagnostics(DiagnosisModel):
+    status: Literal["OK", "INSUFFICIENT_DATA", "UNSUPPORTED"]
+    trend_window: int = Field(ge=2)
+    trend_threshold: float = Field(gt=0)
+    performance: tuple[RegimePerformance, ...]
+    verdict: Literal[
+        "REGIME_DEPENDENT",
+        "MIXED_REGIME_SENSITIVITY",
+        "LIMITED_REGIME_SENSITIVITY",
+        "LIMITED_EVIDENCE",
+        "UNSUPPORTED",
+    ]
+    summary: str
+    calculation_details: tuple[str, ...]
+
+    _finite_threshold = field_validator("trend_threshold")(_finite)
+
+
+class FailureFingerprintDimension(DiagnosisModel):
+    key: FailureFingerprintKey
+    title: str
+    severity: FailureSeverity
+    evidence: tuple[str, ...]
+    calculation_details: tuple[str, ...]
+
+
+class FailureFingerprint(DiagnosisModel):
+    dimensions: tuple[FailureFingerprintDimension, ...]
+    high_severity_count: int = Field(ge=0)
+    medium_severity_count: int = Field(ge=0)
+    available_dimension_count: int = Field(ge=0)
+    summary: str
+    calculation_details: tuple[str, ...]
+
+
 class DiagnosisReport(DiagnosisModel):
     report_version: Literal["1.0"] = "1.0"
     source_run: DiagnosisSourceRun
@@ -303,3 +368,5 @@ class DiagnosisReport(DiagnosisModel):
     statistical_diagnostics: StatisticalDiagnostics | None = None
     volatility_diagnostics: VolatilityDiagnostics | None = None
     what_if: WhatIfSupport | None = None
+    regime_diagnostics: RegimeDiagnostics | None = None
+    failure_fingerprint: FailureFingerprint | None = None

@@ -14,7 +14,7 @@ afterEach(() => {
   window.localStorage.clear()
 })
 
-test('keeps parameter and batch stress evidence with statistical, volatility, and What-if diagnostics', async () => {
+test('keeps parameter, stress, statistical, regime, fingerprint, and What-if diagnostics', async () => {
   const onOpenReplay = vi.fn()
   const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse(diagnosisReport))
   render(<DiagnosePage traceId="trace-custom" onOpenReplay={onOpenReplay} />)
@@ -23,6 +23,9 @@ test('keeps parameter and batch stress evidence with statistical, volatility, an
   const trainTestHeading = screen.getByRole('heading', { name: 'Train / Test · 70 / 30' })
   expect(trainTestHeading).toBeInTheDocument()
   expect(trainTestHeading.closest('section')?.querySelector('.train-test-table')).toBeInTheDocument()
+  const fingerprintHeading = screen.getByRole('heading', { name: 'Strategy failure fingerprint' })
+  expect(screen.getByText('2 high-severity and 2 medium-severity failure modes across 6 evidence-backed dimensions.')).toBeInTheDocument()
+  expect(screen.getByText('Out-of-sample degradation')).toBeInTheDocument()
   const parameterHeading = screen.getByRole('heading', { name: 'Lookback sensitivity' })
   expect(screen.getByRole('img', { name: 'Train and test Sharpe across lookback candidates' })).toBeInTheDocument()
   const costStressSection = screen.getByRole('heading', { name: 'Cost stress' }).closest('section') as HTMLElement
@@ -40,13 +43,18 @@ test('keeps parameter and batch stress evidence with statistical, volatility, an
   const volatilityChart = screen.getByRole('img', { name: 'Historical and EWMA volatility with strategy drawdown overlays' })
   expect(volatilityHeading).toBeInTheDocument()
   expect(volatilityChart).toBeInTheDocument()
-  expect(screen.getByText('HIGH')).toBeInTheDocument()
+  expect(within(volatilityHeading.closest('section') as HTMLElement).getByText('HIGH')).toBeInTheDocument()
   expect(screen.getByText('1 of the 1 evaluable largest drawdowns began while EWMA volatility was rising.')).toBeInTheDocument()
+  const regimeHeading = screen.getByRole('heading', { name: 'Market regime diagnostics' })
+  expect(screen.getByRole('table', { name: 'Strategy performance by market regime' })).toHaveTextContent('HIGH / DOWNTREND')
+  expect(screen.getByText('REGIME_DEPENDENT')).toBeInTheDocument()
   const whatIfHeading = screen.getByRole('heading', { name: 'What-if Lab' })
   expect(whatIfHeading).toBeInTheDocument()
+  expect(fingerprintHeading.compareDocumentPosition(parameterHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(parameterHeading.compareDocumentPosition(statisticalHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(statisticalHeading.compareDocumentPosition(volatilityHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-  expect(volatilityHeading.compareDocumentPosition(whatIfHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(volatilityHeading.compareDocumentPosition(regimeHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+  expect(regimeHeading.compareDocumentPosition(whatIfHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   expect(screen.getByText('BASELINE_READY')).toBeInTheDocument()
   expect(screen.getByText('Total return').closest('.what-if-row')).toHaveTextContent('1.20%1.20%0.00 pp')
   expect(screen.getByText('Execution timing changes are measured, not inferred')).toBeInTheDocument()
@@ -123,6 +131,10 @@ test('renders unreliable dataset frequency as unsupported without an annualized 
       verdict: 'UNSUPPORTED',
       summary: "Annualized volatility is unsupported for dataset frequency '1Hour'.",
     },
+    regime_diagnostics: {
+      status: 'UNSUPPORTED', trend_window: 21, trend_threshold: 0.02, performance: [], verdict: 'UNSUPPORTED',
+      summary: 'Regime diagnostics require supported volatility diagnostics.', calculation_details: [],
+    },
   }))
   render(<DiagnosePage traceId="trace-hourly" onOpenReplay={() => undefined} />)
 
@@ -149,12 +161,14 @@ test('keeps legacy cached reports readable when new diagnostics are absent', asy
     ...diagnosisReport,
     statistical_diagnostics: undefined,
     volatility_diagnostics: undefined,
+    regime_diagnostics: undefined,
+    failure_fingerprint: undefined,
     what_if: undefined,
   }))
   render(<DiagnosePage traceId="trace-legacy" onOpenReplay={() => undefined} />)
 
   expect(await screen.findByRole('heading', { name: 'Statistical diagnostics' })).toBeInTheDocument()
-  expect(screen.getAllByText('Not available in this cached report')).toHaveLength(2)
+  expect(screen.getAllByText('Not available in this cached report')).toHaveLength(4)
   expect(screen.getByRole('heading', { name: 'What-if Lab' })).toBeInTheDocument()
 })
 
@@ -167,8 +181,10 @@ test('renders statistical diagnostics and evidence boundary in Chinese', async (
   expect(screen.getByRole('img', { name: '按滞后阶数比较收益率与平方收益率自相关' })).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: '配对均值回归证据' })).toBeInTheDocument()
   expect(screen.getByText('这些结果是诊断证据，不是平稳性或协整关系的证明。')).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: '策略失效指纹' })).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: '波动率诊断' })).toBeInTheDocument()
   expect(screen.getByRole('img', { name: '历史波动率、EWMA 波动率与策略回撤叠加图' })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: '市场状态诊断' })).toBeInTheDocument()
   expect(screen.getByRole('heading', { name: 'What-if 实验室' })).toBeInTheDocument()
   expect(screen.getByText('运行场景')).toBeInTheDocument()
 })

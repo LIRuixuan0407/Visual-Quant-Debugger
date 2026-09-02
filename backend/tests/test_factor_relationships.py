@@ -231,8 +231,7 @@ def test_factor_relationships_reports_overlap_redundancy_incremental_clusters_an
     assert record.pca.components
     assert record.pca.components[0].component == "PC1"
     assert (
-        record.pca.components[0].explained_variance
-        >= record.pca.components[-1].explained_variance
+        record.pca.components[0].explained_variance >= record.pca.components[-1].explained_variance
     )
     assert record.pca.components[-1].cumulative_explained_variance == pytest.approx(1.0)
     assert {item.factor_research_id for item in record.pca.components[0].loadings} == set(

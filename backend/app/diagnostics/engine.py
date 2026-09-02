@@ -3,6 +3,7 @@ from typing import Literal, cast
 import numpy as np
 
 from app.datasets import dataset_registry
+from app.diagnostics.fingerprint import build_failure_fingerprint
 from app.diagnostics.metrics import (
     daily_returns,
     max_drawdown,
@@ -25,6 +26,7 @@ from app.diagnostics.models import (
     WhatIfScenario,
     WhatIfSupport,
 )
+from app.diagnostics.regime import build_regime_diagnostics
 from app.diagnostics.statistical import build_statistical_diagnostics
 from app.diagnostics.volatility import build_volatility_diagnostics
 from app.runs import BacktestRunRecord, OpenRunResult, execute_open_run
@@ -389,49 +391,66 @@ def _diagnose_native_run(trace_id: str, record: BacktestRunRecord) -> DiagnosisR
                 metrics=_trace_window_metrics(rerun, initial_cash, 0, bar_count),
             )
         )
+    source = DiagnosisSourceRun(
+        trace_id=trace_id,
+        strategy_id=record.strategy_id,
+        dataset_id=record.dataset_id,
+        dataset_name=baseline.metadata.dataset_name,
+        dataset_source=record.dataset_source,
+        bar_count=bar_count,
+        current_lookback=current_value,
+        fee_bps=original_fee,
+        slippage_bps=original_slippage,
+        sensitivity_parameter=sensitivity_parameter,
+    )
+    split = TrainTestSplit(
+        train_start=baseline.timeline[0].timestamp,
+        train_end=baseline.timeline[split_index - 1].timestamp,
+        test_start=baseline.timeline[split_index].timestamp,
+        test_end=baseline.timeline[-1].timestamp,
+        train_bar_count=split_index,
+        test_bar_count=bar_count - split_index,
+        feature_context_policy=(
+            "Test decisions are produced by one chronological full-run pipeline, so each "
+            "test bar may use only earlier bars, including train history."
+        ),
+        pnl_isolation_policy=(
+            "Test metrics start from equity immediately before the first test bar; train "
+            "P&L is not counted in test return."
+        ),
+        train=train,
+        test=test,
+    )
     costs = tuple(cost_points)
     delays = tuple(delay_points)
+    sensitivity_points = tuple(sensitivity)
+    statistical = build_statistical_diagnostics(baseline)
+    volatility = build_volatility_diagnostics(
+        baseline, dataset_frequency=_dataset_frequency(record.dataset_id)
+    )
+    regime = build_regime_diagnostics(baseline, volatility)
+    fingerprint = build_failure_fingerprint(
+        source=source,
+        train_test=split,
+        parameter_sensitivity=sensitivity_points,
+        cost_stress=costs,
+        execution_delay=delays,
+        regime_diagnostics=regime,
+        statistical_diagnostics=statistical,
+    )
     return DiagnosisReport(
-        source_run=DiagnosisSourceRun(
-            trace_id=trace_id,
-            strategy_id=record.strategy_id,
-            dataset_id=record.dataset_id,
-            dataset_name=baseline.metadata.dataset_name,
-            dataset_source=record.dataset_source,
-            bar_count=bar_count,
-            current_lookback=current_value,
-            fee_bps=original_fee,
-            slippage_bps=original_slippage,
-            sensitivity_parameter=sensitivity_parameter,
-        ),
-        train_test=TrainTestSplit(
-            train_start=baseline.timeline[0].timestamp,
-            train_end=baseline.timeline[split_index - 1].timestamp,
-            test_start=baseline.timeline[split_index].timestamp,
-            test_end=baseline.timeline[-1].timestamp,
-            train_bar_count=split_index,
-            test_bar_count=bar_count - split_index,
-            feature_context_policy=(
-                "Test decisions are produced by one chronological full-run pipeline, so each "
-                "test bar may use only earlier bars, including train history."
-            ),
-            pnl_isolation_policy=(
-                "Test metrics start from equity immediately before the first test bar; train "
-                "P&L is not counted in test return."
-            ),
-            train=train,
-            test=test,
-        ),
-        lookback_sensitivity=tuple(sensitivity),
+        source_run=source,
+        train_test=split,
+        lookback_sensitivity=sensitivity_points,
         cost_stress=costs,
         execution_delay=delays,
         observations=_observations(train, test, costs, delays),
         sensitivity_available=sensitivity_parameter is not None,
-        statistical_diagnostics=build_statistical_diagnostics(baseline),
-        volatility_diagnostics=build_volatility_diagnostics(
-            baseline, dataset_frequency=_dataset_frequency(record.dataset_id)
-        ),
+        statistical_diagnostics=statistical,
+        volatility_diagnostics=volatility,
         what_if=_what_if_support(record),
+        regime_diagnostics=regime,
+        failure_fingerprint=fingerprint,
     )
 
 
@@ -450,36 +469,52 @@ def diagnose_framework_trace(
     initial_equity = first.pnl_snapshot.equity - first.pnl_snapshot.period_net_pnl
     train = _trace_window_metrics(trace, initial_equity, 0, split_index)
     test = _trace_window_metrics(trace, initial_equity, split_index, bar_count)
+    source = DiagnosisSourceRun(
+        trace_id=trace_id,
+        strategy_id=trace.strategy.strategy_id,
+        dataset_id=trace.metadata.dataset_id,
+        dataset_name=trace.metadata.dataset_name,
+        dataset_source=dataset_source,
+        bar_count=bar_count,
+        current_lookback=0,
+        fee_bps=0.0,
+        slippage_bps=0.0,
+        sensitivity_parameter=None,
+    )
+    split = TrainTestSplit(
+        train_start=trace.timeline[0].timestamp,
+        train_end=trace.timeline[split_index - 1].timestamp,
+        test_start=trace.timeline[split_index].timestamp,
+        test_end=trace.timeline[-1].timestamp,
+        train_bar_count=split_index,
+        test_bar_count=bar_count - split_index,
+        feature_context_policy=(
+            "Descriptive chronological split of the persisted framework equity timeline; "
+            "point-in-time strategy provenance is not asserted."
+        ),
+        pnl_isolation_policy=(
+            "Test metrics start from persisted equity immediately before the first test bar."
+        ),
+        train=train,
+        test=test,
+    )
+    statistical = build_statistical_diagnostics(trace)
+    volatility = build_volatility_diagnostics(
+        trace, dataset_frequency=_dataset_frequency(trace.metadata.dataset_id)
+    )
+    regime = build_regime_diagnostics(trace, volatility)
+    fingerprint = build_failure_fingerprint(
+        source=source,
+        train_test=split,
+        parameter_sensitivity=(),
+        cost_stress=(),
+        execution_delay=(),
+        regime_diagnostics=regime,
+        statistical_diagnostics=statistical,
+    )
     return DiagnosisReport(
-        source_run=DiagnosisSourceRun(
-            trace_id=trace_id,
-            strategy_id=trace.strategy.strategy_id,
-            dataset_id=trace.metadata.dataset_id,
-            dataset_name=trace.metadata.dataset_name,
-            dataset_source=dataset_source,
-            bar_count=bar_count,
-            current_lookback=0,
-            fee_bps=0.0,
-            slippage_bps=0.0,
-            sensitivity_parameter=None,
-        ),
-        train_test=TrainTestSplit(
-            train_start=trace.timeline[0].timestamp,
-            train_end=trace.timeline[split_index - 1].timestamp,
-            test_start=trace.timeline[split_index].timestamp,
-            test_end=trace.timeline[-1].timestamp,
-            train_bar_count=split_index,
-            test_bar_count=bar_count - split_index,
-            feature_context_policy=(
-                "Descriptive chronological split of the persisted framework equity timeline; "
-                "point-in-time strategy provenance is not asserted."
-            ),
-            pnl_isolation_policy=(
-                "Test metrics start from persisted equity immediately before the first test bar."
-            ),
-            train=train,
-            test=test,
-        ),
+        source_run=source,
+        train_test=split,
         lookback_sensitivity=(),
         cost_stress=(),
         execution_delay=(),
@@ -504,14 +539,14 @@ def diagnose_framework_trace(
             cost_stress="NOT_SUPPORTED",
             execution_delay="NOT_SUPPORTED",
         ),
-        statistical_diagnostics=build_statistical_diagnostics(trace),
-        volatility_diagnostics=build_volatility_diagnostics(
-            trace, dataset_frequency=_dataset_frequency(trace.metadata.dataset_id)
-        ),
+        statistical_diagnostics=statistical,
+        volatility_diagnostics=volatility,
         what_if=WhatIfSupport(
             status="NOT_SUPPORTED",
             calculation_details=(
                 "What-if reruns require a native VQD strategy execution contract.",
             ),
         ),
+        regime_diagnostics=regime,
+        failure_fingerprint=fingerprint,
     )

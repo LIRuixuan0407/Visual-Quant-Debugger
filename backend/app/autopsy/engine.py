@@ -14,6 +14,7 @@ from app.autopsy.models import (
     TradeAttribution,
     TradeAttributionReport,
 )
+from app.diagnostics.models import FailureFingerprint
 from app.trace import BacktestTrace
 from app.trace.models import TimelineEvent
 
@@ -225,7 +226,12 @@ def detect_drawdown_episodes(points: tuple[EquityPoint, ...]) -> tuple[DrawdownE
     return tuple(episodes)
 
 
-def build_pnl_autopsy(trace_id: str, trace: BacktestTrace) -> PnLAutopsyReport:
+def build_pnl_autopsy(
+    trace_id: str,
+    trace: BacktestTrace,
+    *,
+    failure_fingerprint: FailureFingerprint | None = None,
+) -> PnLAutopsyReport:
     if not trace.timeline:
         raise ValueError("P&L Autopsy requires at least one Trace timeline event")
     first = trace.timeline[0]
@@ -280,4 +286,5 @@ def build_pnl_autopsy(trace_id: str, trace: BacktestTrace) -> PnLAutopsyReport:
         periods=_period_breakdown(trace.timeline),
         trades=_trade_attribution(trace, initial_equity, net),
         drawdowns=detect_drawdown_episodes(equity_points),
+        failure_fingerprint=failure_fingerprint,
     )

@@ -51,6 +51,22 @@ function TradeList({ trades, empty, onReplay }: { trades: TradeAttribution[]; em
   </article>)}</div>
 }
 
+
+function FailureFingerprintSnapshot({ report }: { report: PnLAutopsyReport }) {
+  const { tr } = useI18n()
+  const fingerprint = report.failure_fingerprint
+  if (!fingerprint) return null
+  return <section className="autopsy-section autopsy-fingerprint" aria-labelledby="autopsy-fingerprint-title">
+    <div className="section-heading"><h2 id="autopsy-fingerprint-title">{tr('Strategy failure fingerprint')}</h2><span>{tr('Diagnosis snapshot')}</span></div>
+    <p className="autopsy-fingerprint-summary">{tr(fingerprint.summary)}</p>
+    <div className="autopsy-fingerprint-grid">{fingerprint.dimensions.filter((item) => item.severity !== 'NOT_AVAILABLE').map((item) => <article key={item.key}>
+      <div><strong>{tr(item.title)}</strong><span className={`fingerprint-severity ${item.severity.toLowerCase().replace('_', '-')}`}>{tr(item.severity)}</span></div>
+      <p>{tr(item.evidence[0] ?? '')}</p>
+    </article>)}</div>
+    <p className="fingerprint-boundary">{tr('This snapshot comes from the trace-bound Diagnose report; Autopsy does not infer new failure scores.')}</p>
+  </section>
+}
+
 function AutopsyContent({ report, onReplay }: { report: PnLAutopsyReport; onReplay: (eventId: string) => void }) {
   const { tr } = useI18n()
   const [periodTab, setPeriodTab] = useState<PeriodTab>('monthly')
@@ -64,6 +80,8 @@ function AutopsyContent({ report, onReplay }: { report: PnLAutopsyReport; onRepl
         <div className="section-heading"><h2 id="waterfall-title">{tr('P&L breakdown')}</h2><span className={reconciliation.reconciled ? 'reconcile-badge reconciled' : 'reconcile-badge'}>{tr(reconciliation.reconciled ? 'Reconciled' : 'Review difference')}</span></div>
         <div className="waterfall-layout"><Waterfall report={report} /><dl className="equity-bookends"><div><dt>{tr('Initial equity')}</dt><dd>{formatCurrency(summary.initial_equity)}</dd></div><div><dt>{tr('Net P&L')}</dt><dd>{signedCurrency(summary.net_pnl)}</dd></div><div><dt>{tr('Final equity')}</dt><dd>{formatCurrency(summary.final_equity)}</dd></div><div className="equation"><dt>{tr('Check')}</dt><dd><code>{tr('initial + net = final')}</code></dd></div></dl></div>
       </section>
+
+      <FailureFingerprintSnapshot report={report} />
 
       <section className="autopsy-section" aria-labelledby="period-title">
         <div className="section-heading"><h2 id="period-title">{tr('P&L by period')}</h2><div className="segmented-tabs" role="tablist">{(['monthly', 'quarterly', 'yearly'] as const).map((tab) => <button role="tab" aria-selected={periodTab === tab} key={tab} onClick={() => setPeriodTab(tab)}>{tr(tab.slice(0, -2))}</button>)}</div></div>

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState, type FormEvent, type Keyboar
 
 import { createDiagnosis, createWhatIfScenario } from '../../api/diagnostics'
 import { useI18n } from '../../i18n/I18nProvider'
-import type { DiagnosisReport, DiagnosticMetrics, ReturnDiagnostics, VolatilityDiagnostics, WhatIfMetrics, WhatIfScenario } from '../../types/diagnostics'
+import type { DiagnosisReport, DiagnosticMetrics, FailureSeverity, RegimePerformance, ReturnDiagnostics, VolatilityDiagnostics, WhatIfMetrics, WhatIfScenario } from '../../types/diagnostics'
 import { nearestChartIndex, pointerToViewBoxX } from '../discover/chartInteraction'
 import { formatCurrency } from '../replay/utils/format'
 
@@ -200,6 +200,54 @@ function VolatilityDiagnosticsSection({ report }: { report: DiagnosisReport }) {
   </section>
 }
 
+
+function severityClass(severity: FailureSeverity) { return severity.toLowerCase().replace('_', '-') }
+
+function FailureFingerprintSection({ report }: { report: DiagnosisReport }) {
+  const { tr } = useI18n()
+  const fingerprint = report.failure_fingerprint
+  return <section className="diagnose-section failure-fingerprint-section">
+    <div className="section-heading"><h2>{tr('Strategy failure fingerprint')}</h2><span>{tr('Deterministic diagnostic triage')}</span></div>
+    {!fingerprint ? <p className="capability-unavailable"><strong>{tr('Not available in this cached report')}</strong><span>{tr('Run diagnostics again to calculate the failure fingerprint.')}</span></p> : <>
+      <article className="fingerprint-summary">
+        <div><span className="section-kicker">{tr('Summary')}</span><strong>{fingerprint.high_severity_count} {tr('high severity')} · {fingerprint.medium_severity_count} {tr('medium severity')}</strong></div>
+        <p>{tr(fingerprint.summary)}</p>
+      </article>
+      <div className="fingerprint-grid">{fingerprint.dimensions.map((dimension) => <article className={`fingerprint-card ${severityClass(dimension.severity)}`} key={dimension.key}>
+        <header><span>{tr(dimension.title)}</span><strong className={`fingerprint-severity ${severityClass(dimension.severity)}`}>{tr(dimension.severity)}</strong></header>
+        <ul>{dimension.evidence.map((item) => <li key={item}>{tr(item)}</li>)}</ul>
+        <details><summary>{tr('Calculation details')}</summary>{dimension.calculation_details.map((item) => <p key={item}>{tr(item)}</p>)}</details>
+      </article>)}</div>
+      <p className="fingerprint-boundary">{tr('Failure Fingerprint is evidence triage, not a forecast, recommendation, or AI score.')}</p>
+    </>}
+  </section>
+}
+
+function regimeLabel(item: RegimePerformance) { return `${item.volatility_regime} / ${item.trend_regime}` }
+
+function RegimeDiagnosticsSection({ report }: { report: DiagnosisReport }) {
+  const { tr } = useI18n()
+  const diagnostics = report.regime_diagnostics
+  const order = { LOW: 0, NORMAL: 1, HIGH: 2, UPTREND: 0, SIDEWAYS: 1, DOWNTREND: 2 } as const
+  const performance = diagnostics ? [...diagnostics.performance].sort((left, right) => order[left.volatility_regime] - order[right.volatility_regime] || order[left.trend_regime] - order[right.trend_regime]) : []
+  return <section className="diagnose-section regime-diagnostics-section">
+    <div className="section-heading"><h2>{tr('Market regime diagnostics')}</h2><span>{tr('Volatility × trend')}</span></div>
+    {!diagnostics ? <p className="capability-unavailable"><strong>{tr('Not available in this cached report')}</strong><span>{tr('Run diagnostics again to calculate market-regime evidence.')}</span></p> : <>
+      <article className={`diagnostic-verdict ${diagnostics.status === 'OK' ? '' : 'unavailable'}`}>
+        <span className="section-kicker">{tr('Verdict')}</span><strong>{tr(diagnostics.verdict)}</strong><p>{tr(diagnostics.summary)}</p>
+      </article>
+      {performance.length > 0 ? <div className="regime-table" role="table" aria-label={tr('Strategy performance by market regime')}>
+        <div className="regime-row header"><span>{tr('Regime')}</span><span>{tr('Bars')}</span><span>{tr('Return')}</span><span>{tr('Sharpe')}</span><span>{tr('Drawdown')}</span><span>{tr('Hit rate')}</span><span>{tr('Trades')}</span><span>{tr('Turnover')}</span></div>
+        {performance.map((item) => <div className={`regime-row ${item.status === 'OK' ? '' : 'insufficient'}`} key={regimeLabel(item)}>
+          <strong><span className={`volatility-regime ${item.volatility_regime.toLowerCase()}`}>{tr(item.volatility_regime)}</span> / {tr(item.trend_regime)}</strong>
+          <code>{item.observation_count}</code><code>{percent(item.total_return)}</code><code>{item.sharpe.toFixed(2)}</code><code>{percent(item.max_drawdown)}</code><code>{percent(item.hit_rate)}</code><code>{item.trade_count}</code><code>{item.turnover.toFixed(2)}×</code>
+        </div>)}
+      </div> : <p className="empty-copy">{tr('No market-regime bucket has enough aligned evidence yet.')}</p>}
+      <details className="advanced-disclosure regime-methodology"><summary>{tr('Calculation details')}</summary><div className="method-notes">{diagnostics.calculation_details.map((detail) => <p key={detail}>{tr(detail)}</p>)}</div></details>
+    </>}
+  </section>
+}
+
 type WhatIfMetricKey = keyof WhatIfMetrics
 
 function whatIfMetric(value: number, key: WhatIfMetricKey) {
@@ -330,6 +378,8 @@ function DiagnoseContent({ report, onOpenReplay }: { report: DiagnosisReport; on
       <details className="advanced-disclosure methodology-disclosure"><summary>{tr('Methodology')}</summary><div className="method-notes"><p>{tr(split.feature_context_policy)}</p><p>{tr(split.pnl_isolation_policy)}</p></div></details>
     </section>
 
+    <FailureFingerprintSection report={report} />
+
     <ParameterSensitivitySection report={report} />
 
     <BatchStressEvidence report={report} />
@@ -337,6 +387,8 @@ function DiagnoseContent({ report, onOpenReplay }: { report: DiagnosisReport; on
     <StatisticalDiagnosticsSection report={report} />
 
     <VolatilityDiagnosticsSection report={report} />
+
+    <RegimeDiagnosticsSection report={report} />
 
     <WhatIfLab report={report} />
 

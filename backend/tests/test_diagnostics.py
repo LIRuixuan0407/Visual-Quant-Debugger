@@ -9,6 +9,7 @@ import pytest
 
 from app.diagnostics.engine import diagnose_run
 from app.diagnostics.models import DiagnosisReport
+from app.diagnostics.regime import classify_trend_regime, rolling_trend_regimes
 from app.diagnostics.statistical import (
     calculate_pair_mean_reversion,
     calculate_return_diagnostics,
@@ -207,12 +208,16 @@ def test_diagnosis_report_accepts_legacy_cache_without_new_diagnostic_fields() -
     payload.pop("statistical_diagnostics")
     payload.pop("volatility_diagnostics")
     payload.pop("what_if")
+    payload.pop("regime_diagnostics")
+    payload.pop("failure_fingerprint")
 
     restored = DiagnosisReport.model_validate(payload)
 
     assert restored.statistical_diagnostics is None
     assert restored.volatility_diagnostics is None
     assert restored.what_if is None
+    assert restored.regime_diagnostics is None
+    assert restored.failure_fingerprint is None
 
 
 def test_stale_diagnostic_cache_is_recomputed_for_frequency_and_pair_contracts() -> None:
@@ -225,9 +230,7 @@ def test_stale_diagnostic_cache_is_recomputed_for_frequency_and_pair_contracts()
     pair = cast(dict[str, object], statistical["pair_mean_reversion"])
     del volatility["dataset_frequency"]
     del pair["consecutive_pair_count"]
-    run_ledger.repository.save_derived(
-        record.run_id, "diagnostics", json.dumps(payload).encode()
-    )
+    run_ledger.repository.save_derived(record.run_id, "diagnostics", json.dumps(payload).encode())
 
     refreshed = _diagnose(trace_id)
     refreshed_volatility = cast(dict[str, object], refreshed["volatility_diagnostics"])
@@ -301,9 +304,7 @@ def test_volatility_diagnostics_reject_unreliable_frequency_annualization() -> N
     record = run_ledger.execution_record(trace_id)
     assert record is not None
 
-    diagnostics = build_volatility_diagnostics(
-        record.trace, dataset_frequency="1Hour"
-    )
+    diagnostics = build_volatility_diagnostics(record.trace, dataset_frequency="1Hour")
 
     assert diagnostics.status == "UNSUPPORTED"
     assert diagnostics.verdict == "UNSUPPORTED"
@@ -431,3 +432,86 @@ def test_diagnosis_unknown_trace_and_validation_errors_are_explicit() -> None:
     assert missing.status_code == 404
     assert missing.json()["detail"] == "Trace 'trace-does-not-exist' was not found"
     assert malformed.status_code == 422
+
+
+def test_regime_diagnostics_and_failure_fingerprint_are_evidence_backed() -> None:
+    trace_id = _create_trace_id()
+    report = _diagnose(trace_id)
+
+    regime = cast(dict[str, object], report["regime_diagnostics"])
+    fingerprint = cast(dict[str, object], report["failure_fingerprint"])
+    performance = cast(list[dict[str, object]], regime["performance"])
+    dimensions = cast(list[dict[str, object]], fingerprint["dimensions"])
+
+    assert regime["trend_window"] == 21
+    assert regime["trend_threshold"] == pytest.approx(0.02)
+    assert regime["verdict"] in {
+        "REGIME_DEPENDENT",
+        "MIXED_REGIME_SENSITIVITY",
+        "LIMITED_REGIME_SENSITIVITY",
+        "LIMITED_EVIDENCE",
+    }
+    assert all(item["observation_count"] >= 1 for item in performance)
+    assert {item["key"] for item in dimensions} == {
+        "OOS_DEGRADATION",
+        "PARAMETER_INSTABILITY",
+        "COST_SENSITIVITY",
+        "EXECUTION_DELAY_SENSITIVITY",
+        "REGIME_DEPENDENCE",
+        "MEAN_REVERSION_EVIDENCE",
+    }
+    assert all(
+        item["severity"] in {"LOW", "MEDIUM", "HIGH", "NOT_AVAILABLE"} for item in dimensions
+    )
+    assert fingerprint["available_dimension_count"] == sum(
+        item["severity"] != "NOT_AVAILABLE" for item in dimensions
+    )
+
+
+def test_trend_regime_uses_only_trailing_market_observations() -> None:
+    returns = (0.01,) * 21 + (-0.01,) * 21
+    regimes = rolling_trend_regimes(returns, window=21, threshold=0.02)
+
+    assert all(value is None for value in regimes[:20])
+    assert regimes[20] == "UPTREND"
+    assert regimes[-1] == "DOWNTREND"
+    assert classify_trend_regime(0.02) == "SIDEWAYS"
+    assert classify_trend_regime(0.0201) == "UPTREND"
+    assert classify_trend_regime(-0.0201) == "DOWNTREND"
+
+
+def test_autopsy_reuses_cached_failure_fingerprint_without_new_inference() -> None:
+    trace_id = _create_trace_id()
+    diagnosis = _diagnose(trace_id)
+    response = asyncio.run(_request("GET", f"/api/traces/{trace_id}/pnl-autopsy"))
+
+    assert response.status_code == 200
+    assert response.json()["failure_fingerprint"] == diagnosis["failure_fingerprint"]
+
+
+def test_cached_report_without_regime_contract_is_recomputed() -> None:
+    trace_id = _create_trace_id()
+    payload = _diagnose(trace_id)
+    record = run_ledger.execution_record(trace_id)
+    assert record is not None
+    payload.pop("regime_diagnostics")
+    payload.pop("failure_fingerprint")
+    run_ledger.repository.save_derived(record.run_id, "diagnostics", json.dumps(payload).encode())
+
+    refreshed = _diagnose(trace_id)
+
+    assert refreshed["regime_diagnostics"] is not None
+    assert refreshed["failure_fingerprint"] is not None
+
+
+def test_autopsy_cache_is_enriched_after_diagnosis_becomes_available() -> None:
+    trace_id = _create_trace_id()
+    before = asyncio.run(_request("GET", f"/api/traces/{trace_id}/pnl-autopsy"))
+    assert before.status_code == 200
+    assert before.json()["failure_fingerprint"] is None
+
+    diagnosis = _diagnose(trace_id)
+    after = asyncio.run(_request("GET", f"/api/traces/{trace_id}/pnl-autopsy"))
+
+    assert after.status_code == 200
+    assert after.json()["failure_fingerprint"] == diagnosis["failure_fingerprint"]

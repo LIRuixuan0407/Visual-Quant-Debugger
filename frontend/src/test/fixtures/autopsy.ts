@@ -1,4 +1,5 @@
 import type { PnLAutopsyReport, TradeAttribution } from '../../types/autopsy'
+import { diagnosisReport } from './diagnosis'
 
 const closedTrade: TradeAttribution = {
   trade_id: 'trade-000001', direction: 'SHORT_SPREAD', status: 'CLOSED',
@@ -28,6 +29,7 @@ export const autopsyReport: PnLAutopsyReport = {
     best_closed: [closedTrade], worst_closed: [{ ...closedTrade, trade_id: 'trade-000002', net_pnl: -240 }],
     attributed_net_pnl: -480, unattributed_net_pnl: 0, reconciliation_status: 'RECONCILED',
   },
+  failure_fingerprint: diagnosisReport.failure_fingerprint,
   drawdowns: [{
     episode_id: 'drawdown-0001', rank_by_depth: 1, peak_event_id: 'timeline-000001',
     drawdown_start_event_id: 'timeline-000013', trough_event_id: 'timeline-000013', recovery_event_id: null,

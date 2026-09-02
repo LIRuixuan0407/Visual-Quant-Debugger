@@ -82,6 +82,49 @@ export interface VolatilityDiagnostics {
   calculation_details: string[]
 }
 
+export type TrendRegime = 'UPTREND' | 'DOWNTREND' | 'SIDEWAYS'
+export type FailureSeverity = 'LOW' | 'MEDIUM' | 'HIGH' | 'NOT_AVAILABLE'
+
+export interface RegimePerformance {
+  volatility_regime: VolatilityRegime
+  trend_regime: TrendRegime
+  observation_count: number
+  status: 'OK' | 'INSUFFICIENT_DATA'
+  total_return: number
+  sharpe: number
+  max_drawdown: number
+  hit_rate: number
+  trade_count: number
+  turnover: number
+}
+
+export interface RegimeDiagnostics {
+  status: 'OK' | 'INSUFFICIENT_DATA' | 'UNSUPPORTED'
+  trend_window: number
+  trend_threshold: number
+  performance: RegimePerformance[]
+  verdict: 'REGIME_DEPENDENT' | 'MIXED_REGIME_SENSITIVITY' | 'LIMITED_REGIME_SENSITIVITY' | 'LIMITED_EVIDENCE' | 'UNSUPPORTED'
+  summary: string
+  calculation_details: string[]
+}
+
+export interface FailureFingerprintDimension {
+  key: 'OOS_DEGRADATION' | 'PARAMETER_INSTABILITY' | 'COST_SENSITIVITY' | 'EXECUTION_DELAY_SENSITIVITY' | 'REGIME_DEPENDENCE' | 'MEAN_REVERSION_EVIDENCE'
+  title: string
+  severity: FailureSeverity
+  evidence: string[]
+  calculation_details: string[]
+}
+
+export interface FailureFingerprint {
+  dimensions: FailureFingerprintDimension[]
+  high_severity_count: number
+  medium_severity_count: number
+  available_dimension_count: number
+  summary: string
+  calculation_details: string[]
+}
+
 export interface WhatIfInputs {
   fee_bps: number
   slippage_bps: number
@@ -200,4 +243,6 @@ export interface DiagnosisReport {
   } | null
   volatility_diagnostics?: VolatilityDiagnostics | null
   what_if?: WhatIfSupport | null
+  regime_diagnostics?: RegimeDiagnostics | null
+  failure_fingerprint?: FailureFingerprint | null
 }

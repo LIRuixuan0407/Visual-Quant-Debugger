@@ -66,6 +66,21 @@ Paper Trading
 
 Every step keeps the evidence and lineage needed to understand how the next step was produced.
 
+## 5-minute guided demo
+
+The built-in Pairs Trading sample requires no API key. Start on **Strategy**, run **Run guided demo**, then follow the same recorded Trace through **Replay → Diagnose → P&L Autopsy**.
+
+The point of the demo is not to showcase a profitable backtest. It is to show how VQD exposes the assumptions behind one: exact decisions, execution timing, train/test degradation, parameter and friction sensitivity, statistical and volatility evidence, market-regime dependence, and the resulting **Strategy Failure Fingerprint**.
+
+This is the shortest path to understanding the product:
+
+```text
+Run bundled sample
+→ Replay the exact decisions
+→ Inspect Diagnose / Failure Fingerprint
+→ Trace losses in P&L Autopsy
+```
+
 ## Product areas
 
 ### Historical Market
@@ -88,7 +103,7 @@ Combine existing factor studies into a transparent multi-factor portfolio.
 
 Choose the factors, directions, weights, ranking method, filters, selection rule, position weighting, rebalance schedule, and position cap. The backend records how every portfolio position was produced from factor evidence.
 
-No hidden optimizer is required.
+No hidden optimizer is required. Portfolio Risk Decomposition keeps portfolio volatility, covariance/correlation, historical VaR / Expected Shortfall, and component risk contribution visible alongside the chosen weights.
 
 ### Walk-Forward
 
@@ -102,7 +117,7 @@ See whether two apparently different factors are actually expressing the same th
 
 Compare factor values, ranks, factor returns, rolling correlations, top-quantile overlap, Jaccard similarity, redundancy, incremental information, and factor clusters.
 
-VQD reports association and overlap; it does not automatically delete factors or re-optimize the portfolio.
+VQD reports association and overlap; it does not automatically delete factors or re-optimize the portfolio. A PCA view also exposes latent factor structure through explained variance and factor loadings when enough aligned history is available.
 
 ### Strategy Discovery
 
@@ -142,7 +157,9 @@ This is the part of VQD that makes a quantitative strategy feel debuggable rathe
 
 Stress one recorded run without losing its original context.
 
-Inspect chronological train/test behavior, interactive parameter sensitivity, transaction-cost stress, execution-delay scenarios, and deterministic findings.
+Inspect chronological train/test behavior, interactive parameter sensitivity, transaction-cost stress, execution-delay scenarios, statistical diagnostics, historical/EWMA volatility, market-regime behavior, What-if scenarios, and a deterministic Strategy Failure Fingerprint.
+
+The fingerprint summarizes *where a strategy is fragile* without using opaque AI scores: each severity links back to explicit evidence and calculation details.
 
 ### P&L Autopsy
 
@@ -269,7 +286,7 @@ VQD follows a few deliberately strict rules:
 
 VQD is an active open-source project focused on a personal, evidence-first quantitative research workspace.
 
-The current product covers historical market research, factors, multi-factor portfolios, walk-forward validation, factor relationships, hypothesis-driven strategy discovery, immutable Research Snapshots, backtesting, replay, diagnostics, P&L attribution, forward validation, and paper trading.
+The current product covers historical market research, factors, multi-factor portfolios with risk decomposition, walk-forward validation, factor relationships with PCA structure, hypothesis-driven strategy discovery, immutable Research Snapshots, backtesting, replay, statistical / volatility / regime diagnostics, Strategy Failure Fingerprints, P&L attribution, forward validation, and paper trading.
 
 It should be treated as research software, not investment advice or a promise of strategy profitability.
 

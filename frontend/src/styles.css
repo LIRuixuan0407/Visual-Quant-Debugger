@@ -1272,3 +1272,50 @@ button.live-session-row:hover, button.live-session-row.selected { background: va
 .workspace-drift-links button small { grid-column: 1 / -1; color: var(--muted); }
 @media (max-width: 1050px) { .drift-layout { grid-template-columns: 1fr; } .drift-ledger { position: static; max-height: none; } .drift-source-grid, .drift-dimensions { grid-template-columns: 1fr; } .drift-dimension-card:first-child { grid-column: auto; } }
 @media (max-width: 700px) { .drift-create-grid { grid-template-columns: 1fr; } .drift-first { align-items: flex-start; flex-direction: column; } }
+
+.failure-fingerprint-section .fingerprint-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+  padding: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel-soft, #fafafa);
+}
+.failure-fingerprint-section .fingerprint-summary strong { display: block; margin-top: 4px; font-family: var(--mono); }
+.failure-fingerprint-section .fingerprint-summary p { max-width: 620px; margin: 0; color: var(--muted); }
+.fingerprint-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.fingerprint-card { min-width: 0; padding: 10px; border: 1px solid var(--line); border-top-width: 3px; }
+.fingerprint-card.high { border-top-color: #a33; }
+.fingerprint-card.medium { border-top-color: #9a6a18; }
+.fingerprint-card.low { border-top-color: #35734a; }
+.fingerprint-card.not-available { border-top-color: var(--line); }
+.fingerprint-card header, .autopsy-fingerprint-grid article > div { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.fingerprint-card header > span, .autopsy-fingerprint-grid strong { font-weight: 650; }
+.fingerprint-severity { padding: 2px 6px; border-radius: 999px; font: 600 9px/1.4 var(--mono); border: 1px solid var(--line); white-space: nowrap; }
+.fingerprint-severity.high { color: #8a2525; border-color: #d8aaaa; background: #fff6f6; }
+.fingerprint-severity.medium { color: #7a5314; border-color: #ddc798; background: #fffaf0; }
+.fingerprint-severity.low { color: #28603c; border-color: #add0b9; background: #f5fbf7; }
+.fingerprint-severity.not-available { color: var(--muted); }
+.fingerprint-card ul { margin: 9px 0; padding-left: 16px; color: var(--muted); font-size: 10px; }
+.fingerprint-card details { font-size: 10px; color: var(--muted); }
+.fingerprint-card details p { margin: 6px 0 0; }
+.fingerprint-boundary { margin: 10px 0 0; color: var(--muted); font-size: 10px; }
+
+.regime-table { margin-top: 10px; border-top: 1px solid var(--line); }
+.regime-row { display: grid; grid-template-columns: minmax(180px, 1.5fr) repeat(7, minmax(70px, .7fr)); gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 10px; }
+.regime-row.header { color: var(--muted); font-weight: 600; }
+.regime-row.insufficient { opacity: .55; }
+.regime-row code { text-align: right; }
+.regime-row .volatility-regime { margin-right: 3px; }
+
+.autopsy-fingerprint-summary { margin: 4px 0 10px; color: var(--muted); }
+.autopsy-fingerprint-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.autopsy-fingerprint-grid article { padding: 10px; border: 1px solid var(--line); }
+.autopsy-fingerprint-grid article p { margin: 8px 0 0; color: var(--muted); font-size: 10px; }
+
+@media (max-width: 900px) {
+  .fingerprint-grid, .autopsy-fingerprint-grid { grid-template-columns: 1fr; }
+  .regime-row { grid-template-columns: minmax(150px, 1.4fr) repeat(3, minmax(65px, .7fr)); }
+  .regime-row > :nth-child(n+5) { display: none; }
+}

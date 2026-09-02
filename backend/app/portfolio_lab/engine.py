@@ -32,6 +32,7 @@ from .models import (
     PortfolioRiskDecomposition,
     PortfolioStageResult,
     RiskMatrix,
+    RiskVolatilityBasis,
     TransactionCostPreview,
 )
 
@@ -525,17 +526,13 @@ class PortfolioResearchEngine:
     ) -> PortfolioRiskDecomposition:
         latest = snapshots[-1] if snapshots else None
         positions = (
-            tuple(
-                item
-                for item in latest.positions
-                if item.selected and item.target_weight > 0.0
-            )
+            tuple(item for item in latest.positions if item.selected and item.target_weight > 0.0)
             if latest is not None
             else ()
         )
         symbols = tuple(item.symbol for item in positions)
         annualization_factor = annualization_factor_for_frequency(dataset_frequency)
-        volatility_basis = (
+        volatility_basis: RiskVolatilityBasis = (
             "ANNUALIZED" if annualization_factor is not None else "PER_OBSERVATION"
         )
         base_details = (
@@ -649,9 +646,7 @@ class PortfolioResearchEngine:
                 else 0.0
             )
             component = float(weights[index] * marginal)
-            risk_share = (
-                component / portfolio_volatility if portfolio_volatility > 1e-15 else 0.0
-            )
+            risk_share = component / portfolio_volatility if portfolio_volatility > 1e-15 else 0.0
             gap = risk_share - float(invested_weights[index])
             contributions.append(
                 AssetRiskContribution(

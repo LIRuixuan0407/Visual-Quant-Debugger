@@ -93,7 +93,7 @@ def _close_values(event: TimelineEvent) -> dict[str, float]:
     }
 
 
-def _market_returns(trace: BacktestTrace) -> tuple[float | None, ...]:
+def market_returns(trace: BacktestTrace) -> tuple[float | None, ...]:
     output: list[float | None] = [None]
     for previous_event, current_event in zip(trace.timeline, trace.timeline[1:], strict=False):
         previous = _close_values(previous_event)
@@ -138,7 +138,7 @@ def build_volatility_diagnostics(
     dataset_frequency: str | None = None,
     rolling_window: int = DEFAULT_ROLLING_WINDOW,
 ) -> VolatilityDiagnostics:
-    market_returns = _market_returns(trace) if trace.timeline else ()
+    market_return_values = market_returns(trace) if trace.timeline else ()
     frequency = dataset_frequency.strip() if dataset_frequency else "unavailable"
     annualization_factor = annualization_factor_for_frequency(dataset_frequency)
     if annualization_factor is None:
@@ -154,7 +154,9 @@ def build_volatility_diagnostics(
             ),
             thresholds=VolatilityRegimeThresholds(),
             points=tuple(
-                VolatilityPoint(timestamp=event.timestamp, market_return=market_returns[index])
+                VolatilityPoint(
+                    timestamp=event.timestamp, market_return=market_return_values[index]
+                )
                 for index, event in enumerate(trace.timeline)
             ),
             drawdown_overlap=(),
@@ -162,9 +164,7 @@ def build_volatility_diagnostics(
             rising_volatility_start_count=0,
             regime_change_start_count=0,
             verdict="UNSUPPORTED",
-            summary=(
-                f"Annualized volatility is unsupported for dataset frequency '{frequency}'."
-            ),
+            summary=(f"Annualized volatility is unsupported for dataset frequency '{frequency}'."),
             calculation_details=(
                 f"Dataset frequency '{frequency}' does not provide a reliable "
                 "observations-per-year factor.",
@@ -175,16 +175,16 @@ def build_volatility_diagnostics(
             ),
         )
     historical = rolling_historical_volatility(
-        market_returns, window=rolling_window, annualization_factor=annualization_factor
+        market_return_values, window=rolling_window, annualization_factor=annualization_factor
     )
     ewma = ewma_volatility(
-        market_returns, decay=FIXED_EWMA_DECAY, annualization_factor=annualization_factor
+        market_return_values, decay=FIXED_EWMA_DECAY, annualization_factor=annualization_factor
     )
     regimes = tuple(None if value is None else classify_volatility_regime(value) for value in ewma)
     points = tuple(
         VolatilityPoint(
             timestamp=event.timestamp,
-            market_return=market_returns[index],
+            market_return=market_return_values[index],
             rolling_historical_vol=historical[index],
             ewma_vol=ewma[index],
             regime=regimes[index],
