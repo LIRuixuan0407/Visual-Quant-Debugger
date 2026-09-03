@@ -2,7 +2,8 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { I18nProvider } from '../../i18n/I18nProvider'
-import type { PaperSessionSnapshot } from '../../types/paper'
+import { goldenTrace } from '../../test/fixtures/goldenTrace'
+import type { PaperSessionSnapshot, PaperTrace } from '../../types/paper'
 import type { StrategyDefinition } from '../../types/strategy'
 import ForwardPage from './ForwardPage'
 import LivePaperPage from './LivePaperPage'
@@ -196,5 +197,115 @@ describe('Live Paper Forward workspace', () => {
     act(() => FakeEventSource.latest?.emit({ ...failed, feed_status: 'CONNECTED', last_event_sequence: 1 }))
     await waitFor(() => expect(screen.getAllByText('已连接').length).toBeGreaterThan(0))
     expect(fetchMock.mock.calls.filter(([input]) => String(input) === operationEndpoint)).toHaveLength(1)
+  })
+
+  it('shows normalized pair prices, z-score evidence, and exact calculation inputs for a pair session', async () => {
+    window.localStorage.setItem('vqd-language', 'zh')
+    vi.stubGlobal('EventSource', FakeEventSource)
+    const symbols = ['600519.SH', '600520.SH']
+    const pairTimeline = goldenTrace.timeline.map((event) => ({
+      ...event,
+      market_snapshot: {
+        ...event.market_snapshot,
+        values: event.market_snapshot.values.map((value) => ({
+          ...value,
+          symbol: value.symbol === 'ASSET_A' ? symbols[0] : symbols[1],
+        })),
+      },
+      data_dependencies: event.data_dependencies.map((dependency) => ({
+        ...dependency,
+        symbol: dependency.symbol === 'ASSET_A' ? symbols[0] : symbols[1],
+      })),
+    }))
+    const lastActive = pairTimeline.at(-1)!
+    const pausedTimestamp = '2024-01-18T16:01:00Z'
+    const pausedEvent = {
+      ...lastActive,
+      event_id: 'timeline-000014',
+      timestamp: pausedTimestamp,
+      feature_snapshots: [],
+      signal_evaluation: {
+        ...lastActive.signal_evaluation,
+        evaluation_id: 'signal-evaluation-000014',
+        signal_id: null,
+        signal: 'EVALUATION_SKIPPED_PAUSED',
+        decision_time: pausedTimestamp,
+        reason: 'Strategy evaluation skipped while live paper session was paused',
+      },
+      data_dependencies: lastActive.data_dependencies.map((dependency) => ({
+        ...dependency,
+        source_timestamp: pausedTimestamp,
+        available_at: pausedTimestamp,
+        used_at: pausedTimestamp,
+      })),
+    }
+    const traceTimeline = [...pairTimeline, pausedEvent]
+    const pairSnapshot: PaperSessionSnapshot = {
+      ...snapshot,
+      status: 'PAUSED',
+      feed_status: 'CONNECTED',
+      account_id: 'paper-account-cn-pair-0123456789',
+      strategy_id: 'pairs-trading',
+      strategy_name: 'Pairs Trading',
+      symbols,
+      parameters: { lookback: 5, entry_z: 1, exit_z: 0.8 },
+      provider: 'tdx',
+      feed: 'tdx',
+      market_session: 'CN_REGULAR',
+      initial_cash: 1_000_000,
+      started_at: snapshot.created_at,
+      last_market_event: pausedTimestamp,
+      evaluated_bar_count: 14,
+      account: { ...snapshot.account, cash: 1_000_000, equity: 1_000_000 },
+      latest_event: pausedEvent,
+    }
+    const pairAccount = {
+      ...account,
+      account_id: pairSnapshot.account_id,
+      name: 'A-share pair research',
+      currency: 'CNY' as const,
+      initial_cash: 1_000_000,
+      cash: 1_000_000,
+      equity: 1_000_000,
+    }
+    const pairTrace: PaperTrace = {
+      trace_version: '1.0',
+      session_id: pairSnapshot.session_id,
+      strategy_id: pairSnapshot.strategy_id,
+      parameters: pairSnapshot.parameters,
+      timeline: traceTimeline,
+      diagnostics: [],
+      market_revisions: [],
+      execution_mode: pairSnapshot.execution_mode,
+      broker_events: [],
+    }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const endpoint = String(input)
+      const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200, headers: { 'Content-Type': 'application/json' } })
+      if (endpoint === '/api/market-data/providers') return json([{ provider: 'tdx', configured: true, feeds: ['tdx'], selected_feed: 'tdx', timeframe: '1Min', market_session: 'CN_REGULAR', markets: ['CN'] }])
+      if (endpoint === '/api/paper-accounts') return json({ items: [pairAccount] })
+      if (endpoint === '/api/paper-sessions') return json({ items: [pairSnapshot] })
+      if (endpoint === `/api/paper-sessions/${pairSnapshot.session_id}`) return json(pairSnapshot)
+      if (endpoint === `/api/paper-sessions/${pairSnapshot.session_id}/trace?limit=200`) return json(pairTrace)
+      if (endpoint === `/api/paper/sessions/${pairSnapshot.session_id}/health`) return json({ session_id: pairSnapshot.session_id, status: 'RUNNING', feed_status: 'CONNECTED', broker_status: 'NOT_USED', recovery_status: 'READY', last_received_at: null, last_market_event: pairSnapshot.last_market_event, last_latency_ms: null, stale_seconds: 0, reconnect_count: 0, backfill_count: 0, backfilled_bar_count: 0, open_order_count: 0, partially_filled_order_count: 0, broker_account_status: null, broker_cash: null, broker_equity: null, broker_buying_power: null, rejected_order_count: 0, last_broker_event_at: null })
+      if (endpoint === `/api/paper/sessions/${pairSnapshot.session_id}/operations?limit=200`) return json({ items: [] })
+      if (endpoint === `/api/paper/sessions/${pairSnapshot.session_id}/recovery`) return json({ session_id: pairSnapshot.session_id, status: 'READY', journal_event_count: 13, broker_event_count: 0, recorded_portfolio_hash: 'sha256:same', recovered_portfolio_hash: 'sha256:same', recorded_trace_hash: 'sha256:trace', recovered_trace_hash: 'sha256:trace', broker_reconciled: true, account_reconciled: true, warnings: [] })
+      throw new Error(`Unexpected request GET ${endpoint}`)
+    })
+
+    const { container } = render(<I18nProvider><LivePaperPage definition={pairsDefinition} /></I18nProvider>)
+    fireEvent.click(await screen.findByRole('button', { name: new RegExp(pairSnapshot.account_id) }))
+
+    expect(await screen.findByRole('heading', { name: '配对价格与信号结构' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '归一化配对价格图' })).toBeInTheDocument()
+    expect(screen.getByRole('img', { name: '配对 Z-score 图' })).toBeInTheDocument()
+    expect(screen.getAllByText('600519.SH').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('600520.SH').length).toBeGreaterThan(0)
+    expect(screen.getByText('2 / 5')).toBeInTheDocument()
+    expect(screen.getByText('仍需活跃配对 K 线').parentElement).toHaveTextContent('3')
+    expect(container.querySelectorAll('.pair-paused-region')).toHaveLength(2)
+    expect(screen.getByText('策略已暂停；价格继续更新，但配对特征和决策不会继续计算。')).toBeInTheDocument()
+    expect(screen.getByText('价格归一化为 100 仅用于视觉比较；策略计算仍使用真实收盘价。')).toBeInTheDocument()
+    expect(screen.getByText('该图仅用于诊断证据，不提供交易建议，也不判断最优配对。')).toBeInTheDocument()
   })
 })

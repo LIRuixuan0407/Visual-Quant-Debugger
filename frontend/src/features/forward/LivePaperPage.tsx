@@ -29,6 +29,162 @@ function EquityTimeline({ trace, currency }: { trace: PaperTrace; currency: 'CNY
   return <div className="live-equity-chart"><svg viewBox="0 0 100 40" preserveAspectRatio="none" role="img" aria-label={tr('Live paper equity timeline')}><polyline points={points} /></svg><div><code>{formatCurrency(low, currency)}</code><code>{formatCurrency(high, currency)}</code></div></div>
 }
 
+type PaperTimelineEvent = PaperTrace['timeline'][number]
+
+interface PairChartPoint {
+  eventId: string
+  timestamp: string
+  signal: string
+  leftClose: number
+  rightClose: number
+  leftNormalized: number
+  rightNormalized: number
+  hedgeRatio: number | null
+  spread: number | null
+  zscore: number | null
+}
+
+function pairFeature(event: PaperTimelineEvent, name: string): number | null {
+  const value = event.feature_snapshots.find((item) => item.name === name)?.value
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function pairClose(event: PaperTimelineEvent, symbol: string): number | null {
+  const value = event.market_snapshot.values.find((item) => item.symbol === symbol && item.field === 'close')?.value
+  return typeof value === 'number' && Number.isFinite(value) ? value : null
+}
+
+function pairTimestamp(event: PaperTimelineEvent, symbol: string): string {
+  return event.data_dependencies.find((item) => item.symbol === symbol && item.field === 'close')?.source_timestamp ?? event.timestamp
+}
+
+function chartPath<T>(items: T[], select: (item: T) => number | null, low: number, high: number): string {
+  const span = high - low || 1
+  let connected = false
+  return items.map((item, index) => {
+    const value = select(item)
+    if (value === null || !Number.isFinite(value)) { connected = false; return '' }
+    const x = items.length === 1 ? 50 : (index / (items.length - 1)) * 100
+    const y = 44 - ((value - low) / span) * 40
+    const command = connected ? 'L' : 'M'
+    connected = true
+    return `${command}${x.toFixed(2)},${y.toFixed(2)}`
+  }).join(' ')
+}
+
+function PairStructurePanel({ snapshot, trace }: { snapshot: PaperSessionSnapshot; trace: PaperTrace }) {
+  const { tr } = useI18n()
+  if (snapshot.strategy_id !== 'pairs-trading' || snapshot.symbols.length !== 2) return null
+  const [leftSymbol, rightSymbol] = snapshot.symbols
+  const configuredLookback = Number(snapshot.parameters.lookback ?? 60)
+  const lookback = Number.isFinite(configuredLookback) ? Math.max(2, Math.round(configuredLookback)) : 60
+  const configuredEntryZ = Number(snapshot.parameters.entry_z ?? 2)
+  const configuredExitZ = Number(snapshot.parameters.exit_z ?? 0.5)
+  const entryZ = Number.isFinite(configuredEntryZ) ? Math.abs(configuredEntryZ) : 2
+  const exitZ = Number.isFinite(configuredExitZ) ? Math.abs(configuredExitZ) : 0.5
+  const rawPoints = trace.timeline.flatMap((event) => {
+    const leftClose = pairClose(event, leftSymbol)
+    const rightClose = pairClose(event, rightSymbol)
+    if (leftClose === null || rightClose === null || leftClose === 0 || rightClose === 0) return []
+    return [{ event, leftClose, rightClose }]
+  })
+  const first = rawPoints[0]
+  const points: PairChartPoint[] = rawPoints.map(({ event, leftClose, rightClose }) => ({
+    eventId: event.event_id,
+    timestamp: pairTimestamp(event, leftSymbol),
+    signal: event.signal_evaluation.signal,
+    leftClose,
+    rightClose,
+    leftNormalized: first ? (leftClose / first.leftClose) * 100 : 100,
+    rightNormalized: first ? (rightClose / first.rightClose) * 100 : 100,
+    hedgeRatio: pairFeature(event, 'hedge_ratio'),
+    spread: pairFeature(event, 'spread'),
+    zscore: pairFeature(event, 'zscore'),
+  }))
+  const activeSpreads = trace.timeline
+    .filter((event) => event.signal_evaluation.signal !== 'EVALUATION_SKIPPED_PAUSED')
+    .map((event) => pairFeature(event, 'spread'))
+  let validSpreadObservations = 0
+  for (let index = activeSpreads.length - 1; index >= 0 && activeSpreads[index] !== null; index -= 1) validSpreadObservations += 1
+  validSpreadObservations = Math.min(validSpreadObservations, lookback)
+  const remainingBars = validSpreadObservations > 0 || snapshot.evaluated_bar_count >= lookback
+    ? Math.max(0, lookback - validSpreadObservations)
+    : Math.max(0, lookback * 2 - 1 - snapshot.evaluated_bar_count)
+  const latestFeaturePoint = points.slice().reverse().find((item) => item.zscore !== null)
+  const latestZscore = latestFeaturePoint?.zscore ?? null
+  const latestSpread = latestFeaturePoint?.spread ?? null
+  const phase = snapshot.status === 'PAUSED' ? 'PAUSED' : latestZscore === null ? 'WARMUP' : 'ACTIVE'
+  const verdict = phase === 'PAUSED'
+    ? tr('The strategy is paused. Prices keep updating, but pair features and decisions do not.')
+    : phase === 'WARMUP'
+      ? tr('The pair is warming up; no tradeable z-score exists yet.')
+      : tr('Pair features are available; inspect the recorded z-score and decision evidence.')
+  const noExposure = Object.keys(snapshot.account.positions).length === 0 && snapshot.orders.length === 0
+  const normalizedValues = points.flatMap((item) => [item.leftNormalized, item.rightNormalized])
+  const normalizedMin = normalizedValues.length ? Math.min(...normalizedValues) : 99
+  const normalizedMax = normalizedValues.length ? Math.max(...normalizedValues) : 101
+  const normalizedPadding = Math.max((normalizedMax - normalizedMin) * 0.12, 0.25)
+  const chartLow = normalizedMin - normalizedPadding
+  const chartHigh = normalizedMax + normalizedPadding
+  const zValues = points.flatMap((item) => item.zscore === null ? [] : [item.zscore])
+  const zBound = Math.max(entryZ + 0.5, exitZ + 0.5, ...zValues.map(Math.abs), 2.5)
+  const zY = (value: number) => 24 - (value / zBound) * 20
+  let pausedStart = points.length
+  for (let index = points.length - 1; index >= 0 && points[index].signal === 'EVALUATION_SKIPPED_PAUSED'; index -= 1) pausedStart = index
+  const pausedX = points.length < 2 || pausedStart === points.length ? null : Math.max(0, ((pausedStart - 0.5) / (points.length - 1)) * 100)
+  const latest = points.at(-1)
+  const detailRows = points.slice(-10)
+  return <section className="workspace-panel pair-structure-panel" id="paper-pair-structure">
+    <div className="section-heading"><div><span className="section-kicker">{tr('PAIR RESEARCH EVIDENCE')}</span><h2>{tr('Pair Price & Signal Structure')}</h2></div><span className={`pair-phase ${phase.toLowerCase()}`}>{tr(phase)}</span></div>
+    <div className={`pair-verdict ${phase.toLowerCase()}`}><span>{tr('Verdict')}</span><strong>{verdict}</strong>{noExposure && <p>{tr('No position or order exists, so equity remains equal to cash.')}</p>}</div>
+    <div className="pair-progress-strip">
+      <div><span>{tr('Aligned pair bars')}</span><strong>{snapshot.evaluated_bar_count}</strong></div>
+      <div><span>{tr('Valid spread observations')}</span><strong>{validSpreadObservations} / {lookback}</strong></div>
+      <div><span>{tr('Remaining active pair bars')}</span><strong>{remainingBars}</strong></div>
+      <div><span>{tr('Current phase')}</span><strong>{tr(phase)}</strong></div>
+    </div>
+    <div className="pair-chart-grid">
+      <article className="pair-chart-card">
+        <header><div><span>{tr('Evidence')}</span><strong>{tr('Normalized Pair Prices')}</strong></div><small>{tr('Loaded window rebased to 100')}</small></header>
+        {points.length < 2 ? <p className="pair-chart-empty">{tr('Two aligned pair bars are required to draw the price comparison.')}</p> : <>
+          <svg viewBox="0 0 100 48" preserveAspectRatio="none" role="img" aria-label={tr('Normalized pair price chart')}>
+            {[4, 14, 24, 34, 44].map((y) => <line className="pair-grid-line" x1="0" x2="100" y1={y} y2={y} key={y} />)}
+            {pausedX !== null && <rect className="pair-paused-region" x={pausedX} y="0" width={100 - pausedX} height="48" />}
+            <path className="pair-price-line left" d={chartPath(points, (item) => item.leftNormalized, chartLow, chartHigh)} />
+            <path className="pair-price-line right" d={chartPath(points, (item) => item.rightNormalized, chartLow, chartHigh)} />
+          </svg>
+          <div className="pair-chart-legend"><span><i className="left" />{leftSymbol}</span><span><i className="right" />{rightSymbol}</span>{pausedX !== null && <span><i className="paused" />{tr('Paused region')}</span>}</div>
+          <footer><code>{formatTimestamp(points[0].timestamp).time}</code><span>{latest && `${leftSymbol} ${latest.leftClose.toFixed(2)} · ${rightSymbol} ${latest.rightClose.toFixed(2)}`}</span><code>{latest ? formatTimestamp(latest.timestamp).time : '-'}</code></footer>
+        </>}
+      </article>
+      <article className="pair-chart-card">
+        <header><div><span>{tr('Evidence')}</span><strong>{tr('Spread / Z-score')}</strong></div><small>{tr('Entry threshold')} ±{entryZ.toFixed(2)}</small></header>
+        {zValues.length === 0 ? <p className="pair-chart-empty">{tr('Z-score is unavailable until warm-up completes.')}</p> : <>
+          <svg viewBox="0 0 100 48" preserveAspectRatio="none" role="img" aria-label={tr('Pair z-score chart')}>
+            {pausedX !== null && <rect className="pair-paused-region" x={pausedX} y="0" width={100 - pausedX} height="48" />}
+            <line className="pair-zero-line" x1="0" x2="100" y1={zY(0)} y2={zY(0)} />
+            {[entryZ, -entryZ].map((value) => <line className="pair-entry-line" x1="0" x2="100" y1={zY(value)} y2={zY(value)} key={`entry-${value}`} />)}
+            {[exitZ, -exitZ].map((value) => <line className="pair-exit-line" x1="0" x2="100" y1={zY(value)} y2={zY(value)} key={`exit-${value}`} />)}
+            <path className="pair-zscore-line" d={chartPath(points, (item) => item.zscore, -zBound, zBound)} />
+          </svg>
+          <div className="pair-chart-legend"><span><i className="zscore" />Z-score</span><span><i className="entry" />{tr('Entry threshold')}</span><span><i className="exit" />{tr('Exit threshold')}</span></div>
+          <footer><code>{latestSpread === null ? 'Spread —' : `Spread ${latestSpread.toFixed(4)}`}</code><span>{latestZscore === null ? 'Z —' : `Z ${latestZscore.toFixed(3)}`}</span><code>{tr('Last calculated')} {latestFeaturePoint ? formatTimestamp(latestFeaturePoint.timestamp).time : '—'}</code></footer>
+        </>}
+      </article>
+    </div>
+    <details className="evidence-calculation-details pair-calculation-details">
+      <summary>{tr('Calculation details')}</summary>
+      <p>{tr('Prices are rebased to 100 only for visual comparison. Strategy calculations continue to use actual closes.')}</p>
+      <p><code>hedge = dot(B, A) / dot(B, B)</code> · <code>spread = A − hedge × B</code> · <code>z = (spread − mean) / σ</code></p>
+      <div className="pair-calculation-table" role="table">
+        <div className="header" role="row"><span>{tr('Market time')}</span><span>{leftSymbol}</span><span>{rightSymbol}</span><span>{tr('Normalized')}</span><span>{tr('Hedge ratio')}</span><span>Spread</span><span>Z-score</span></div>
+        {detailRows.map((item) => <div role="row" key={item.eventId}><code>{formatTimestamp(item.timestamp).time}</code><code>{item.leftClose.toFixed(2)}</code><code>{item.rightClose.toFixed(2)}</code><code>{item.leftNormalized.toFixed(2)} / {item.rightNormalized.toFixed(2)}</code><code>{item.hedgeRatio?.toFixed(4) ?? '—'}</code><code>{item.spread?.toFixed(4) ?? '—'}</code><code>{item.zscore?.toFixed(3) ?? '—'}</code></div>)}
+      </div>
+      <p className="relationship-disclosure">{tr('This chart is diagnostic evidence only; it does not recommend a trade or an optimal pair.')}</p>
+    </details>
+  </section>
+}
+
 function SessionHistory({ sessions, activeId, onOpen }: { sessions: PaperSessionSnapshot[]; activeId: string | null; onOpen: (id: string) => void }) {
   const { tr } = useI18n()
   return <section className="workspace-panel live-history"><div className="section-heading"><h2>{tr('Recent Paper Sessions')}</h2><span>{sessions.length} {tr('retained locally')}</span></div>
@@ -279,6 +435,7 @@ function LiveWorkspace({ snapshot, trace, sessions, onSnapshot, onOpen, onNew }:
     {snapshot.research_run_id && <p className="inline-success"><strong>{tr('Research evidence saved')}</strong> · <a href={`/runs/${snapshot.research_run_id}`}>{snapshot.research_run_id}</a></p>}
     <section className="workspace-panel paper-overview-panel" id="paper-overview"><div className="section-heading"><h2>{tr('Overview')}</h2><span>{tr('Backend recorded')}</span></div>{brokerMode && snapshot.broker_account && <div className="broker-balance-strip"><div><span>{tr('Alpaca Paper status')}</span><strong>{snapshot.broker_account.status}</strong></div><div><span>{tr('Paper cash')}</span><strong>{formatCurrency(snapshot.broker_account.cash)}</strong></div><div><span>{tr('Paper equity')}</span><strong>{formatCurrency(snapshot.broker_account.equity)}</strong></div><div><span>{tr('Paper buying power')}</span><strong>{formatCurrency(snapshot.broker_account.buying_power)}</strong></div></div>}<div className="metric-strip"><div><span>{tr(brokerMode ? 'VQD Trace cash' : 'Cash')}</span><strong>{formatCurrency(snapshot.account.cash, currency)}</strong></div><div><span>{tr(brokerMode ? 'VQD Trace equity' : 'Equity')}</span><strong>{formatCurrency(snapshot.account.equity, currency)}</strong></div><div><span>{tr('Net P&L')}</span><strong>{formatCurrency(snapshot.account.net_pnl, currency)}</strong></div><div><span>{tr('Fees')}</span><strong>{formatCurrency(snapshot.account.cumulative_fees, currency)}</strong></div><div><span>{tr('Slippage')}</span><strong>{formatCurrency(snapshot.account.cumulative_slippage, currency)}</strong></div><div><span>{tr('Max drawdown')}</span><strong>{formatPercent(snapshot.account.max_drawdown)}</strong></div></div></section>
     <section className="workspace-panel"><div className="section-heading"><h2>{tr('Live Equity Timeline')}</h2><span>{tr('received events only')}</span></div><EquityTimeline trace={trace} currency={currency} /></section>
+    <PairStructurePanel snapshot={snapshot} trace={trace} />
     <section className="workspace-panel market-data-inspector"><div className="section-heading"><h2>{tr('Market Data Inspector')}</h2><span>{snapshot.correction_count} {tr('corrections')}</span></div><div className="market-data-grid"><div><span>{tr('Provider / Feed')}</span><strong>{snapshot.provider.toUpperCase()} · {snapshot.feed.toUpperCase()}</strong></div><div><span>{tr('Connection')}</span><strong>{tr(snapshot.feed_status)}</strong></div><div><span>{tr('Last event')}</span><code>{latestMarket ? formatTimestamp(latestMarket.event_time).time : '-'}</code></div><div><span>{tr('Received at')}</span><code>{latestMarket ? formatTimestamp(latestMarket.received_at).time : '-'}</code></div><div><span>{tr('Market time')}</span><code>{snapshot.market_clock ? formatTimestamp(snapshot.market_clock.timestamp).time : '-'}</code></div><div><span>{tr('Observed delivery latency')}</span><code>{latestMarket ? `${latestMarket.latency_ms.toFixed(0)} ms` : '-'}</code></div></div></section>
     <PaperOperationsPanels health={health} operations={operations} recovery={recovery} recovering={recovering} onRecover={() => void recover()} onStop={() => void action('stop')} />
     {snapshot.recent_revisions.length > 0 && <section className="workspace-panel correction-ledger"><div className="section-heading"><h2>{tr('Market Data Revisions')}</h2><span>{tr('prior decisions remain immutable')}</span></div>{snapshot.recent_revisions.map((revision) => <div className="correction-row" key={`${revision.symbol}-${revision.event_time}-${revision.later_revision}`}><strong>{tr('MARKET DATA REVISED LATER')}</strong><code>{revision.symbol} · {formatTimestamp(revision.event_time).time}</code><span>{tr('Used by the original decision')}: {tr('revision')} {revision.used_revision}, close {revision.used_close.toFixed(2)}</span><span>{tr('Later revision')} {revision.later_revision}, close {revision.later_close.toFixed(2)} · {tr('available')} {formatTimestamp(revision.revision_available_at).time}</span></div>)}</section>}
