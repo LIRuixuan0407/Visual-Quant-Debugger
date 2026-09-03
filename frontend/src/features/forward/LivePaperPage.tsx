@@ -72,8 +72,22 @@ function chartPath<T>(items: T[], select: (item: T) => number | null, low: numbe
   }).join(' ')
 }
 
+function nearestChartPoint(clientX: number, left: number, width: number, count: number): number {
+  if (count <= 1 || width <= 0) return 0
+  const ratio = Math.min(1, Math.max(0, (clientX - left) / width))
+  return Math.round(ratio * (count - 1))
+}
+
+function normalizedChange(value: number): string {
+  const change = value - 100
+  return `${change >= 0 ? '+' : ''}${change.toFixed(2)}%`
+}
+
 function PairStructurePanel({ snapshot, trace }: { snapshot: PaperSessionSnapshot; trace: PaperTrace }) {
   const { tr } = useI18n()
+  const [hoveredPriceIndex, setHoveredPriceIndex] = useState<number | null>(null)
+  const [pinnedPriceIndex, setPinnedPriceIndex] = useState<number | null>(null)
+  const [priceChartFocused, setPriceChartFocused] = useState(false)
   if (snapshot.strategy_id !== 'pairs-trading' || snapshot.symbols.length !== 2) return null
   const [leftSymbol, rightSymbol] = snapshot.symbols
   const configuredLookback = Number(snapshot.parameters.lookback ?? 60)
@@ -133,6 +147,13 @@ function PairStructurePanel({ snapshot, trace }: { snapshot: PaperSessionSnapsho
   for (let index = points.length - 1; index >= 0 && points[index].signal === 'EVALUATION_SKIPPED_PAUSED'; index -= 1) pausedStart = index
   const pausedX = points.length < 2 || pausedStart === points.length ? null : Math.max(0, ((pausedStart - 0.5) / (points.length - 1)) * 100)
   const latest = points.at(-1)
+  const safePinnedPriceIndex = pinnedPriceIndex === null || points.length === 0 ? null : Math.min(pinnedPriceIndex, points.length - 1)
+  const inspectedPriceIndex = hoveredPriceIndex === null ? safePinnedPriceIndex ?? points.length - 1 : Math.min(hoveredPriceIndex, points.length - 1)
+  const inspectedPricePoint = points[inspectedPriceIndex]
+  const inspectedPriceX = points.length < 2 ? 50 : (inspectedPriceIndex / (points.length - 1)) * 100
+  const priceY = (value: number) => 44 - ((value - chartLow) / (chartHigh - chartLow || 1)) * 40
+  const showPriceTooltip = Boolean(inspectedPricePoint && (hoveredPriceIndex !== null || safePinnedPriceIndex !== null || priceChartFocused))
+  const inspectPriceAt = (clientX: number, left: number, width: number) => nearestChartPoint(clientX, left, width, points.length)
   const detailRows = points.slice(-10)
   return <section className="workspace-panel pair-structure-panel" id="paper-pair-structure">
     <div className="section-heading"><div><span className="section-kicker">{tr('PAIR RESEARCH EVIDENCE')}</span><h2>{tr('Pair Price & Signal Structure')}</h2></div><span className={`pair-phase ${phase.toLowerCase()}`}>{tr(phase)}</span></div>
@@ -147,14 +168,63 @@ function PairStructurePanel({ snapshot, trace }: { snapshot: PaperSessionSnapsho
       <article className="pair-chart-card">
         <header><div><span>{tr('Evidence')}</span><strong>{tr('Normalized Pair Prices')}</strong></div><small>{tr('Loaded window rebased to 100')}</small></header>
         {points.length < 2 ? <p className="pair-chart-empty">{tr('Two aligned pair bars are required to draw the price comparison.')}</p> : <>
-          <svg viewBox="0 0 100 48" preserveAspectRatio="none" role="img" aria-label={tr('Normalized pair price chart')}>
-            {[4, 14, 24, 34, 44].map((y) => <line className="pair-grid-line" x1="0" x2="100" y1={y} y2={y} key={y} />)}
-            {pausedX !== null && <rect className="pair-paused-region" x={pausedX} y="0" width={100 - pausedX} height="48" />}
-            <path className="pair-price-line left" d={chartPath(points, (item) => item.leftNormalized, chartLow, chartHigh)} />
-            <path className="pair-price-line right" d={chartPath(points, (item) => item.rightNormalized, chartLow, chartHigh)} />
-          </svg>
+          <p className="pair-chart-instruction">{tr('Hover or focus the chart; use arrow keys to inspect and click or tap to pin.')}</p>
+          <div className="pair-chart-plot">
+            <svg
+              viewBox="0 0 100 48"
+              preserveAspectRatio="none"
+              role="img"
+              tabIndex={0}
+              aria-label={tr('Interactive normalized pair price chart')}
+              onFocus={() => setPriceChartFocused(true)}
+              onBlur={() => setPriceChartFocused(false)}
+              onMouseMove={(event) => {
+                const bounds = event.currentTarget.getBoundingClientRect()
+                setHoveredPriceIndex(inspectPriceAt(event.clientX, bounds.left, bounds.width))
+              }}
+              onMouseLeave={() => setHoveredPriceIndex(null)}
+              onClick={(event) => {
+                const bounds = event.currentTarget.getBoundingClientRect()
+                const nextIndex = inspectPriceAt(event.clientX, bounds.left, bounds.width)
+                setPinnedPriceIndex((current) => current === nextIndex ? null : nextIndex)
+              }}
+              onKeyDown={(event) => {
+                const current = inspectedPriceIndex < 0 ? points.length - 1 : inspectedPriceIndex
+                let next: number | null = null
+                if (event.key === 'ArrowLeft') next = Math.max(0, current - 1)
+                else if (event.key === 'ArrowRight') next = Math.min(points.length - 1, current + 1)
+                else if (event.key === 'Home') next = 0
+                else if (event.key === 'End') next = points.length - 1
+                else if (event.key === 'Escape') { setHoveredPriceIndex(null); setPinnedPriceIndex(null) }
+                if (next !== null) { event.preventDefault(); setHoveredPriceIndex(null); setPinnedPriceIndex(next) }
+              }}
+            >
+              <title>{tr('Interactive normalized pair price chart')}</title>
+              <desc>{tr('Hover or focus the chart; use arrow keys to inspect and click or tap to pin.')}</desc>
+              {[4, 14, 24, 34, 44].map((y) => <line className="pair-grid-line" x1="0" x2="100" y1={y} y2={y} key={y} />)}
+              {pausedX !== null && <rect className="pair-paused-region" x={pausedX} y="0" width={100 - pausedX} height="48" />}
+              <path className="pair-price-line left" d={chartPath(points, (item) => item.leftNormalized, chartLow, chartHigh)} />
+              <path className="pair-price-line right" d={chartPath(points, (item) => item.rightNormalized, chartLow, chartHigh)} />
+              {inspectedPricePoint && <>
+                <line className="pair-hover-guide" x1={inspectedPriceX} x2={inspectedPriceX} y1="4" y2="44" />
+                <circle className="pair-hover-marker left" cx={inspectedPriceX} cy={priceY(inspectedPricePoint.leftNormalized)} r="0.9" />
+                <circle className="pair-hover-marker right" cx={inspectedPriceX} cy={priceY(inspectedPricePoint.rightNormalized)} r="0.9" />
+              </>}
+              <rect className="pair-chart-hit" x="0" y="0" width="100" height="48" />
+            </svg>
+            {showPriceTooltip && inspectedPricePoint && <div className="pair-price-tooltip" role="tooltip" style={{ left: `clamp(8px, ${inspectedPriceX}%, calc(100% - 224px))` }}>
+              <strong>{formatTimestamp(inspectedPricePoint.timestamp).time}</strong>
+              <span><i className="left" />{leftSymbol}<code>{inspectedPricePoint.leftClose.toFixed(2)}</code><small>{inspectedPricePoint.leftNormalized.toFixed(2)} · {normalizedChange(inspectedPricePoint.leftNormalized)}</small></span>
+              <span><i className="right" />{rightSymbol}<code>{inspectedPricePoint.rightClose.toFixed(2)}</code><small>{inspectedPricePoint.rightNormalized.toFixed(2)} · {normalizedChange(inspectedPricePoint.rightNormalized)}</small></span>
+            </div>}
+          </div>
           <div className="pair-chart-legend"><span><i className="left" />{leftSymbol}</span><span><i className="right" />{rightSymbol}</span>{pausedX !== null && <span><i className="paused" />{tr('Paused region')}</span>}</div>
-          <footer><code>{formatTimestamp(points[0].timestamp).time}</code><span>{latest && `${leftSymbol} ${latest.leftClose.toFixed(2)} · ${rightSymbol} ${latest.rightClose.toFixed(2)}`}</span><code>{latest ? formatTimestamp(latest.timestamp).time : '-'}</code></footer>
+          {inspectedPricePoint && <div className="pair-price-inspection" data-testid="pair-price-inspection">
+            <div><span>{tr('Market time')}</span><strong>{formatTimestamp(inspectedPricePoint.timestamp).time}</strong><small>{safePinnedPriceIndex === null ? tr('Current inspection') : tr('Pinned inspection')}</small></div>
+            <div><span>{leftSymbol} · {tr('Actual close')}</span><strong>{inspectedPricePoint.leftClose.toFixed(2)}</strong><small>{tr('Normalized')} {inspectedPricePoint.leftNormalized.toFixed(2)} · Δ {normalizedChange(inspectedPricePoint.leftNormalized)}</small></div>
+            <div><span>{rightSymbol} · {tr('Actual close')}</span><strong>{inspectedPricePoint.rightClose.toFixed(2)}</strong><small>{tr('Normalized')} {inspectedPricePoint.rightNormalized.toFixed(2)} · Δ {normalizedChange(inspectedPricePoint.rightNormalized)}</small></div>
+          </div>}
+          <footer><code>{formatTimestamp(points[0].timestamp).time}</code><span>{tr('Loaded market-time range')}</span><code>{latest ? formatTimestamp(latest.timestamp).time : '-'}</code></footer>
         </>}
       </article>
       <article className="pair-chart-card">
@@ -435,7 +505,7 @@ function LiveWorkspace({ snapshot, trace, sessions, onSnapshot, onOpen, onNew }:
     {snapshot.research_run_id && <p className="inline-success"><strong>{tr('Research evidence saved')}</strong> · <a href={`/runs/${snapshot.research_run_id}`}>{snapshot.research_run_id}</a></p>}
     <section className="workspace-panel paper-overview-panel" id="paper-overview"><div className="section-heading"><h2>{tr('Overview')}</h2><span>{tr('Backend recorded')}</span></div>{brokerMode && snapshot.broker_account && <div className="broker-balance-strip"><div><span>{tr('Alpaca Paper status')}</span><strong>{snapshot.broker_account.status}</strong></div><div><span>{tr('Paper cash')}</span><strong>{formatCurrency(snapshot.broker_account.cash)}</strong></div><div><span>{tr('Paper equity')}</span><strong>{formatCurrency(snapshot.broker_account.equity)}</strong></div><div><span>{tr('Paper buying power')}</span><strong>{formatCurrency(snapshot.broker_account.buying_power)}</strong></div></div>}<div className="metric-strip"><div><span>{tr(brokerMode ? 'VQD Trace cash' : 'Cash')}</span><strong>{formatCurrency(snapshot.account.cash, currency)}</strong></div><div><span>{tr(brokerMode ? 'VQD Trace equity' : 'Equity')}</span><strong>{formatCurrency(snapshot.account.equity, currency)}</strong></div><div><span>{tr('Net P&L')}</span><strong>{formatCurrency(snapshot.account.net_pnl, currency)}</strong></div><div><span>{tr('Fees')}</span><strong>{formatCurrency(snapshot.account.cumulative_fees, currency)}</strong></div><div><span>{tr('Slippage')}</span><strong>{formatCurrency(snapshot.account.cumulative_slippage, currency)}</strong></div><div><span>{tr('Max drawdown')}</span><strong>{formatPercent(snapshot.account.max_drawdown)}</strong></div></div></section>
     <section className="workspace-panel"><div className="section-heading"><h2>{tr('Live Equity Timeline')}</h2><span>{tr('received events only')}</span></div><EquityTimeline trace={trace} currency={currency} /></section>
-    <PairStructurePanel snapshot={snapshot} trace={trace} />
+    <PairStructurePanel key={snapshot.session_id} snapshot={snapshot} trace={trace} />
     <section className="workspace-panel market-data-inspector"><div className="section-heading"><h2>{tr('Market Data Inspector')}</h2><span>{snapshot.correction_count} {tr('corrections')}</span></div><div className="market-data-grid"><div><span>{tr('Provider / Feed')}</span><strong>{snapshot.provider.toUpperCase()} · {snapshot.feed.toUpperCase()}</strong></div><div><span>{tr('Connection')}</span><strong>{tr(snapshot.feed_status)}</strong></div><div><span>{tr('Last event')}</span><code>{latestMarket ? formatTimestamp(latestMarket.event_time).time : '-'}</code></div><div><span>{tr('Received at')}</span><code>{latestMarket ? formatTimestamp(latestMarket.received_at).time : '-'}</code></div><div><span>{tr('Market time')}</span><code>{snapshot.market_clock ? formatTimestamp(snapshot.market_clock.timestamp).time : '-'}</code></div><div><span>{tr('Observed delivery latency')}</span><code>{latestMarket ? `${latestMarket.latency_ms.toFixed(0)} ms` : '-'}</code></div></div></section>
     <PaperOperationsPanels health={health} operations={operations} recovery={recovery} recovering={recovering} onRecover={() => void recover()} onStop={() => void action('stop')} />
     {snapshot.recent_revisions.length > 0 && <section className="workspace-panel correction-ledger"><div className="section-heading"><h2>{tr('Market Data Revisions')}</h2><span>{tr('prior decisions remain immutable')}</span></div>{snapshot.recent_revisions.map((revision) => <div className="correction-row" key={`${revision.symbol}-${revision.event_time}-${revision.later_revision}`}><strong>{tr('MARKET DATA REVISED LATER')}</strong><code>{revision.symbol} · {formatTimestamp(revision.event_time).time}</code><span>{tr('Used by the original decision')}: {tr('revision')} {revision.used_revision}, close {revision.used_close.toFixed(2)}</span><span>{tr('Later revision')} {revision.later_revision}, close {revision.later_close.toFixed(2)} · {tr('available')} {formatTimestamp(revision.revision_available_at).time}</span></div>)}</section>}
