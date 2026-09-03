@@ -227,6 +227,7 @@ function LiveWorkspace({ snapshot, trace, sessions, onSnapshot, onOpen, onNew }:
   const [recovery, setRecovery] = useState<PaperRecoveryReport | null>(null)
   const [recovering, setRecovering] = useState(false)
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null)
+  const [streamReconnecting, setStreamReconnecting] = useState(false)
   const refreshOperations = useCallback(async () => {
     try {
       const [nextHealth, nextOperations, nextRecovery] = await Promise.all([getPaperHealth(snapshot.session_id), getPaperOperations(snapshot.session_id), getPaperRecovery(snapshot.session_id)])
@@ -234,18 +235,20 @@ function LiveWorkspace({ snapshot, trace, sessions, onSnapshot, onOpen, onNew }:
     } catch (reason) { setOperationalError(reason instanceof Error ? reason.message : tr('Operational data failed.')) }
   }, [snapshot.session_id, tr])
   useEffect(() => {
-    const timer = window.setTimeout(() => void refreshOperations(), 0)
-    return () => window.clearTimeout(timer)
-  }, [refreshOperations, snapshot.status, snapshot.feed_status, snapshot.broker_status, snapshot.recovery_status, snapshot.last_event_sequence])
+    const initial = window.setTimeout(() => void refreshOperations(), 0)
+    const interval = window.setInterval(() => void refreshOperations(), 30_000)
+    return () => { window.clearTimeout(initial); window.clearInterval(interval) }
+  }, [refreshOperations])
   useEffect(() => {
     const merge = (next: PaperSessionSnapshot) => onSnapshot(next)
     if (typeof EventSource === 'undefined') {
-      const timer = window.setInterval(() => void getPaperSession(snapshot.session_id).then(merge), 5_000)
+      const timer = window.setInterval(() => void getPaperSession(snapshot.session_id).then((next) => { setStreamReconnecting(false); merge(next) }).catch(() => setStreamReconnecting(true)), 5_000)
       return () => window.clearInterval(timer)
     }
     const source = new EventSource(`/api/paper-sessions/${encodeURIComponent(snapshot.session_id)}/events`)
-    source.addEventListener('snapshot', (message) => { try { const value: unknown = JSON.parse((message as MessageEvent<string>).data); if (isPaperSession(value)) merge(value) } catch { setError(tr('Live session stream returned malformed data.')) } })
-    source.onerror = () => setError(tr('Live update channel is reconnecting; the backend session continues independently.'))
+    source.onopen = () => setStreamReconnecting(false)
+    source.addEventListener('snapshot', (message) => { try { const value: unknown = JSON.parse((message as MessageEvent<string>).data); if (isPaperSession(value)) { setStreamReconnecting(false); merge(value) } } catch { setError(tr('Live session stream returned malformed data.')) } })
+    source.onerror = () => setStreamReconnecting(true)
     return () => source.close()
   }, [onSnapshot, snapshot.session_id, tr])
 
@@ -272,7 +275,7 @@ function LiveWorkspace({ snapshot, trace, sessions, onSnapshot, onOpen, onNew }:
     <div className={`live-safety-strip sticky ${brokerMode ? 'broker' : ''}`}><strong>{tr('REAL MARKET DATA')}</strong><span>{tr(brokerMode ? 'ALPACA PAPER BROKER' : 'VQD SIMULATED EXECUTION')}</span><span>{tr(brokerMode ? 'NO REAL MONEY' : 'NO BROKER ORDER')}</span></div>
     <div className="live-context-strip"><strong>{tr('Account')} <code>{snapshot.account_id}</code></strong><span>{tr('Strategy')} · {tr(snapshot.strategy_name)}</span><span>{tr('Market')} · {marketLabel}</span><span>{tr('Feed')} · {snapshot.provider.toUpperCase()} {snapshot.feed.toUpperCase()}</span></div>
     <div className="toolbar forward-controls">{snapshot.status === 'CREATED' && <button className="primary-button" onClick={() => void action('start')}>{tr(brokerMode ? 'Start and allow Paper orders' : 'Start')}</button>}{snapshot.status === 'RUNNING' && <button onClick={() => void action('pause')}>{tr('Pause strategy')}</button>}{snapshot.status === 'PAUSED' && <button className="primary-button" onClick={() => void action('resume')}>{tr('Resume strategy')}</button>}{['CREATED', 'RUNNING', 'PAUSED', 'ERROR'].includes(snapshot.status) && <button className="ghost-button" onClick={() => void action('stop')}>{tr('Stop')}</button>}<button className="ghost-button" onClick={onNew}>{tr('New session')}</button><span className="toolbar-spacer" /><code>{brokerMode ? `${tr('Broker')} · ${tr(snapshot.broker_status)}` : tr('market ingestion continues while PAUSED')}</code></div>
-    {error && <p className="inline-warning">{error}</p>}{operationalError && <p className="inline-warning">{operationalError}</p>}{snapshot.error_message && <p className="inline-error"><strong>{snapshot.error_code}</strong> · {snapshot.error_message}</p>}
+    {error && <p className="inline-warning">{error}</p>}{streamReconnecting && <p className="inline-warning">{tr('Live update channel is reconnecting; the backend session continues independently.')}</p>}{operationalError && <p className="inline-warning">{operationalError}</p>}{snapshot.error_message && <p className="inline-error"><strong>{snapshot.error_code}</strong> · {snapshot.error_message}</p>}
     {snapshot.research_run_id && <p className="inline-success"><strong>{tr('Research evidence saved')}</strong> · <a href={`/runs/${snapshot.research_run_id}`}>{snapshot.research_run_id}</a></p>}
     <section className="workspace-panel paper-overview-panel" id="paper-overview"><div className="section-heading"><h2>{tr('Overview')}</h2><span>{tr('Backend recorded')}</span></div>{brokerMode && snapshot.broker_account && <div className="broker-balance-strip"><div><span>{tr('Alpaca Paper status')}</span><strong>{snapshot.broker_account.status}</strong></div><div><span>{tr('Paper cash')}</span><strong>{formatCurrency(snapshot.broker_account.cash)}</strong></div><div><span>{tr('Paper equity')}</span><strong>{formatCurrency(snapshot.broker_account.equity)}</strong></div><div><span>{tr('Paper buying power')}</span><strong>{formatCurrency(snapshot.broker_account.buying_power)}</strong></div></div>}<div className="metric-strip"><div><span>{tr(brokerMode ? 'VQD Trace cash' : 'Cash')}</span><strong>{formatCurrency(snapshot.account.cash, currency)}</strong></div><div><span>{tr(brokerMode ? 'VQD Trace equity' : 'Equity')}</span><strong>{formatCurrency(snapshot.account.equity, currency)}</strong></div><div><span>{tr('Net P&L')}</span><strong>{formatCurrency(snapshot.account.net_pnl, currency)}</strong></div><div><span>{tr('Fees')}</span><strong>{formatCurrency(snapshot.account.cumulative_fees, currency)}</strong></div><div><span>{tr('Slippage')}</span><strong>{formatCurrency(snapshot.account.cumulative_slippage, currency)}</strong></div><div><span>{tr('Max drawdown')}</span><strong>{formatPercent(snapshot.account.max_drawdown)}</strong></div></div></section>
     <section className="workspace-panel"><div className="section-heading"><h2>{tr('Live Equity Timeline')}</h2><span>{tr('received events only')}</span></div><EquityTimeline trace={trace} currency={currency} /></section>
@@ -310,7 +313,8 @@ export default function LivePaperPage({ definition, definitions = [definition], 
       const missingLatest = latest && !current.timeline.some((event) => event.event_id === latest.event_id)
       if (missingLatest) {
         const sequence = Number(latest.event_id.match(/(\d+)$/)?.[1] ?? 0)
-        if (sequence !== current.timeline.length + 1) {
+        const previousSequence = Number(current.timeline.at(-1)?.event_id.match(/(\d+)$/)?.[1] ?? 0)
+        if (sequence !== previousSequence + 1) {
           void getPaperTrace(next.session_id).then(setTrace).catch(() => undefined)
         } else {
           current = { ...current, timeline: [...current.timeline, latest] }

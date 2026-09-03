@@ -8,6 +8,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Literal
@@ -428,7 +429,9 @@ def test_pause_duplicate_out_of_order_and_no_fake_disconnect_decisions(tmp_path:
     snapshot = service.get(session_id)
     assert snapshot.duplicate_count == 1
     assert snapshot.out_of_order_count == 1
-    assert len(service.trace(session_id).timeline) == 3
+    full_timeline = service.trace(session_id).timeline
+    assert len(full_timeline) == 3
+    assert service.trace(session_id, limit=2).timeline == full_timeline[-2:]
 
 
 def test_reconnect_gap_backfill_is_chronological_and_exactly_once(tmp_path: Path) -> None:
@@ -489,6 +492,8 @@ def test_operational_health_and_log_are_durable_sequenced_and_secret_free(
     serialized = service.operations(session_id).model_dump_json()
     assert "must-not-persist" not in serialized
     assert operations[-1].metadata == {"attempt": 2}
+    assert service.operations(session_id, limit=2).items == operations[-2:]
+    assert service.repository.next_operation_sequence(session_id) == operations[-1].sequence + 1
 
     health = service.health(session_id)
     assert health.status == "RUNNING"
@@ -531,6 +536,41 @@ def test_lifecycle_rejects_terminal_restart_and_duplicate_start_has_one_task(
             await service.start(session_id)
         with pytest.raises(ValueError, match="Cannot resume a STOPPED session"):
             await service.resume(session_id)
+        await service.shutdown()
+
+    asyncio.run(scenario())
+
+
+def test_transient_feed_failure_is_not_mislabeled_as_a_market_data_gap(
+    tmp_path: Path,
+) -> None:
+    class FailingPollAdapter(FakeLiveMarketDataAdapter):
+        async def _failed_events(self) -> AsyncIterator[MarketBar]:
+            raise ValueError("provider poll failed")
+            yield  # pragma: no cover - makes this an async iterator
+
+        def events(self) -> AsyncIterator[MarketBar]:
+            return self._failed_events()
+
+    service, request, _ = _service(tmp_path)
+    adapter = FailingPollAdapter()
+    service = PaperSessionService(
+        service.repository,
+        registry=service.registry,
+        adapter_factory=lambda _: adapter,
+    )
+    session_id = service.create(request).session_id
+
+    async def scenario() -> None:
+        await service.start(session_id)
+        for _ in range(100):
+            if service.get(session_id).error_code == "MARKET_DATA_RECONNECTING":
+                break
+            await asyncio.sleep(0.01)
+        snapshot = service.get(session_id)
+        assert snapshot.feed_status == "RECONNECTING"
+        assert snapshot.error_code == "MARKET_DATA_RECONNECTING"
+        assert "gap detected" not in (snapshot.error_message or "").lower()
         await service.shutdown()
 
     asyncio.run(scenario())
@@ -1060,6 +1100,10 @@ def test_api_provider_status_and_persistent_created_session() -> None:
         "STOP_REQUESTED",
         "STOPPED",
     ]
+    recent_operation = client.get(f"/api/paper/sessions/{session_id}/operations?limit=1").json()[
+        "items"
+    ]
+    assert [item["operation_type"] for item in recent_operation] == ["STOPPED"]
 
 
 def test_actual_python_backend_process_restart_recovers_and_continues(tmp_path: Path) -> None:

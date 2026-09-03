@@ -216,7 +216,9 @@ def test_tdx_live_adapter_emits_only_completed_one_minute_bars() -> None:
                 "vol": 10.0,
             },
             {
-                "datetime": now_local,
+                # TDX can briefly report its unfinished minute ahead of the local
+                # clock. It must be discarded before MarketBar validation.
+                "datetime": now_local + timedelta(minutes=1),
                 "open": 100.5,
                 "high": 102.0,
                 "low": 100.0,

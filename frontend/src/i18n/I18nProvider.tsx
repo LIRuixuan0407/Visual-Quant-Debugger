@@ -984,7 +984,7 @@ const zh: Record<string, string> = {
   'Session history failed.': '加载会话历史失败。', 'Live paper setup failed.': '加载实时虚拟盘配置失败。', 'Paper session failed.': '虚拟盘会话失败。', 'Live Paper unavailable': '实时虚拟盘不可用',
   CONNECTED: '已连接', RECONNECTING: '重连中', STALE: '数据陈旧', DISCONNECTED: '已断开',
   READY: '就绪', RECOVERING: '恢复中', RECOVERY_DIVERGENCE: '恢复结果不一致',
-  MARKET_DATA_GAP: '行情数据中断',
+  MARKET_DATA_GAP: '行情数据中断', MARKET_DATA_RECONNECTING: '行情连接重试中',
   'MARKET OPEN': '市场开盘', 'MARKET CLOSED': '市场休市',
   'Trace protocol': '追踪协议',
   'Current research configuration': '当前研究配置', 'Strategy selector': '策略选择器', 'Dataset selector': '数据集选择器',

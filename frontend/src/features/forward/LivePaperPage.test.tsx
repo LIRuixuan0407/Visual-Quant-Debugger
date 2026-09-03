@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { I18nProvider } from '../../i18n/I18nProvider'
@@ -34,7 +34,19 @@ const snapshot: PaperSessionSnapshot = {
 
 const account = { account_id: snapshot.account_id, name: 'Primary paper', currency: 'USD', initial_cash: 100000, cash: 100000, positions: {}, equity: 100000, cumulative_fees: 0, cumulative_slippage: 0, active_session_id: null, created_at: snapshot.created_at, updated_at: snapshot.created_at }
 
-afterEach(() => { vi.restoreAllMocks(); window.localStorage.clear() })
+class FakeEventSource {
+  static latest: FakeEventSource | null = null
+  onopen: (() => void) | null = null
+  onerror: (() => void) | null = null
+  private snapshotListener: ((event: MessageEvent<string>) => void) | null = null
+
+  constructor(readonly url: string) { FakeEventSource.latest = this }
+  addEventListener(type: string, listener: (event: MessageEvent<string>) => void) { if (type === 'snapshot') this.snapshotListener = listener }
+  emit(value: PaperSessionSnapshot) { this.snapshotListener?.(new MessageEvent('snapshot', { data: JSON.stringify(value) })) }
+  close() { /* no-op test stream */ }
+}
+
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); FakeEventSource.latest = null; window.localStorage.clear() })
 
 describe('Live Paper Forward workspace', () => {
   it('uses the same numeric alignment hook for the Forward default header and values', () => {
@@ -144,17 +156,18 @@ describe('Live Paper Forward workspace', () => {
 
   it('shows backend health, operation history, orders, fills, and a safe divergence recovery surface in Chinese', async () => {
     window.localStorage.setItem('vqd-language', 'zh')
+    vi.stubGlobal('EventSource', FakeEventSource)
     const failed = { ...snapshot, status: 'ERROR' as const, recovery_status: 'RECOVERY_DIVERGENCE' as const, broker_status: 'ERROR' as const, error_code: 'RECOVERY_DIVERGENCE', error_message: 'Deterministic replay did not match the persisted checkpoint' }
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
       const endpoint = String(input)
       const json = (value: unknown) => new Response(JSON.stringify(value), { status: 200, headers: { 'Content-Type': 'application/json' } })
       if (endpoint === '/api/market-data/providers') return json([{ provider: 'alpaca', configured: true, feeds: ['iex'], selected_feed: 'iex', timeframe: '1Min', market_session: 'US_REGULAR' }])
       if (endpoint === '/api/paper-accounts') return json({ items: [account] })
       if (endpoint === '/api/paper-sessions') return json({ items: [failed] })
       if (endpoint === `/api/paper-sessions/${failed.session_id}`) return json(failed)
-      if (endpoint === `/api/paper-sessions/${failed.session_id}/trace`) return json({ trace_version: '1.0', session_id: failed.session_id, strategy_id: failed.strategy_id, parameters: failed.parameters, timeline: [], diagnostics: [], market_revisions: [], execution_mode: failed.execution_mode, broker_events: [] })
+      if (endpoint === `/api/paper-sessions/${failed.session_id}/trace?limit=200`) return json({ trace_version: '1.0', session_id: failed.session_id, strategy_id: failed.strategy_id, parameters: failed.parameters, timeline: [], diagnostics: [], market_revisions: [], execution_mode: failed.execution_mode, broker_events: [] })
       if (endpoint === `/api/paper/sessions/${failed.session_id}/health`) return json({ session_id: failed.session_id, status: 'ERROR', feed_status: 'DISCONNECTED', broker_status: 'ERROR', recovery_status: 'RECOVERY_DIVERGENCE', last_received_at: null, last_market_event: null, last_latency_ms: null, stale_seconds: 0, reconnect_count: 2, backfill_count: 1, backfilled_bar_count: 3, open_order_count: 0, partially_filled_order_count: 0, broker_account_status: null, broker_cash: null, broker_equity: null, broker_buying_power: null, rejected_order_count: 0, last_broker_event_at: null })
-      if (endpoint === `/api/paper/sessions/${failed.session_id}/operations`) return json({ items: [{ operation_id: 'operation-1', sequence: 1, session_id: failed.session_id, operation_type: 'RECOVERY_DIVERGENCE', occurred_at: failed.created_at, message: 'Recovered runtime state does not match the persisted checkpoint.', metadata: {} }] })
+      if (endpoint === `/api/paper/sessions/${failed.session_id}/operations?limit=200`) return json({ items: [{ operation_id: 'operation-1', sequence: 1, session_id: failed.session_id, operation_type: 'RECOVERY_DIVERGENCE', occurred_at: failed.created_at, message: 'Recovered runtime state does not match the persisted checkpoint.', metadata: {} }] })
       if (endpoint === `/api/paper/sessions/${failed.session_id}/recovery`) return json({ session_id: failed.session_id, status: 'RECOVERY_DIVERGENCE', journal_event_count: 3, broker_event_count: 0, recorded_portfolio_hash: 'sha256:recorded', recovered_portfolio_hash: 'sha256:recovered', recorded_trace_hash: 'sha256:recorded-trace', recovered_trace_hash: 'sha256:recovered-trace', broker_reconciled: false, account_reconciled: true, warnings: ['Session was not resumed automatically.'] })
       throw new Error(`Unexpected request GET ${endpoint}`)
     })
@@ -172,5 +185,16 @@ describe('Live Paper Forward workspace', () => {
     expect(screen.getByRole('button', { name: '重试恢复' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '停止会话' })).toBeInTheDocument()
     expect(screen.queryByText(/force continue/i)).not.toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledWith(`/api/paper-sessions/${failed.session_id}/trace?limit=200`, undefined)
+    expect(fetchMock).toHaveBeenCalledWith(`/api/paper/sessions/${failed.session_id}/operations?limit=200`, undefined)
+    const operationEndpoint = `/api/paper/sessions/${failed.session_id}/operations?limit=200`
+    expect(fetchMock.mock.calls.filter(([input]) => String(input) === operationEndpoint)).toHaveLength(1)
+    act(() => FakeEventSource.latest?.onerror?.())
+    expect(screen.getByText('实时更新通道正在重连；后端会话仍会独立继续运行。')).toBeInTheDocument()
+    act(() => FakeEventSource.latest?.onopen?.())
+    await waitFor(() => expect(screen.queryByText('实时更新通道正在重连；后端会话仍会独立继续运行。')).not.toBeInTheDocument())
+    act(() => FakeEventSource.latest?.emit({ ...failed, feed_status: 'CONNECTED', last_event_sequence: 1 }))
+    await waitFor(() => expect(screen.getAllByText('已连接').length).toBeGreaterThan(0))
+    expect(fetchMock.mock.calls.filter(([input]) => String(input) === operationEndpoint)).toHaveLength(1)
   })
 })

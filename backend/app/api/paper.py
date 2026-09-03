@@ -413,9 +413,11 @@ def get_paper_health(session_id: str) -> PaperOperationalHealth:
 
 
 @operations_router.get("/{session_id}/operations", response_model=PaperOperationLog)
-def get_paper_operations(session_id: str) -> PaperOperationLog:
+def get_paper_operations(
+    session_id: str, limit: int | None = Query(default=None, ge=1, le=1_000)
+) -> PaperOperationLog:
     try:
-        return paper_store.service.operations(session_id)
+        return paper_store.service.operations(session_id, limit=limit)
     except PaperSessionNotFoundError as exc:
         raise _not_found(exc) from exc
 
@@ -449,9 +451,11 @@ async def cancel_paper_order(session_id: str, order_id: str) -> PaperSessionSnap
 
 
 @router.get("/{session_id}/trace", response_model=PaperTrace)
-def get_paper_trace(session_id: str) -> PaperTrace:
+def get_paper_trace(
+    session_id: str, limit: int | None = Query(default=None, ge=1, le=1_000)
+) -> PaperTrace:
     try:
-        return paper_store.service.trace(session_id)
+        return paper_store.service.trace(session_id, limit=limit)
     except PaperSessionNotFoundError as exc:
         raise _not_found(exc) from exc
 

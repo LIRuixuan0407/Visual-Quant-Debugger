@@ -395,8 +395,7 @@ class PaperSessionRepository:
 
     def append_operation(self, session_id: str, event: PaperOperationEvent) -> None:
         path = self.session_directory(session_id) / "operations.jsonl"
-        existing = self.read_operations(session_id)
-        expected_sequence = len(existing) + 1
+        expected_sequence = self.next_operation_sequence(session_id)
         if event.session_id != session_id:
             raise ValueError("Operation event does not belong to this paper session")
         if event.sequence != expected_sequence:
@@ -408,16 +407,53 @@ class PaperSessionRepository:
             handle.flush()
             os.fsync(handle.fileno())
 
-    def read_operations(self, session_id: str) -> tuple[PaperOperationEvent, ...]:
+    @staticmethod
+    def _tail_nonempty_lines(path: Path, limit: int) -> list[bytes]:
+        if not path.is_file() or path.stat().st_size == 0 or limit < 1:
+            return []
+        with path.open("rb") as handle:
+            position = handle.seek(0, os.SEEK_END)
+            pending = b""
+            lines: list[bytes] = []
+            while position > 0 and len(lines) < limit:
+                chunk_size = min(64 * 1024, position)
+                position -= chunk_size
+                handle.seek(position)
+                parts = (handle.read(chunk_size) + pending).splitlines()
+                if position > 0 and parts:
+                    pending = parts[0]
+                    parts = parts[1:]
+                else:
+                    pending = b""
+                lines = [line for line in parts if line.strip()] + lines
+        return lines[-limit:]
+
+    def next_operation_sequence(self, session_id: str) -> int:
+        path = self.session_directory(session_id) / "operations.jsonl"
+        lines = self._tail_nonempty_lines(path, 1)
+        if not lines:
+            return 1
+        event = PaperOperationEvent.model_validate_json(lines[0])
+        if event.session_id != session_id:
+            raise ValueError("Operation log contains an event for another paper session")
+        return event.sequence + 1
+
+    def read_operations(
+        self, session_id: str, *, limit: int | None = None
+    ) -> tuple[PaperOperationEvent, ...]:
+        if limit is not None and limit < 1:
+            raise ValueError("Operation log limit must be positive")
         path = self.session_directory(session_id) / "operations.jsonl"
         if not path.is_file():
             return ()
-        events = tuple(
-            PaperOperationEvent.model_validate_json(line)
-            for line in path.read_bytes().splitlines()
-            if line.strip()
+        lines = (
+            [line for line in path.read_bytes().splitlines() if line.strip()]
+            if limit is None
+            else self._tail_nonempty_lines(path, limit)
         )
-        for expected_sequence, event in enumerate(events, start=1):
+        events = tuple(PaperOperationEvent.model_validate_json(line) for line in lines)
+        first_sequence = 1 if limit is None or not events else events[0].sequence
+        for expected_sequence, event in enumerate(events, start=first_sequence):
             if event.session_id != session_id:
                 raise ValueError("Operation log contains an event for another paper session")
             if event.sequence != expected_sequence:

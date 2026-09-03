@@ -149,7 +149,7 @@ class PaperSessionService:
             for key, value in (metadata or {}).items()
             if not any(fragment in key.lower() for fragment in _SENSITIVE_OPERATION_KEYS)
         }
-        sequence = len(self.repository.read_operations(session_id)) + 1
+        sequence = self.repository.next_operation_sequence(session_id)
         event = PaperOperationEvent(
             operation_id=f"operation-{session_id.removeprefix('paper-')}-{sequence:08d}",
             sequence=sequence,
@@ -642,12 +642,22 @@ class PaperSessionService:
         )
         return PaperSessionList(items=tuple(self._snapshot(item) for item in ordered))
 
-    def trace(self, session_id: str) -> PaperTrace:
-        return self._session(session_id).trace()
+    def trace(self, session_id: str, *, limit: int | None = None) -> PaperTrace:
+        if limit is not None and limit < 1:
+            raise ValueError("Trace limit must be positive")
+        trace = self._session(session_id).trace()
+        if limit is None:
+            return trace
+        return trace.model_copy(
+            update={
+                "timeline": trace.timeline[-limit:],
+                "broker_events": trace.broker_events[-limit:],
+            }
+        )
 
-    def operations(self, session_id: str) -> PaperOperationLog:
+    def operations(self, session_id: str, *, limit: int | None = None) -> PaperOperationLog:
         self._session(session_id)
-        return PaperOperationLog(items=self.repository.read_operations(session_id))
+        return PaperOperationLog(items=self.repository.read_operations(session_id, limit=limit))
 
     def recovery(self, session_id: str) -> PaperRecoveryReport:
         self._session(session_id)
@@ -1798,7 +1808,10 @@ class PaperSessionService:
                 await adapter.connect()
                 if isinstance(adapter, AlpacaStockMarketDataAdapter):
                     session.market_clock = await adapter.market_clock.current()
-                    await self.backfill_gap(session_id, adapter, session.market_clock.timestamp)
+                    backfill_time = session.market_clock.timestamp
+                else:
+                    backfill_time = datetime.now(UTC)
+                await self.backfill_gap(session_id, adapter, backfill_time)
                 await adapter.subscribe(session.manifest.symbols)
                 session.manifest = session.manifest.model_copy(
                     update={
@@ -1814,7 +1827,6 @@ class PaperSessionService:
                     "Market data feed connected",
                 )
                 await self._publish(session_id)
-                delay = 1.0
                 iterator = adapter.events().__aiter__()
                 next_bar: asyncio.Future[MarketBar] = asyncio.ensure_future(iterator.__anext__())
                 while session.manifest.status in {"RUNNING", "PAUSED"}:
@@ -1833,6 +1845,7 @@ class PaperSessionService:
                     next_bar = asyncio.ensure_future(iterator.__anext__())
                     if await self._is_regular_bar(session, bar, adapter):
                         await self.ingest(session_id, bar)
+                        delay = 1.0
                 next_bar.cancel()
                 return
             except asyncio.CancelledError:
@@ -1848,9 +1861,9 @@ class PaperSessionService:
                 session.manifest = session.manifest.model_copy(
                     update={
                         "feed_status": "RECONNECTING",
-                        "error_code": "MARKET_DATA_GAP",
+                        "error_code": "MARKET_DATA_RECONNECTING",
                         "error_message": (
-                            "Market data gap detected; reconnect/backfill in progress: "
+                            "Market data connection interrupted; reconnect/backfill in progress: "
                             f"{type(exc).__name__}"
                         ),
                     }

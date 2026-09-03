@@ -70,8 +70,8 @@ export async function cancelPaperOrder(sessionId: string, orderId: string): Prom
   return requireSession(await requestJson(endpoint, { method: 'POST' }), endpoint)
 }
 
-export async function getPaperTrace(sessionId: string): Promise<PaperTrace> {
-  const endpoint = `/api/paper-sessions/${encodeURIComponent(sessionId)}/trace`
+export async function getPaperTrace(sessionId: string, limit = 200): Promise<PaperTrace> {
+  const endpoint = `/api/paper-sessions/${encodeURIComponent(sessionId)}/trace?limit=${limit}`
   const value = await requestJson(endpoint)
   if (typeof value !== 'object' || value === null || (value as Record<string, unknown>).trace_version !== '1.0' || !Array.isArray((value as Record<string, unknown>).timeline) || !Array.isArray((value as Record<string, unknown>).market_revisions)) throw new Error(`${endpoint} returned a malformed live Trace.`)
   return value as PaperTrace
@@ -84,8 +84,8 @@ export async function getPaperHealth(sessionId: string): Promise<PaperOperationa
   return value as PaperOperationalHealth
 }
 
-export async function getPaperOperations(sessionId: string): Promise<PaperOperationEvent[]> {
-  const endpoint = `/api/paper/sessions/${encodeURIComponent(sessionId)}/operations`
+export async function getPaperOperations(sessionId: string, limit = 200): Promise<PaperOperationEvent[]> {
+  const endpoint = `/api/paper/sessions/${encodeURIComponent(sessionId)}/operations?limit=${limit}`
   const value = await requestJson(endpoint)
   if (typeof value !== 'object' || value === null || !Array.isArray((value as { items?: unknown }).items)) throw new Error(`${endpoint} returned a malformed operation log.`)
   return (value as { items: PaperOperationEvent[] }).items

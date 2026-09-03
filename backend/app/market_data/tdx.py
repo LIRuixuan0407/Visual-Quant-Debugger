@@ -45,6 +45,20 @@ _REGION_CURRENCY: dict[MarketRegion, Literal["CNY", "HKD", "USD"]] = {
 }
 _REGION_EXCHANGE: dict[MarketRegion, str] = {"CN": "CN", "HK": "HKEX", "US": "US"}
 
+_REGION_REGULAR_SESSIONS: dict[MarketRegion, tuple[tuple[int, int], ...]] = {
+    "CN": ((9 * 60 + 30, 11 * 60 + 30), (13 * 60, 15 * 60)),
+    "HK": ((9 * 60 + 30, 12 * 60), (13 * 60, 16 * 60)),
+    "US": ((9 * 60 + 30, 16 * 60),),
+}
+
+
+def _regular_market_is_open(region: MarketRegion, current_time: datetime) -> bool:
+    local_time = current_time.astimezone(_REGION_TZ[region])
+    if local_time.weekday() >= 5:
+        return False
+    minute = local_time.hour * 60 + local_time.minute
+    return any(start <= minute < end for start, end in _REGION_REGULAR_SESSIONS[region])
+
 
 class _FrameLike(Protocol):
     def to_dict(self, *, orient: str) -> list[dict[str, object]]: ...
@@ -597,15 +611,26 @@ class TdxMarketDataAdapter(MarketDataAdapter):
         if not rows:
             return None
         received = datetime.now(UTC)
-        bars = [
-            self._reference._bar(symbol, row, "1Min", received, adjustment="NONE") for row in rows
-        ]
         current_minute = (
             received.astimezone(_REGION_TZ[self._region])
             .replace(second=0, microsecond=0)
             .astimezone(UTC)
         )
-        completed = [bar for bar in bars if bar.event_time < current_minute]
+        completed: list[MarketBar] = []
+        for row in rows:
+            raw_time = _value(row, "datetime", "date", "time")
+            if raw_time is None:
+                continue
+            try:
+                # TDX includes the current, unfinished minute and its clock can lead
+                # ours slightly. Filter it before MarketBar validates availability.
+                if _dt(raw_time, symbol.region) >= current_minute:
+                    continue
+                completed.append(
+                    self._reference._bar(symbol, row, "1Min", received, adjustment="NONE")
+                )
+            except (TypeError, ValueError):
+                continue
         return None if not completed else max(completed, key=lambda item: item.event_time)
 
     async def _iterate(self) -> AsyncIterator[MarketBar]:
@@ -624,7 +649,12 @@ class TdxMarketDataAdapter(MarketDataAdapter):
                 emitted = True
                 yield bar
             if not emitted:
-                await asyncio.sleep(self._poll_interval)
+                delay = (
+                    self._poll_interval
+                    if _regular_market_is_open(self._region, datetime.now(UTC))
+                    else max(self._poll_interval, 60.0)
+                )
+                await asyncio.sleep(delay)
 
     def events(self) -> AsyncIterator[MarketBar]:
         return self._iterate()
