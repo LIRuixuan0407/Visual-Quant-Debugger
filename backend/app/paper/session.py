@@ -89,12 +89,18 @@ class LivePaperSession:
             initial_cash=self.manifest.initial_cash,
         )
 
-    def classify(self, bar: MarketBar) -> tuple[MarketApplyKind, JournalDisposition]:
+    def classify(
+        self, bar: MarketBar, *, historical_warmup: bool = False
+    ) -> tuple[MarketApplyKind, JournalDisposition]:
         kind = self.market_store.classify(bar)
         if kind == MarketApplyKind.FRAME_READY:
-            disposition: JournalDisposition = (
-                "EVALUATION_SKIPPED_PAUSED" if self.manifest.status == "PAUSED" else "EVALUATED"
-            )
+            disposition: JournalDisposition
+            if historical_warmup:
+                disposition = "HISTORICAL_WARMUP"
+            else:
+                disposition = (
+                    "EVALUATION_SKIPPED_PAUSED" if self.manifest.status == "PAUSED" else "EVALUATED"
+                )
             return kind, disposition
         mapping: dict[MarketApplyKind, JournalDisposition] = {
             MarketApplyKind.BUFFERED: "BUFFERED",
@@ -108,6 +114,7 @@ class LivePaperSession:
     def _kind_for_entry(entry: MarketJournalEntry) -> MarketApplyKind:
         mapping: dict[JournalDisposition, MarketApplyKind] = {
             "BUFFERED": MarketApplyKind.BUFFERED,
+            "HISTORICAL_WARMUP": MarketApplyKind.FRAME_READY,
             "EVALUATED": MarketApplyKind.FRAME_READY,
             "EVALUATION_SKIPPED_PAUSED": MarketApplyKind.FRAME_READY,
             "CORRECTION_APPLIED": MarketApplyKind.CORRECTION,
@@ -139,7 +146,9 @@ class LivePaperSession:
                     )
                 )
         elif kind == MarketApplyKind.FRAME_READY and frame is not None:
-            if entry.disposition == "EVALUATION_SKIPPED_PAUSED":
+            if entry.disposition == "HISTORICAL_WARMUP":
+                self.runtime.step_historical_warmup(frame)
+            elif entry.disposition == "EVALUATION_SKIPPED_PAUSED":
                 self.runtime.step_without_strategy(frame)
             else:
                 self.runtime.step(frame)
@@ -341,8 +350,11 @@ class LivePaperSession:
             if self.manifest.checkpoint is None
             else self.manifest.checkpoint.market_watermark,
             evaluated_bar_count=sum(
-                entry.disposition in {"EVALUATED", "EVALUATION_SKIPPED_PAUSED"}
+                entry.disposition in {"HISTORICAL_WARMUP", "EVALUATED", "EVALUATION_SKIPPED_PAUSED"}
                 for entry in self.journal
+            ),
+            historical_warmup_bar_count=sum(
+                entry.disposition == "HISTORICAL_WARMUP" for entry in self.journal
             ),
             correction_count=sum(
                 entry.disposition == "CORRECTION_APPLIED" for entry in self.journal

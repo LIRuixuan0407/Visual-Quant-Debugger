@@ -40,6 +40,7 @@ from app.paper.models import (
     PaperOperationalHealth,
     PaperOperationEvent,
     PaperOperationLog,
+    PaperOperationType,
     PaperOrder,
     PaperRecoveryReport,
     PaperSessionList,
@@ -70,6 +71,11 @@ AdapterFactory = Callable[[PaperSessionManifest], MarketDataAdapter]
 BrokerAdapterFactory = Callable[[PaperSessionManifest], PaperBrokerAdapter]
 
 _SENSITIVE_OPERATION_KEYS = ("api_key", "secret", "token", "credential", "password")
+_REGULAR_MINUTES_PER_DAY = {
+    "CN_REGULAR": 240,
+    "HK_REGULAR": 330,
+    "US_REGULAR": 390,
+}
 _OPEN_ORDER_STATUSES = frozenset(
     {
         "CREATED",
@@ -123,24 +129,7 @@ class PaperSessionService:
     def _record_operation(
         self,
         session_id: str,
-        operation_type: Literal[
-            "CREATED",
-            "STARTED",
-            "PAUSED",
-            "RESUMED",
-            "STOP_REQUESTED",
-            "STOPPED",
-            "FEED_DISCONNECTED",
-            "FEED_RECONNECTING",
-            "FEED_RECONNECTED",
-            "BACKFILL_STARTED",
-            "BACKFILL_COMPLETED",
-            "BROKER_RECONCILIATION",
-            "RECOVERY_STARTED",
-            "RECOVERY_COMPLETED",
-            "RECOVERY_DIVERGENCE",
-            "ERROR",
-        ],
+        operation_type: PaperOperationType,
         message: str,
         metadata: dict[str, str | int | float | bool | None] | None = None,
     ) -> PaperOperationEvent:
@@ -197,7 +186,7 @@ class PaperSessionService:
 
     def _replay_session(
         self, persisted: PaperSessionManifest
-    ) -> tuple[LivePaperSession, int, int, Exception | None]:
+    ) -> tuple[LivePaperSession, int, int, RecoveryCheckpoint | None, Exception | None]:
         recovering = persisted.model_copy(update={"recovery_status": "RECOVERING"})
         session = LivePaperSession(
             recovering, str(self.repository.strategy_path(persisted.session_id))
@@ -205,6 +194,12 @@ class PaperSessionService:
         broker_events = self.repository.read_broker_events(persisted.session_id)
         broker_index = 0
         journal = self.repository.read_journal(persisted.session_id)
+        recorded = persisted.checkpoint
+        checkpoint_at_recorded = (
+            session.checkpoint()
+            if recorded is not None and recorded.last_event_sequence == 0
+            else None
+        )
         try:
             for entry in journal:
                 session.apply_entry(entry)
@@ -214,12 +209,14 @@ class PaperSessionService:
                 ):
                     session.apply_broker_event(broker_events[broker_index])
                     broker_index += 1
+                if recorded is not None and entry.sequence == recorded.last_event_sequence:
+                    checkpoint_at_recorded = session.checkpoint()
             while broker_index < len(broker_events):
                 session.apply_broker_event(broker_events[broker_index])
                 broker_index += 1
         except Exception as exc:
-            return session, len(journal), len(broker_events), exc
-        return session, len(journal), len(broker_events), None
+            return session, len(journal), len(broker_events), checkpoint_at_recorded, exc
+        return session, len(journal), len(broker_events), checkpoint_at_recorded, None
 
     def _recover_session(
         self, stored: PaperSessionManifest, *, explicit: bool
@@ -233,7 +230,9 @@ class PaperSessionService:
             "Explicit recovery started" if explicit else "Startup recovery started",
         )
         try:
-            session, journal_count, broker_count, replay_error = self._replay_session(persisted)
+            session, journal_count, broker_count, recorded_replay, replay_error = (
+                self._replay_session(persisted)
+            )
             if replay_error is not None:
                 failed = persisted.model_copy(
                     update={
@@ -279,7 +278,13 @@ class PaperSessionService:
                 )
                 return report
             recovered = session.checkpoint()
-            matches = self._checkpoint_matches(recorded, recovered)
+            comparison = (
+                recovered
+                if recorded is None or recovered.last_event_sequence == recorded.last_event_sequence
+                else recorded_replay
+            )
+            matches = comparison is not None and self._checkpoint_matches(recorded, comparison)
+            reported_recovery = recovered if comparison is None else comparison
             warnings: tuple[str, ...] = ()
             if not matches:
                 session.manifest = session.manifest.model_copy(
@@ -331,13 +336,13 @@ class PaperSessionService:
                 recorded_portfolio_hash=(
                     recovered.portfolio_hash if recorded is None else recorded.portfolio_hash
                 ),
-                recovered_portfolio_hash=recovered.portfolio_hash,
+                recovered_portfolio_hash=reported_recovery.portfolio_hash,
                 recorded_trace_hash=(
                     recovered.trace_semantic_hash
                     if recorded is None
                     else recorded.trace_semantic_hash
                 ),
-                recovered_trace_hash=recovered.trace_semantic_hash,
+                recovered_trace_hash=reported_recovery.trace_semantic_hash,
                 broker_reconciled=session.manifest.execution_mode == "VQD_SIMULATED",
                 account_reconciled=True,
                 warnings=warnings,
@@ -1018,7 +1023,7 @@ class PaperSessionService:
         evaluated_ids = tuple(
             entry.market_event_id
             for entry in replay.journal
-            if entry.disposition in {"EVALUATED", "EVALUATION_SKIPPED_PAUSED"}
+            if entry.disposition in {"HISTORICAL_WARMUP", "EVALUATED", "EVALUATION_SKIPPED_PAUSED"}
         )
         if (expected is None) != (actual is None):
             return RuntimeConsistencyReport(
@@ -1261,14 +1266,21 @@ class PaperSessionService:
         self.run_repository.finalize(completed, trace)
         return run_id
 
-    async def ingest(self, session_id: str, bar: MarketBar) -> PaperSessionSnapshot:
+    async def _ingest_bar(
+        self,
+        session_id: str,
+        bar: MarketBar,
+        *,
+        historical_warmup: bool = False,
+        persist: bool = True,
+    ) -> LivePaperSession:
         session = self._session(session_id)
         if session.manifest.status not in {"RUNNING", "PAUSED"}:
             raise ValueError(f"Cannot ingest into a {session.manifest.status} session")
         if bar.provider != session.manifest.provider or bar.feed != session.manifest.feed:
             raise ValueError("Market event provider/feed does not match the paper session")
         async with self._locks[session_id]:
-            _, disposition = session.classify(bar)
+            _, disposition = session.classify(bar, historical_warmup=historical_warmup)
             entry = MarketJournalEntry(
                 sequence=len(session.journal) + 1,
                 market_event_id=self._market_event_id(bar),
@@ -1295,7 +1307,12 @@ class PaperSessionService:
                 session.manifest = session.manifest.model_copy(
                     update={"last_market_event": bar.event_time}
                 )
-            self._persist(session)
+            if persist:
+                self._persist(session)
+        return session
+
+    async def ingest(self, session_id: str, bar: MarketBar) -> PaperSessionSnapshot:
+        session = await self._ingest_bar(session_id, bar)
         await self._publish(session_id)
         return self._snapshot(session)
 
@@ -1708,6 +1725,90 @@ class PaperSessionService:
                 await asyncio.sleep(delay)
                 delay = min(delay * 2.0, 30.0)
 
+    @staticmethod
+    def _historical_warmup_target(session: LivePaperSession) -> int:
+        if session.manifest.strategy_id != "pairs-trading":
+            return 0
+        lookback = int(session.manifest.parameters.get("lookback", 60))
+        return max(0, lookback * 2 - 2)
+
+    @staticmethod
+    def _synchronized_history_tail(
+        bars: tuple[MarketBar, ...], symbols: tuple[str, ...], limit: int
+    ) -> tuple[MarketBar, ...]:
+        if limit <= 0:
+            return ()
+        normalized = tuple(symbol.upper() for symbol in symbols)
+        selected_symbols = frozenset(normalized)
+        by_time: dict[datetime, dict[str, MarketBar]] = {}
+        for bar in bars:
+            if bar.symbol not in selected_symbols:
+                continue
+            bucket = by_time.setdefault(bar.event_time, {})
+            previous = bucket.get(bar.symbol)
+            if previous is None or (bar.revision, bar.available_at, bar.provider_event_id) > (
+                previous.revision,
+                previous.available_at,
+                previous.provider_event_id,
+            ):
+                bucket[bar.symbol] = bar
+        synchronized_times = [
+            event_time
+            for event_time in sorted(by_time)
+            if all(symbol in by_time[event_time] for symbol in normalized)
+        ][-limit:]
+        return tuple(
+            by_time[event_time][symbol]
+            for event_time in synchronized_times
+            for symbol in normalized
+        )
+
+    async def bootstrap_history(
+        self, session_id: str, adapter: MarketDataAdapter, current_time: datetime
+    ) -> tuple[MarketBar, ...]:
+        """Seed a new pair runtime with causal history and no pre-session execution."""
+        session = self._session(session_id)
+        target = self._historical_warmup_target(session)
+        if target == 0 or session.market_store.last_completed_time is not None:
+            return ()
+        end = current_time.replace(second=0, microsecond=0) - timedelta(minutes=1)
+        minutes_per_day = _REGULAR_MINUTES_PER_DAY[session.manifest.market_session]
+        trading_day_blocks = max(1, (target + minutes_per_day - 1) // minutes_per_day)
+        start = end - timedelta(days=max(14, trading_day_blocks * 7))
+        self._record_operation(
+            session_id,
+            "HISTORICAL_WARMUP_STARTED",
+            "Historical strategy warm-up started",
+            {
+                "target_synchronized_bars": target,
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+            },
+        )
+        bars = await adapter.historical_bars(session.manifest.symbols, start, end)
+        selected = self._synchronized_history_tail(bars, session.manifest.symbols, target)
+        for bar in selected:
+            await self._ingest_bar(
+                session_id,
+                bar,
+                historical_warmup=True,
+                persist=False,
+            )
+        if selected:
+            self._persist(session)
+        synchronized_count = len(selected) // len(session.manifest.symbols)
+        self._record_operation(
+            session_id,
+            "HISTORICAL_WARMUP_COMPLETED",
+            "Historical strategy warm-up completed",
+            {
+                "target_synchronized_bars": target,
+                "loaded_synchronized_bars": synchronized_count,
+                "complete": synchronized_count == target,
+            },
+        )
+        return selected
+
     async def _is_regular_bar(
         self, session: LivePaperSession, bar: MarketBar, adapter: MarketDataAdapter
     ) -> bool:
@@ -1811,6 +1912,7 @@ class PaperSessionService:
                     backfill_time = session.market_clock.timestamp
                 else:
                     backfill_time = datetime.now(UTC)
+                await self.bootstrap_history(session_id, adapter, backfill_time)
                 await self.backfill_gap(session_id, adapter, backfill_time)
                 await adapter.subscribe(session.manifest.symbols)
                 session.manifest = session.manifest.model_copy(

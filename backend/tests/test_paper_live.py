@@ -117,6 +117,25 @@ def _bar(
     )
 
 
+def _pair_bar(minute: int, symbol: str, close: float) -> MarketBar:
+    event = _time(minute)
+    available = event + timedelta(minutes=1)
+    return MarketBar(
+        symbol=symbol,
+        event_time=event,
+        available_at=available,
+        received_at=available + timedelta(milliseconds=125),
+        open=close,
+        high=close + 0.2,
+        low=close - 0.2,
+        close=close,
+        volume=1_000,
+        provider="fake",
+        feed="iex",
+        provider_event_id=f"fake:{symbol}:{minute}:r1",
+    )
+
+
 def _service(tmp_path: Path) -> tuple[PaperSessionService, CreatePaperSession, Path]:
     source = tmp_path / "live_strategy.py"
     source.write_text(STRATEGY_SOURCE, encoding="utf-8")
@@ -456,6 +475,124 @@ def test_reconnect_gap_backfill_is_chronological_and_exactly_once(tmp_path: Path
     assert service.get(session_id).duplicate_count == 1
 
 
+def test_pair_session_bootstraps_synchronized_history_without_pre_session_trades(
+    tmp_path: Path,
+) -> None:
+    service = PaperSessionService(PaperSessionRepository(tmp_path))
+    session_id = service.create(
+        CreatePaperSession(
+            strategy_id="pairs-trading",
+            symbols=("AAA", "BBB"),
+            provider="fake",
+            feed="iex",
+            parameters={"lookback": 3, "entry_z": 1.0, "exit_z": 0.5},
+        )
+    ).session_id
+    adapter = FakeLiveMarketDataAdapter()
+    historical = tuple(
+        bar
+        for minute, left, right in (
+            (30, 100.0, 50.0),
+            (31, 101.0, 50.2),
+            (32, 100.5, 50.4),
+            (33, 102.0, 50.1),
+        )
+        for bar in (_pair_bar(minute, "AAA", left), _pair_bar(minute, "BBB", right))
+    )
+    adapter.add_historical(*historical, _pair_bar(34, "AAA", 999.0))
+    _run(service.start(session_id, launch_task=False))
+
+    loaded = _run(service.bootstrap_history(session_id, adapter, _time(35)))
+
+    assert loaded == historical
+    warmed = service.get(session_id)
+    assert warmed.historical_warmup_bar_count == 4
+    assert warmed.evaluated_bar_count == 4
+    assert warmed.account.cash == 100_000.0
+    assert warmed.account.equity == 100_000.0
+    assert warmed.account.positions == {}
+    assert warmed.account.pending_orders == ()
+    assert warmed.account.executions == ()
+    assert warmed.orders == ()
+    assert warmed.fills == ()
+    warmup_trace = service.trace(session_id)
+    assert len(warmup_trace.timeline) == 4
+    assert {item.signal_evaluation.signal for item in warmup_trace.timeline} == {"WARMUP"}
+    assert all(not item.order_events for item in warmup_trace.timeline)
+    assert all(not item.execution_events for item in warmup_trace.timeline)
+    operations = service.operations(session_id).items
+    assert [item.operation_type for item in operations[-2:]] == [
+        "HISTORICAL_WARMUP_STARTED",
+        "HISTORICAL_WARMUP_COMPLETED",
+    ]
+    assert operations[-1].metadata == {
+        "target_synchronized_bars": 4,
+        "loaded_synchronized_bars": 4,
+        "complete": True,
+    }
+
+    recovered = PaperSessionService(PaperSessionRepository(tmp_path))
+    assert recovered.get(session_id).historical_warmup_bar_count == 4
+    assert recovered.get(session_id).account.positions == {}
+    assert recovered.runtime_consistency(session_id).status == "MATCH"
+
+    _run(recovered.ingest(session_id, _pair_bar(34, "AAA", 105.0)))
+    live = _run(recovered.ingest(session_id, _pair_bar(34, "BBB", 50.3)))
+    zscore = next(item for item in live.latest_event.feature_snapshots if item.name == "zscore")
+    assert zscore.value is not None
+    assert live.historical_warmup_bar_count == 4
+    assert live.evaluated_bar_count == 5
+
+
+def test_pair_feed_bootstraps_history_before_subscribing_to_live_events(tmp_path: Path) -> None:
+    history = tuple(
+        bar
+        for minute, left, right in ((30, 100.0, 50.0), (31, 100.5, 50.1))
+        for bar in (_pair_bar(minute, "AAA", left), _pair_bar(minute, "BBB", right))
+    )
+
+    class WarmupAdapter(FakeLiveMarketDataAdapter):
+        async def historical_bars(
+            self, symbols: tuple[str, ...], start: datetime, end: datetime
+        ) -> tuple[MarketBar, ...]:
+            return history
+
+    adapter = WarmupAdapter()
+    service = PaperSessionService(
+        PaperSessionRepository(tmp_path), adapter_factory=lambda _: adapter
+    )
+    session_id = service.create(
+        CreatePaperSession(
+            strategy_id="pairs-trading",
+            symbols=("AAA", "BBB"),
+            provider="fake",
+            feed="iex",
+            parameters={"lookback": 2, "entry_z": 2.0, "exit_z": 0.5},
+        )
+    ).session_id
+
+    async def scenario() -> None:
+        await service.start(session_id)
+        for _ in range(200):
+            if service.get(session_id).historical_warmup_bar_count == 2 and adapter.symbols:
+                break
+            await asyncio.sleep(0.005)
+        snapshot = service.get(session_id)
+        assert snapshot.historical_warmup_bar_count == 2
+        assert snapshot.account.positions == {}
+        assert adapter.symbols == ("AAA", "BBB")
+        operations = service.operations(session_id).items
+        assert next(
+            item.sequence
+            for item in operations
+            if item.operation_type == "HISTORICAL_WARMUP_COMPLETED"
+        ) < next(item.sequence for item in operations if item.operation_type == "FEED_RECONNECTED")
+        await service.stop(session_id)
+        await service.shutdown()
+
+    asyncio.run(scenario())
+
+
 def test_operational_health_and_log_are_durable_sequenced_and_secret_free(
     tmp_path: Path,
 ) -> None:
@@ -668,6 +805,33 @@ def test_explicit_recovery_requires_a_matching_checkpoint_and_returns_paused(
     assert recovered.status == "PAUSED"
     assert recovered.recovery_status == "READY"
     assert session_id not in restarted._tasks
+
+
+def test_recovery_accepts_a_durable_journal_tail_after_the_last_checkpoint(
+    tmp_path: Path,
+) -> None:
+    service, request, _ = _service(tmp_path)
+    session_id = service.create(request).session_id
+    _run(service.start(session_id, launch_task=False))
+    _run(service.ingest(session_id, _bar(30, 100.0)))
+    recorded = service.repository.load_manifest(session_id).checkpoint
+    assert recorded is not None and recorded.last_event_sequence == 1
+
+    _run(service._ingest_bar(session_id, _bar(31, 101.0), persist=False))
+    assert service.repository.load_manifest(session_id).checkpoint == recorded
+
+    restarted = PaperSessionService(PaperSessionRepository(tmp_path))
+    recovered = restarted.get(session_id)
+    assert recovered.recovery_status == "READY"
+    assert recovered.last_event_sequence == 2
+    assert recovered.last_processed_market_event_id is not None
+    assert restarted.repository.load_manifest(session_id).checkpoint == (
+        restarted._session(session_id).checkpoint()
+    )
+    report = restarted.recovery(session_id)
+    assert report.status == "RECOVERED"
+    assert report.recorded_portfolio_hash == report.recovered_portfolio_hash
+    assert report.recorded_trace_hash == report.recovered_trace_hash
 
 
 def test_strategy_failure_is_terminal_and_does_not_retry_input(tmp_path: Path) -> None:

@@ -20,9 +20,10 @@ function paperCurrency(session: PaperSessionSnapshot): 'CNY' | 'HKD' | 'USD' {
   return 'USD'
 }
 
-function EquityTimeline({ trace, currency }: { trace: PaperTrace; currency: 'CNY' | 'HKD' | 'USD' }) {
+function EquityTimeline({ trace, currency, historicalWarmupBars }: { trace: PaperTrace; currency: 'CNY' | 'HKD' | 'USD'; historicalWarmupBars: number }) {
   const { tr } = useI18n()
-  const values = trace.timeline.map((event) => event.pnl_snapshot.equity)
+  const liveTimeline = trace.timeline.slice(Math.min(historicalWarmupBars, trace.timeline.length))
+  const values = liveTimeline.map((event) => event.pnl_snapshot.equity)
   if (values.length < 2) return <p className="empty-state">{tr('Equity appears after received one-minute bars are evaluated.')}</p>
   const low = Math.min(...values); const high = Math.max(...values); const span = high - low || 1
   const points = values.map((value, index) => `${(index / (values.length - 1)) * 100},${36 - ((value - low) / span) * 32}`).join(' ')
@@ -92,6 +93,7 @@ function PairStructurePanel({ snapshot, trace }: { snapshot: PaperSessionSnapsho
   const [leftSymbol, rightSymbol] = snapshot.symbols
   const configuredLookback = Number(snapshot.parameters.lookback ?? 60)
   const lookback = Number.isFinite(configuredLookback) ? Math.max(2, Math.round(configuredLookback)) : 60
+  const historicalWarmupTarget = lookback * 2 - 2
   const configuredEntryZ = Number(snapshot.parameters.entry_z ?? 2)
   const configuredExitZ = Number(snapshot.parameters.exit_z ?? 0.5)
   const entryZ = Number.isFinite(configuredEntryZ) ? Math.abs(configuredEntryZ) : 2
@@ -131,7 +133,9 @@ function PairStructurePanel({ snapshot, trace }: { snapshot: PaperSessionSnapsho
   const verdict = phase === 'PAUSED'
     ? tr('The strategy is paused. Prices keep updating, but pair features and decisions do not.')
     : phase === 'WARMUP'
-      ? tr('The pair is warming up; no tradeable z-score exists yet.')
+      ? snapshot.historical_warmup_bar_count >= historicalWarmupTarget
+        ? tr('Historical warm-up is loaded; the first completed live pair bar will produce the initial z-score.')
+        : tr('The pair is warming up; no tradeable z-score exists yet.')
       : tr('Pair features are available; inspect the recorded z-score and decision evidence.')
   const noExposure = Object.keys(snapshot.account.positions).length === 0 && snapshot.orders.length === 0
   const normalizedValues = points.flatMap((item) => [item.leftNormalized, item.rightNormalized])
@@ -160,13 +164,14 @@ function PairStructurePanel({ snapshot, trace }: { snapshot: PaperSessionSnapsho
     <div className={`pair-verdict ${phase.toLowerCase()}`}><span>{tr('Verdict')}</span><strong>{verdict}</strong>{noExposure && <p>{tr('No position or order exists, so equity remains equal to cash.')}</p>}</div>
     <div className="pair-progress-strip">
       <div><span>{tr('Aligned pair bars')}</span><strong>{snapshot.evaluated_bar_count}</strong></div>
+      <div><span>{tr('Historical warm-up bars')}</span><strong>{snapshot.historical_warmup_bar_count} / {historicalWarmupTarget}</strong></div>
       <div><span>{tr('Valid spread observations')}</span><strong>{validSpreadObservations} / {lookback}</strong></div>
       <div><span>{tr('Remaining active pair bars')}</span><strong>{remainingBars}</strong></div>
       <div><span>{tr('Current phase')}</span><strong>{tr(phase)}</strong></div>
     </div>
     <div className="pair-chart-grid">
       <article className="pair-chart-card">
-        <header><div><span>{tr('Evidence')}</span><strong>{tr('Normalized Pair Prices')}</strong></div><small>{tr('Loaded window rebased to 100')}</small></header>
+        <header><div><span>{tr('Evidence')}</span><strong>{tr('Normalized Pair Prices')}</strong></div><small>{snapshot.historical_warmup_bar_count > 0 ? `${tr('Historical warm-up + live market data')} · ` : ''}{tr('Loaded window rebased to 100')}</small></header>
         {points.length < 2 ? <p className="pair-chart-empty">{tr('Two aligned pair bars are required to draw the price comparison.')}</p> : <>
           <p className="pair-chart-instruction">{tr('Hover or focus the chart; use arrow keys to inspect and click or tap to pin.')}</p>
           <div className="pair-chart-plot">
@@ -408,7 +413,7 @@ function LiveTraceInspector({ snapshot, trace }: { snapshot: PaperSessionSnapsho
   const features = useMemo(() => Array.from(index.featureById.values()), [index])
   const rootFeatureId = event?.signal_evaluation.dependencies[0] ?? event?.feature_snapshots[0]?.feature_id ?? null
   const selectedFeature = rootFeatureId ? index.featureById.get(rootFeatureId) ?? null : null
-  if (!event) return <section className="workspace-panel"><div className="section-heading"><h2>{tr('Live Trace / Lineage')}</h2><span>0 {tr('evaluated events')}</span></div><p className="empty-state">{tr('Only received bars will appear. No future market timeline is preloaded.')}</p></section>
+  if (!event) return <section className="workspace-panel"><div className="section-heading"><h2>{tr('Live Trace / Lineage')}</h2><span>0 {tr('evaluated events')}</span></div><p className="empty-state">{tr('Historical warm-up and received live bars appear here; future market data is never preloaded.')}</p></section>
   return <>
     <section className="workspace-panel"><div className="section-heading"><h2>{tr('Live Trace / Lineage')}</h2><span>{trace.timeline.length} {tr('immutable events')}</span></div><ReplayTimeline events={trace.timeline} selectedEventId={effectiveId} onSelect={setSelectedEventId} /></section>
     <div className="inspector-grid"><MarketPositionPanel event={event} /><StrategyDecisionPanel event={event} /></div>
@@ -504,9 +509,9 @@ function LiveWorkspace({ snapshot, trace, sessions, onSnapshot, onOpen, onNew }:
     {error && <p className="inline-warning">{error}</p>}{streamReconnecting && <p className="inline-warning">{tr('Live update channel is reconnecting; the backend session continues independently.')}</p>}{operationalError && <p className="inline-warning">{operationalError}</p>}{snapshot.error_message && <p className="inline-error"><strong>{snapshot.error_code}</strong> · {snapshot.error_message}</p>}
     {snapshot.research_run_id && <p className="inline-success"><strong>{tr('Research evidence saved')}</strong> · <a href={`/runs/${snapshot.research_run_id}`}>{snapshot.research_run_id}</a></p>}
     <section className="workspace-panel paper-overview-panel" id="paper-overview"><div className="section-heading"><h2>{tr('Overview')}</h2><span>{tr('Backend recorded')}</span></div>{brokerMode && snapshot.broker_account && <div className="broker-balance-strip"><div><span>{tr('Alpaca Paper status')}</span><strong>{snapshot.broker_account.status}</strong></div><div><span>{tr('Paper cash')}</span><strong>{formatCurrency(snapshot.broker_account.cash)}</strong></div><div><span>{tr('Paper equity')}</span><strong>{formatCurrency(snapshot.broker_account.equity)}</strong></div><div><span>{tr('Paper buying power')}</span><strong>{formatCurrency(snapshot.broker_account.buying_power)}</strong></div></div>}<div className="metric-strip"><div><span>{tr(brokerMode ? 'VQD Trace cash' : 'Cash')}</span><strong>{formatCurrency(snapshot.account.cash, currency)}</strong></div><div><span>{tr(brokerMode ? 'VQD Trace equity' : 'Equity')}</span><strong>{formatCurrency(snapshot.account.equity, currency)}</strong></div><div><span>{tr('Net P&L')}</span><strong>{formatCurrency(snapshot.account.net_pnl, currency)}</strong></div><div><span>{tr('Fees')}</span><strong>{formatCurrency(snapshot.account.cumulative_fees, currency)}</strong></div><div><span>{tr('Slippage')}</span><strong>{formatCurrency(snapshot.account.cumulative_slippage, currency)}</strong></div><div><span>{tr('Max drawdown')}</span><strong>{formatPercent(snapshot.account.max_drawdown)}</strong></div></div></section>
-    <section className="workspace-panel"><div className="section-heading"><h2>{tr('Live Equity Timeline')}</h2><span>{tr('received events only')}</span></div><EquityTimeline trace={trace} currency={currency} /></section>
+    <section className="workspace-panel"><div className="section-heading"><h2>{tr('Live Equity Timeline')}</h2><span>{tr('live events only')}</span></div><EquityTimeline trace={trace} currency={currency} historicalWarmupBars={snapshot.historical_warmup_bar_count} /></section>
     <PairStructurePanel key={snapshot.session_id} snapshot={snapshot} trace={trace} />
-    <section className="workspace-panel market-data-inspector"><div className="section-heading"><h2>{tr('Market Data Inspector')}</h2><span>{snapshot.correction_count} {tr('corrections')}</span></div><div className="market-data-grid"><div><span>{tr('Provider / Feed')}</span><strong>{snapshot.provider.toUpperCase()} · {snapshot.feed.toUpperCase()}</strong></div><div><span>{tr('Connection')}</span><strong>{tr(snapshot.feed_status)}</strong></div><div><span>{tr('Last event')}</span><code>{latestMarket ? formatTimestamp(latestMarket.event_time).time : '-'}</code></div><div><span>{tr('Received at')}</span><code>{latestMarket ? formatTimestamp(latestMarket.received_at).time : '-'}</code></div><div><span>{tr('Market time')}</span><code>{snapshot.market_clock ? formatTimestamp(snapshot.market_clock.timestamp).time : '-'}</code></div><div><span>{tr('Observed delivery latency')}</span><code>{latestMarket ? `${latestMarket.latency_ms.toFixed(0)} ms` : '-'}</code></div></div></section>
+    <section className="workspace-panel market-data-inspector"><div className="section-heading"><h2>{tr('Market Data Inspector')}</h2><span>{snapshot.correction_count} {tr('corrections')}</span></div><div className="market-data-grid"><div><span>{tr('Provider / Feed')}</span><strong>{snapshot.provider.toUpperCase()} · {snapshot.feed.toUpperCase()}</strong></div><div><span>{tr('Connection')}</span><strong>{tr(snapshot.feed_status)}</strong></div><div><span>{tr('Last event')}</span><code>{latestMarket ? formatTimestamp(latestMarket.event_time).time : '-'}</code></div><div><span>{tr('Received at')}</span><code>{latestMarket ? formatTimestamp(latestMarket.received_at).time : '-'}</code></div><div><span>{tr('Market time')}</span><code>{snapshot.market_clock ? formatTimestamp(snapshot.market_clock.timestamp).time : '-'}</code></div><div><span>{tr('Observed delivery latency')}</span><code>{latestMarket?.disposition === 'HISTORICAL_WARMUP' ? tr('Historical warm-up') : latestMarket ? `${latestMarket.latency_ms.toFixed(0)} ms` : '-'}</code></div></div></section>
     <PaperOperationsPanels health={health} operations={operations} recovery={recovery} recovering={recovering} onRecover={() => void recover()} onStop={() => void action('stop')} />
     {snapshot.recent_revisions.length > 0 && <section className="workspace-panel correction-ledger"><div className="section-heading"><h2>{tr('Market Data Revisions')}</h2><span>{tr('prior decisions remain immutable')}</span></div>{snapshot.recent_revisions.map((revision) => <div className="correction-row" key={`${revision.symbol}-${revision.event_time}-${revision.later_revision}`}><strong>{tr('MARKET DATA REVISED LATER')}</strong><code>{revision.symbol} · {formatTimestamp(revision.event_time).time}</code><span>{tr('Used by the original decision')}: {tr('revision')} {revision.used_revision}, close {revision.used_close.toFixed(2)}</span><span>{tr('Later revision')} {revision.later_revision}, close {revision.later_close.toFixed(2)} · {tr('available')} {formatTimestamp(revision.revision_available_at).time}</span></div>)}</section>}
     <div className="inspector-grid"><section className="workspace-panel"><div className="section-heading"><h2>{tr('Positions')}</h2><span>{Object.keys(snapshot.account.positions).length}</span></div>{Object.keys(snapshot.account.positions).length === 0 ? <p className="empty-state">{tr('No open positions.')}</p> : Object.entries(snapshot.account.positions).map(([symbol, quantity]) => <div className="position-line" key={symbol}><code>{symbol}</code><strong>{quantity.toFixed(4)}</strong></div>)}</section><section className="workspace-panel"><div className="section-heading"><h2>{tr('Open Orders')}</h2><span>{openOrders.length}</span></div>{openOrders.length === 0 ? <p className="empty-state">{tr('No open orders.')}</p> : <div className="broker-order-list">{openOrders.map((order) => <article className="broker-order" key={order.order_id}><div><strong>{order.symbol} · {tr(order.side)}</strong><span>{tr(order.status)}</span></div><div className="order-fill-progress"><span style={{ width: `${Math.min(100, (order.filled_quantity / order.quantity) * 100)}%` }} /></div><small>{tr('Filled')} {order.filled_quantity.toFixed(4)} / {order.quantity.toFixed(4)}</small>{brokerMode && !['PENDING_CANCEL', 'HELD', 'SUSPENDED'].includes(order.status) && <button type="button" disabled={cancellingOrderId === order.order_id} onClick={() => void cancelOrder(order.order_id)}>{cancellingOrderId === order.order_id ? tr('Cancelling…') : tr('Cancel order')}</button>}</article>)}</div>}</section></div>

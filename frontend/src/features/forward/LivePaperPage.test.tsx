@@ -28,7 +28,7 @@ const snapshot: PaperSessionSnapshot = {
   strategy_id: definition.strategy_id, strategy_name: definition.name, strategy_fingerprint: 'sha256:abc', symbols: ['AAPL'], parameters: { fast: 3 },
   provider: 'alpaca', feed: 'iex', timeframe: '1Min', market_session: 'US_REGULAR', initial_cash: 100000,
   created_at: '2025-01-02T14:30:00Z', started_at: null, stopped_at: null, last_market_event: null, last_received_at: null,
-  last_event_sequence: 0, last_processed_market_event_id: null, market_watermark: null, evaluated_bar_count: 0, correction_count: 0, duplicate_count: 0, out_of_order_count: 0, market_clock: null,
+  last_event_sequence: 0, last_processed_market_event_id: null, market_watermark: null, evaluated_bar_count: 0, historical_warmup_bar_count: 0, correction_count: 0, duplicate_count: 0, out_of_order_count: 0, market_clock: null,
   account: { cash: 100000, positions: {}, equity: 100000, net_pnl: 0, cumulative_fees: 0, cumulative_slippage: 0, max_drawdown: 0, pending_orders: [], executions: [] },
   recent_market_events: [], recent_revisions: [], latest_event: null, error_code: null, error_message: null, research_run_id: null, reference_run_id: null, orders: [], fills: [],
 }
@@ -256,6 +256,7 @@ describe('Live Paper Forward workspace', () => {
       started_at: snapshot.created_at,
       last_market_event: pausedTimestamp,
       evaluated_bar_count: 14,
+      historical_warmup_bar_count: 8,
       account: { ...snapshot.account, cash: 1_000_000, equity: 1_000_000 },
       latest_event: pausedEvent,
     }
@@ -303,6 +304,8 @@ describe('Live Paper Forward workspace', () => {
     expect(screen.getAllByText('600519.SH').length).toBeGreaterThan(0)
     expect(screen.getAllByText('600520.SH').length).toBeGreaterThan(0)
     expect(screen.getByText('2 / 5')).toBeInTheDocument()
+    expect(screen.getByText('8 / 8')).toBeInTheDocument()
+    expect(screen.getByText('历史预热 + 实时行情数据', { exact: false })).toBeInTheDocument()
     expect(screen.getByText('仍需活跃配对 K 线').parentElement).toHaveTextContent('3')
     expect(container.querySelectorAll('.pair-paused-region')).toHaveLength(2)
     const priceInspection = screen.getByTestId('pair-price-inspection')

@@ -8,8 +8,8 @@ export type PaperMarketRegion = 'CN' | 'HK' | 'US'
 export type PaperMarketSession = 'CN_REGULAR' | 'HK_REGULAR' | 'US_REGULAR'
 export type BrokerConnectionStatus = 'NOT_USED' | 'CONNECTED' | 'RECONNECTING' | 'DISCONNECTED' | 'ERROR'
 export type BrokerOrderStatus = 'CREATED' | 'SUBMITTED' | 'PARTIALLY_FILLED' | 'PENDING_CANCEL' | 'FILLED' | 'CANCELLED' | 'EXPIRED' | 'REJECTED' | 'REPLACED' | 'DONE_FOR_DAY' | 'HELD' | 'SUSPENDED' | 'UNKNOWN'
-export type JournalDisposition = 'BUFFERED' | 'EVALUATED' | 'EVALUATION_SKIPPED_PAUSED' | 'CORRECTION_APPLIED' | 'DUPLICATE_IGNORED' | 'OUT_OF_ORDER_REJECTED'
-export type PaperOperationType = 'CREATED' | 'STARTED' | 'PAUSED' | 'RESUMED' | 'STOP_REQUESTED' | 'STOPPED' | 'FEED_DISCONNECTED' | 'FEED_RECONNECTING' | 'FEED_RECONNECTED' | 'BACKFILL_STARTED' | 'BACKFILL_COMPLETED' | 'BROKER_RECONCILIATION' | 'RECOVERY_STARTED' | 'RECOVERY_COMPLETED' | 'RECOVERY_DIVERGENCE' | 'ERROR'
+export type JournalDisposition = 'BUFFERED' | 'HISTORICAL_WARMUP' | 'EVALUATED' | 'EVALUATION_SKIPPED_PAUSED' | 'CORRECTION_APPLIED' | 'DUPLICATE_IGNORED' | 'OUT_OF_ORDER_REJECTED'
+export type PaperOperationType = 'CREATED' | 'STARTED' | 'PAUSED' | 'RESUMED' | 'STOP_REQUESTED' | 'STOPPED' | 'FEED_DISCONNECTED' | 'FEED_RECONNECTING' | 'FEED_RECONNECTED' | 'BACKFILL_STARTED' | 'BACKFILL_COMPLETED' | 'HISTORICAL_WARMUP_STARTED' | 'HISTORICAL_WARMUP_COMPLETED' | 'BROKER_RECONCILIATION' | 'RECOVERY_STARTED' | 'RECOVERY_COMPLETED' | 'RECOVERY_DIVERGENCE' | 'ERROR'
 
 export interface PaperOperationEvent {
   operation_id: string
@@ -259,6 +259,7 @@ export interface PaperSessionSnapshot {
   last_processed_market_event_id: string | null
   market_watermark: string | null
   evaluated_bar_count: number
+  historical_warmup_bar_count: number
   correction_count: number
   duplicate_count: number
   out_of_order_count: number

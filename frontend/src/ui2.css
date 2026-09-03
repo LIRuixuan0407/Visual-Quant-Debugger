@@ -2518,7 +2518,7 @@ button.live-session-row.selected { background: #eef9fb; }
 
 .pair-progress-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   margin-top: 10px;
   overflow: hidden;
   border: 1px solid var(--line);
@@ -2608,8 +2608,8 @@ button.live-session-row.selected { background: #eef9fb; }
 @media (max-width: 900px) {
   .pair-chart-grid { grid-template-columns: 1fr; }
   .pair-progress-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .pair-progress-strip > div:nth-child(3) { border-left: 0; border-top: 1px solid var(--line); }
-  .pair-progress-strip > div:nth-child(4) { border-top: 1px solid var(--line); }
+  .pair-progress-strip > div:nth-child(n + 3) { border-top: 1px solid var(--line); }
+  .pair-progress-strip > div:nth-child(odd) { border-left: 0; }
 }
 
 @media (max-width: 600px) {

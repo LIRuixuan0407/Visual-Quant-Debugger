@@ -264,6 +264,60 @@ class StrategyRuntime:
             self.failure = failure
             raise StrategyRuntimeError(failure) from exc
 
+    def step_historical_warmup(self, frame: MarketFrame) -> RuntimeRow:
+        """Build strategy history without creating pre-session orders or executions."""
+        index = len(self.visible_frames)
+        self.visible_frames.append(frame)
+        try:
+            context = self._context()
+            if not self._initialized:
+                self.strategy.initialize(context)
+                self._initialized = True
+            intent = self.strategy.on_bar(context)
+            if intent is None:
+                intent = context.target_positions(
+                    self.portfolio.positions,
+                    reason="Historical data loaded for strategy warm-up",
+                    signal="WARMUP",
+                    transition=False,
+                    previous_state="CURRENT",
+                    next_state="CURRENT",
+                )
+            if intent.transition:
+                raise RuntimeError("Historical warm-up reached an actionable strategy transition")
+            self._previous_target_signature = self._signature(intent)
+            snapshot = self.portfolio.mark_prices(self._close_prices(frame))
+            row = RuntimeRow(
+                index=index,
+                timestamp=frame.knowledge_time,
+                market=frame.values,
+                features=context.features,
+                decision=RuntimeDecision(
+                    signal_id=None,
+                    intent=intent,
+                    decided_at=frame.knowledge_time,
+                ),
+                orders=(),
+                executions=(),
+                portfolio=snapshot,
+                data_dependencies=context.data_dependencies,
+            )
+            self.rows.append(row)
+            return row
+        except Exception as exc:
+            failure = RuntimeFailure(
+                strategy_id=self.strategy.metadata.strategy_id,
+                timestamp=frame.knowledge_time,
+                event_index=index,
+                exception_type=type(exc).__name__,
+                message=str(exc),
+                traceback="".join(
+                    traceback_module.format_exception(type(exc), exc, exc.__traceback__)
+                ),
+            )
+            self.failure = failure
+            raise StrategyRuntimeError(failure) from exc
+
     def step_without_strategy(
         self, frame: MarketFrame, *, signal: str = "EVALUATION_SKIPPED_PAUSED"
     ) -> RuntimeRow:

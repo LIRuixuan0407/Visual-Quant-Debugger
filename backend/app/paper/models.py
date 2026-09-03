@@ -27,6 +27,8 @@ PaperOperationType = Literal[
     "FEED_RECONNECTED",
     "BACKFILL_STARTED",
     "BACKFILL_COMPLETED",
+    "HISTORICAL_WARMUP_STARTED",
+    "HISTORICAL_WARMUP_COMPLETED",
     "BROKER_RECONCILIATION",
     "RECOVERY_STARTED",
     "RECOVERY_COMPLETED",
@@ -35,6 +37,7 @@ PaperOperationType = Literal[
 ]
 JournalDisposition = Literal[
     "BUFFERED",
+    "HISTORICAL_WARMUP",
     "EVALUATED",
     "EVALUATION_SKIPPED_PAUSED",
     "CORRECTION_APPLIED",
@@ -368,6 +371,7 @@ class PaperSessionSnapshot(PaperModel):
     last_processed_market_event_id: str | None
     market_watermark: datetime | None
     evaluated_bar_count: int
+    historical_warmup_bar_count: int = 0
     correction_count: int
     duplicate_count: int
     out_of_order_count: int
