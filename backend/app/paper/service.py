@@ -20,6 +20,7 @@ from app.broker import (
     BrokerOrderUpdate,
     PaperBrokerAdapter,
 )
+from app.datasets import DatasetRegistry
 from app.market_data import (
     AlpacaStockMarketDataAdapter,
     FakeLiveMarketDataAdapter,
@@ -49,6 +50,7 @@ from app.paper.models import (
     PaperTrace,
     RecoveryCheckpoint,
     RuntimeConsistencyReport,
+    SimulationSpeed,
 )
 from app.paper.repository import PaperSessionNotFoundError, PaperSessionRepository
 from app.paper.session import LivePaperSession
@@ -104,6 +106,7 @@ class PaperSessionService:
         self._adapter_factory = adapter_factory or self._default_adapter
         self._broker_adapter_factory = broker_adapter_factory or self._default_broker_adapter
         self.run_repository = run_repository or RunRepository(repository.workspace_root)
+        self.datasets = DatasetRegistry(repository.workspace_root)
         self._sessions: dict[str, LivePaperSession] = {}
         self._adapters: dict[str, MarketDataAdapter] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
@@ -450,6 +453,10 @@ class PaperSessionService:
 
     @staticmethod
     def _default_adapter(manifest: PaperSessionManifest) -> MarketDataAdapter:
+        if manifest.clock_mode == "HISTORICAL":
+            raise ValueError(
+                "Historical Paper uses the registered Dataset feed, not a live adapter"
+            )
         if manifest.provider == "fake":
             return FakeLiveMarketDataAdapter(feed=manifest.feed)
         if manifest.provider == "tdx":
@@ -522,6 +529,43 @@ class PaperSessionService:
             )
         if requirements.symbols and request.symbols != requirements.symbols:
             raise ValueError("Strategy requires symbols " + ", ".join(requirements.symbols))
+
+        provider = request.provider
+        feed = request.feed
+        timeframe = request.timeframe
+        simulation_start = request.simulation_start
+        simulation_end = request.simulation_end
+        if request.clock_mode == "HISTORICAL":
+            if request.dataset_id is None:
+                raise ValueError("Historical Paper requires a Dataset")
+            definition = self.datasets.get(request.dataset_id)
+            if definition is None:
+                raise ValueError(f"Dataset '{request.dataset_id}' was not found")
+            missing_symbols = sorted(set(request.symbols) - set(definition.symbols))
+            if missing_symbols:
+                raise ValueError(
+                    "Historical Dataset is missing requested symbols: " + ", ".join(missing_symbols)
+                )
+            bars = self.datasets.load_market_bars(request.dataset_id, request.symbols)
+            if not bars:
+                raise ValueError("Historical Dataset contains no bars for the requested symbols")
+            first_available = min(bar.available_at for bar in bars)
+            last_available = max(bar.available_at for bar in bars)
+            simulation_start = simulation_start or first_available
+            simulation_end = simulation_end or last_available
+            if simulation_start < first_available or simulation_start > last_available:
+                raise ValueError(
+                    "simulation_start must fall inside the Dataset knowledge-time range "
+                    f"[{first_available.isoformat()}, {last_available.isoformat()}]"
+                )
+            if simulation_end < simulation_start or simulation_end > last_available:
+                raise ValueError(
+                    "simulation_end must be on/after simulation_start and inside the Dataset "
+                    "knowledge-time range"
+                )
+            provider = "historical"
+            feed = request.dataset_id
+            timeframe = bars[0].timeframe
         account = (
             self.create_account(
                 CreatePaperAccount(
@@ -571,14 +615,22 @@ class PaperSessionService:
             symbols=request.symbols,
             securities=request.securities,
             parameters=resolved_parameters,
-            provider=request.provider,
-            feed=request.feed,
-            timeframe=request.timeframe,
+            provider=provider,
+            feed=feed,
+            timeframe=timeframe,
             market_session=request.market_session,
             initial_cash=account.cash,
             fee_bps=request.fee_bps,
             slippage_bps=request.slippage_bps,
+            spread_bps=request.spread_bps,
+            market_impact_bps=request.market_impact_bps,
             execution_mode=request.execution_mode,
+            clock_mode=request.clock_mode,
+            dataset_id=request.dataset_id,
+            simulation_start=simulation_start,
+            simulation_end=simulation_end,
+            simulation_time=simulation_start if request.clock_mode == "HISTORICAL" else None,
+            simulation_speed=request.simulation_speed,
             broker_status=(
                 "DISCONNECTED" if request.execution_mode == "ALPACA_PAPER" else "NOT_USED"
             ),
@@ -593,8 +645,10 @@ class PaperSessionService:
             {
                 "account_id": account.account_id,
                 "execution_mode": request.execution_mode,
-                "provider": request.provider,
-                "feed": request.feed,
+                "provider": provider,
+                "feed": feed,
+                "clock_mode": request.clock_mode,
+                "dataset_id": request.dataset_id,
             },
         )
         session = LivePaperSession(manifest, str(self.repository.strategy_path(session_id)))
@@ -675,7 +729,7 @@ class PaperSessionService:
         last_received_at = snapshot.last_received_at
         stale_seconds = (
             0.0
-            if last_received_at is None
+            if snapshot.clock_mode == "HISTORICAL" or last_received_at is None
             else max(0.0, (datetime.now(UTC) - last_received_at).total_seconds())
         )
         open_orders = tuple(
@@ -905,7 +959,11 @@ class PaperSessionService:
         self._record_operation(
             session_id,
             "PAUSED",
-            "Strategy decisions and new orders paused; market ingestion remains active",
+            (
+                "Historical simulation clock frozen; no Dataset bars will be released"
+                if session.manifest.clock_mode == "HISTORICAL"
+                else "Strategy decisions and new orders paused; market ingestion remains active"
+            ),
         )
         await self._publish(session_id)
         return self._snapshot(session)
@@ -924,7 +982,11 @@ class PaperSessionService:
         self._record_operation(
             session_id,
             "RESUMED",
-            "Strategy decisions resumed from the current market stream",
+            (
+                "Historical simulation clock resumed"
+                if session.manifest.clock_mode == "HISTORICAL"
+                else "Strategy decisions resumed from the current market stream"
+            ),
         )
         self._start_task(session_id)
         self._start_broker_task(session_id)
@@ -1272,6 +1334,7 @@ class PaperSessionService:
         bar: MarketBar,
         *,
         historical_warmup: bool = False,
+        force_evaluate: bool = False,
         persist: bool = True,
     ) -> LivePaperSession:
         session = self._session(session_id)
@@ -1280,7 +1343,9 @@ class PaperSessionService:
         if bar.provider != session.manifest.provider or bar.feed != session.manifest.feed:
             raise ValueError("Market event provider/feed does not match the paper session")
         async with self._locks[session_id]:
-            _, disposition = session.classify(bar, historical_warmup=historical_warmup)
+            _, disposition = session.classify(
+                bar, historical_warmup=historical_warmup, force_evaluate=force_evaluate
+            )
             entry = MarketJournalEntry(
                 sequence=len(session.journal) + 1,
                 market_event_id=self._market_event_id(bar),
@@ -1304,9 +1369,10 @@ class PaperSessionService:
             if disposition in {"EVALUATED", "EVALUATION_SKIPPED_PAUSED"}:
                 await self._persist_runtime_records(session, entry.market_event_id)
             if disposition not in {"DUPLICATE_IGNORED", "OUT_OF_ORDER_REJECTED"}:
-                session.manifest = session.manifest.model_copy(
-                    update={"last_market_event": bar.event_time}
-                )
+                updates: dict[str, object] = {"last_market_event": bar.event_time}
+                if session.manifest.clock_mode == "HISTORICAL":
+                    updates["simulation_time"] = bar.available_at
+                session.manifest = session.manifest.model_copy(update=updates)
             if persist:
                 self._persist(session)
         return session
@@ -1883,6 +1949,178 @@ class PaperSessionService:
         await self._publish(session_id)
         return backfilled
 
+    def _historical_window_bars(self, session: LivePaperSession) -> tuple[MarketBar, ...]:
+        dataset_id = session.manifest.dataset_id
+        start = session.manifest.simulation_start
+        end = session.manifest.simulation_end
+        if dataset_id is None or start is None or end is None:
+            raise ValueError("Historical Paper session is missing its Dataset time window")
+        return tuple(
+            bar
+            for bar in self.datasets.load_market_bars(dataset_id, session.manifest.symbols)
+            if start <= bar.available_at <= end
+        )
+
+    def _historical_warmup_bars(self, session: LivePaperSession) -> tuple[MarketBar, ...]:
+        dataset_id = session.manifest.dataset_id
+        start = session.manifest.simulation_start
+        if dataset_id is None or start is None:
+            return ()
+        loaded = self.registry.load(session.manifest.strategy_id)
+        strategy = loaded.strategy_class()
+        target = max(0, strategy.metadata.data_requirements.minimum_history - 1)
+        target = max(target, self._historical_warmup_target(session))
+        if target <= 0:
+            return ()
+        candidates = tuple(
+            bar
+            for bar in self.datasets.load_market_bars(dataset_id, session.manifest.symbols)
+            if bar.available_at < start
+        )
+        return self._synchronized_history_tail(candidates, session.manifest.symbols, target)
+
+    async def _prepare_historical_warmup(self, session_id: str) -> None:
+        session = self._session(session_id)
+        if session.manifest.clock_mode != "HISTORICAL" or session.journal:
+            return
+        bars = self._historical_warmup_bars(session)
+        if not bars:
+            return
+        self._record_operation(
+            session_id,
+            "HISTORICAL_WARMUP_STARTED",
+            "Historical Paper causal warm-up started",
+            {"bar_count": len(bars)},
+        )
+        for bar in bars:
+            await self._ingest_bar(
+                session_id,
+                bar,
+                historical_warmup=True,
+                persist=False,
+            )
+        # The visible virtual clock starts at the requested simulation boundary, not the
+        # oldest warm-up bar. Warm-up remains visible in the durable trace/journal.
+        session.manifest = session.manifest.model_copy(
+            update={"simulation_time": session.manifest.simulation_start}
+        )
+        self._persist(session)
+        self._record_operation(
+            session_id,
+            "HISTORICAL_WARMUP_COMPLETED",
+            "Historical Paper causal warm-up completed",
+            {"bar_count": len(bars)},
+        )
+
+    def _remaining_historical_bars(self, session: LivePaperSession) -> tuple[MarketBar, ...]:
+        seen = {entry.market_event_id for entry in session.journal}
+        return tuple(
+            bar
+            for bar in self._historical_window_bars(session)
+            if self._market_event_id(bar) not in seen
+        )
+
+    async def _complete_historical_simulation(self, session_id: str) -> None:
+        session = self._session(session_id)
+        if session.manifest.status not in {"RUNNING", "PAUSED"}:
+            return
+        self._record_operation(
+            session_id,
+            "SIMULATION_COMPLETED",
+            "Historical simulation reached the end of its knowledge-time window",
+            {
+                "simulation_time": None
+                if session.manifest.simulation_time is None
+                else session.manifest.simulation_time.isoformat(),
+            },
+        )
+        await self.stop(session_id)
+
+    async def _advance_historical_once(
+        self, session_id: str, *, force_evaluate: bool = False
+    ) -> bool:
+        session = self._session(session_id)
+        remaining = self._remaining_historical_bars(session)
+        if not remaining:
+            await self._complete_historical_simulation(session_id)
+            return False
+        starting_rows = len(session.runtime.rows)
+        for bar in remaining:
+            await self._ingest_bar(
+                session_id,
+                bar,
+                force_evaluate=force_evaluate,
+            )
+            if len(session.runtime.rows) > starting_rows:
+                self._record_operation(
+                    session_id,
+                    "SIMULATION_STEP",
+                    "Historical simulation advanced by one synchronized strategy bar",
+                    {
+                        "simulation_time": bar.available_at.isoformat(),
+                        "event_time": bar.event_time.isoformat(),
+                    },
+                )
+                await self._publish(session_id)
+                return True
+        await self._complete_historical_simulation(session_id)
+        return False
+
+    async def step_historical(self, session_id: str) -> PaperSessionSnapshot:
+        session = self._session(session_id)
+        if session.manifest.clock_mode != "HISTORICAL":
+            raise ValueError("Next Bar is available only for Historical Paper sessions")
+        if session.manifest.status != "PAUSED":
+            raise ValueError("Pause Historical Paper before advancing one bar")
+        await self._prepare_historical_warmup(session_id)
+        if session.manifest.status == "PAUSED":
+            await self._advance_historical_once(session_id, force_evaluate=True)
+        return self._snapshot(self._session(session_id))
+
+    async def set_simulation_speed(
+        self, session_id: str, speed: SimulationSpeed
+    ) -> PaperSessionSnapshot:
+        session = self._session(session_id)
+        if session.manifest.clock_mode != "HISTORICAL":
+            raise ValueError("Simulation speed is available only for Historical Paper sessions")
+        if session.manifest.status not in {"CREATED", "RUNNING", "PAUSED"}:
+            raise ValueError(f"Cannot change speed for a {session.manifest.status} session")
+        session.manifest = session.manifest.model_copy(update={"simulation_speed": speed})
+        self._persist(session)
+        self._record_operation(
+            session_id,
+            "SIMULATION_SPEED_CHANGED",
+            "Historical simulation speed changed",
+            {"speed": speed},
+        )
+        await self._publish(session_id)
+        return self._snapshot(session)
+
+    @staticmethod
+    def _simulation_delay(speed: SimulationSpeed) -> float:
+        # Speeds are strategy bars per second rather than wall-clock market time. This keeps
+        # daily and intraday Datasets equally testable without waiting days in 1X mode.
+        return {"1X": 1.0, "10X": 0.1, "100X": 0.01, "MAX": 0.0}[speed]
+
+    async def _run_historical_feed(self, session_id: str) -> None:
+        session = self._session(session_id)
+        await self._prepare_historical_warmup(session_id)
+        if session.manifest.status not in {"RUNNING", "PAUSED"}:
+            return
+        session.manifest = session.manifest.model_copy(update={"feed_status": "CONNECTED"})
+        self._persist(session)
+        await self._publish(session_id)
+        while session.manifest.status in {"RUNNING", "PAUSED"}:
+            if session.manifest.status == "PAUSED":
+                await asyncio.sleep(0.05)
+                continue
+            advanced = await self._advance_historical_once(session_id)
+            if not advanced:
+                return
+            delay = self._simulation_delay(session.manifest.simulation_speed)
+            if delay > 0:
+                await asyncio.sleep(delay)
+
     def _start_task(self, session_id: str) -> None:
         existing = self._tasks.get(session_id)
         if existing is None or existing.done():
@@ -1891,6 +2129,9 @@ class PaperSessionService:
             )
 
     async def _run_feed(self, session_id: str) -> None:
+        if self._session(session_id).manifest.clock_mode == "HISTORICAL":
+            await self._run_historical_feed(session_id)
+            return
         delay = 1.0
         while self._session(session_id).manifest.status in {"RUNNING", "PAUSED"}:
             session = self._session(session_id)

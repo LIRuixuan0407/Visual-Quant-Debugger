@@ -21,6 +21,7 @@ CombinationMethod = Literal[
 ]
 SelectionMethod = Literal["TOP_N", "TOP_PERCENT"]
 WeightingMethod = Literal["EQUAL_WEIGHT", "SCORE_WEIGHTED"]
+PortfolioMode = Literal["LONG_ONLY", "LONG_SHORT"]
 RebalanceRule = Literal["DAILY", "WEEKLY", "MONTHLY"]
 RiskDecompositionStatus = Literal["AVAILABLE", "INSUFFICIENT_DATA"]
 RiskVolatilityBasis = Literal["ANNUALIZED", "PER_OBSERVATION"]
@@ -66,6 +67,7 @@ class PortfolioFilters(PortfolioModel):
 
 
 class PortfolioConstruction(PortfolioModel):
+    mode: PortfolioMode = "LONG_ONLY"
     selection: SelectionMethod = "TOP_N"
     top_n: int = Field(default=5, ge=1)
     top_percent: float = Field(default=20.0, gt=0, le=100)
@@ -84,6 +86,8 @@ class CreatePortfolioResearch(PortfolioModel):
     initial_cash: float = Field(default=100_000.0, gt=0)
     fee_bps: float = Field(default=5.0, ge=0)
     slippage_bps: float = Field(default=5.0, ge=0)
+    spread_bps: float = Field(default=0.0, ge=0)
+    market_impact_bps: float = Field(default=0.0, ge=0)
 
     @model_validator(mode="after")
     def weights_are_explicit_and_legal(self) -> CreatePortfolioResearch:
@@ -156,6 +160,8 @@ class TransactionCostPreview(PortfolioModel):
     gross_return: float
     fees: float
     slippage: float
+    spread_cost: float = 0.0
+    market_impact: float = 0.0
     net_return: float
     turnover: float
     max_drawdown: float
@@ -170,7 +176,7 @@ class RiskMatrix(PortfolioModel):
 
 class AssetRiskContribution(PortfolioModel):
     symbol: str
-    portfolio_weight: float = Field(ge=0.0)
+    portfolio_weight: float
     invested_weight: float = Field(ge=0.0, le=1.0)
     marginal_contribution_to_volatility: float
     component_contribution_to_volatility: float
@@ -248,6 +254,8 @@ class PortfolioResearchRecord(PortfolioModel):
     initial_cash: float
     fee_bps: float
     slippage_bps: float
+    spread_bps: float = 0.0
+    market_impact_bps: float = 0.0
     revealed_stage: ResearchStage = "RESEARCH"
     stages: tuple[PortfolioStageResult, ...]
     strategy: PortfolioStrategyArtifact | None = None

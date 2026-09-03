@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
-import { cancelPaperOrder, createPaperAccount, createPaperSession, getMarketDataProviders, getPaperHealth, getPaperOperations, getPaperRecovery, getPaperSession, getPaperTrace, isPaperSession, listPaperAccounts, listPaperSessions, recoverPaperSession, transitionPaperSession } from '../../api/paper'
+import { cancelPaperOrder, createPaperAccount, createPaperSession, getMarketDataProviders, getPaperHealth, getPaperOperations, getPaperRecovery, getPaperSession, getPaperTrace, isPaperSession, listPaperAccounts, listPaperSessions, recoverPaperSession, setHistoricalPaperSpeed, stepHistoricalPaperSession, transitionPaperSession } from '../../api/paper'
 import { searchStocks, type MarketProvider, type MarketRegion } from '../../api/marketData'
+import { getDatasets } from '../../api/datasets'
 import { useI18n } from '../../i18n/I18nProvider'
-import type { MarketDataProviderStatus, PaperAccount, PaperOperationalHealth, PaperOperationEvent, PaperRecoveryReport, PaperSessionSnapshot, PaperTrace } from '../../types/paper'
-import type { StockSecurity } from '../../types/dataset'
+import type { MarketDataProviderStatus, PaperAccount, PaperClockMode, PaperOperationalHealth, PaperOperationEvent, PaperRecoveryReport, PaperSessionSnapshot, PaperTrace, SimulationSpeed } from '../../types/paper'
+import type { DatasetDefinition, StockSecurity } from '../../types/dataset'
 import type { StrategyDefinition } from '../../types/strategy'
 import ReplayTimeline from '../replay/ReplayTimeline'
 import { ExecutionOutcomePanel, MarketPositionPanel, StrategyDecisionPanel } from '../replay/ReplayInspectors'
@@ -12,7 +13,16 @@ import SignalLineage from '../replay/SignalLineage'
 import { formatCurrency, formatPercent, formatTimestamp } from '../replay/utils/format'
 import { createReplayIndex, findSourceSignalEvent } from '../replay/utils/navigation'
 
-const EXECUTION_PARAMETERS = new Set(['initial_cash', 'fee_bps', 'slippage_bps', 'gross_target'])
+const EXECUTION_PARAMETERS = new Set(['initial_cash', 'fee_bps', 'slippage_bps', 'spread_bps', 'market_impact_bps', 'gross_target'])
+
+function paperTimeframe(frequency: string): '1Min' | '5Min' | '15Min' | '1Hour' | '1Day' {
+  const normalized = frequency.trim().toLowerCase()
+  if (['5min', '300s'].includes(normalized)) return '5Min'
+  if (['15min', '900s'].includes(normalized)) return '15Min'
+  if (['1hour', '60min', '3600s'].includes(normalized)) return '1Hour'
+  if (['1day', '1d', 'daily', '86400s'].includes(normalized)) return '1Day'
+  return '1Min'
+}
 
 function paperCurrency(session: PaperSessionSnapshot): 'CNY' | 'HKD' | 'USD' {
   if (session.market_session === 'CN_REGULAR') return 'CNY'
@@ -297,6 +307,12 @@ function LiveSetup({ definition, definitions, onDefinitionChange, onOpenProfile,
   const [marketRegion, setMarketRegion] = useState<MarketRegion>(inferredMarket)
   const [providerId, setProviderId] = useState<MarketProvider>('tdx')
   const provider = providers.find((item) => item.provider === providerId) ?? null
+  const [clockMode, setClockMode] = useState<PaperClockMode>('LIVE')
+  const [historicalDatasets, setHistoricalDatasets] = useState<DatasetDefinition[]>([])
+  const [datasetId, setDatasetId] = useState('')
+  const [simulationStart, setSimulationStart] = useState('')
+  const [simulationEnd, setSimulationEnd] = useState('')
+  const [simulationSpeed, setSimulationSpeed] = useState<SimulationSpeed>('MAX')
   const [stockQuery, setStockQuery] = useState(initialQuery)
   const [stockResults, setStockResults] = useState<StockSecurity[]>([])
   const [securities, setSecurities] = useState<StockSecurity[]>([])
@@ -308,17 +324,41 @@ function LiveSetup({ definition, definitions, onDefinitionChange, onOpenProfile,
   const [accountName, setAccountName] = useState('My Paper Account')
   const [feeBps, setFeeBps] = useState(definition.parameters.find((item) => item.key === 'fee_bps')?.default_value ?? 5)
   const [slippageBps, setSlippageBps] = useState(definition.parameters.find((item) => item.key === 'slippage_bps')?.default_value ?? 5)
+  const [spreadBps, setSpreadBps] = useState(definition.parameters.find((item) => item.key === 'spread_bps')?.default_value ?? 0)
+  const [marketImpactBps, setMarketImpactBps] = useState(definition.parameters.find((item) => item.key === 'market_impact_bps')?.default_value ?? 0)
   const [parameters, setParameters] = useState<Record<string, number>>(defaults)
   const [searching, setSearching] = useState(false)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [technicalError, setTechnicalError] = useState<string | null>(null)
+  useEffect(() => {
+    void getDatasets().then((items) => {
+      setHistoricalDatasets(items)
+      setDatasetId((current) => current || items[0]?.dataset_id || '')
+    }).catch(() => setHistoricalDatasets([]))
+  }, [])
   const retainedAccountId = accountId === '__new__' || eligibleAccounts.some((item) => item.account_id === accountId) ? accountId : ''
   const selectedAccountId = retainedAccountId || eligibleAccounts.find((item) => !item.active_session_id)?.account_id || '__new__'
   const selectedAccount = eligibleAccounts.find((item) => item.account_id === selectedAccountId)
-  const hasRequiredSelection = securities.length === requiredCount && (requiredSymbols.length === 0 || requiredSymbols.every((symbol, index) => securities[index]?.symbol === symbol))
+  const historicalDataset = historicalDatasets.find((item) => item.dataset_id === datasetId) ?? null
+  const historicalSymbols = historicalDataset
+    ? (requiredSymbols.length > 0 ? requiredSymbols : historicalDataset.symbols.slice(0, requiredCount))
+    : []
+  const historicalSelectionReady = Boolean(
+    historicalDataset
+    && historicalSymbols.length === requiredCount
+    && historicalSymbols.every((symbol) => historicalDataset.symbols.includes(symbol)),
+  )
+  const paperSecurities = clockMode === 'HISTORICAL'
+    ? historicalSymbols.map((symbol) => ({ symbol, name: historicalDataset?.security_names?.[symbol] ?? symbol, exchange: 'DATASET', status: 'active' as const }))
+    : securities.map(({ symbol, name, exchange, status }) => ({ symbol, name, exchange, status }))
+  const hasRequiredSelection = clockMode === 'HISTORICAL'
+    ? historicalSelectionReady
+    : securities.length === requiredCount && (requiredSymbols.length === 0 || requiredSymbols.every((symbol, index) => securities[index]?.symbol === symbol))
   const accountReady = selectedAccountId === '__new__' ? accountName.trim().length > 0 && initialCash > 0 : Boolean(selectedAccount)
-  const providerReady = Boolean(provider?.configured && (provider.markets ?? ['US']).includes(marketRegion))
+  const providerReady = clockMode === 'HISTORICAL'
+    ? Boolean(historicalDataset)
+    : Boolean(provider?.configured && (provider.markets ?? ['US']).includes(marketRegion))
   const canCreate = Boolean(providerReady && accountReady && hasRequiredSelection && !creating)
 
   function switchMarket(next: MarketRegion) {
@@ -353,16 +393,23 @@ function LiveSetup({ definition, definitions, onDefinitionChange, onOpenProfile,
       onCreated(await createPaperSession({
         account_id: account.account_id,
         strategy_id: definition.strategy_id,
-        symbols: securities.map((item) => item.symbol),
-        securities: securities.map(({ symbol, name, exchange, status }) => ({ symbol, name, exchange, status })),
+        symbols: paperSecurities.map((item) => item.symbol),
+        securities: paperSecurities,
         parameters,
-        provider: providerId,
-        feed: providerId === 'tdx' ? 'tdx' : feed,
-        timeframe: '1Min',
+        provider: clockMode === 'HISTORICAL' ? 'historical' : providerId,
+        feed: clockMode === 'HISTORICAL' ? datasetId : providerId === 'tdx' ? 'tdx' : feed,
+        timeframe: clockMode === 'HISTORICAL' && historicalDataset ? paperTimeframe(historicalDataset.frequency) : '1Min',
         market_session: marketRegion === 'CN' ? 'CN_REGULAR' : marketRegion === 'HK' ? 'HK_REGULAR' : 'US_REGULAR',
         fee_bps: feeBps,
         slippage_bps: slippageBps,
+        spread_bps: spreadBps,
+        market_impact_bps: marketImpactBps,
         execution_mode: 'VQD_SIMULATED',
+        clock_mode: clockMode,
+        dataset_id: clockMode === 'HISTORICAL' ? datasetId : null,
+        simulation_start: clockMode === 'HISTORICAL' && simulationStart ? new Date(simulationStart).toISOString() : null,
+        simulation_end: clockMode === 'HISTORICAL' && simulationEnd ? new Date(simulationEnd).toISOString() : null,
+        simulation_speed: simulationSpeed,
       }))
     } catch (reason) {
       const detail = reason instanceof Error ? reason.message : tr('Paper session creation failed.')
@@ -372,33 +419,41 @@ function LiveSetup({ definition, definitions, onDefinitionChange, onOpenProfile,
   }
 
   return <main className="forward-shell live-paper-shell">
-    <header className="workspace-title paper-hero"><div><span className="eyebrow">{tr('REAL-MARKET PRACTICE')}</span><h1>{tr('Create a paper portfolio')}</h1><p>{tr('Use current market data while VQD keeps every cash balance, position, order, and fill virtual and local.')}</p></div><span className={`connection-pill ${providerReady ? 'connected' : 'disconnected'}`}><i />{providerId.toUpperCase()} · {tr(providerReady ? 'Market data ready' : 'Market data unavailable')}</span></header>
-    {!providerReady && providerId === 'tdx' && <section className="paper-connection-callout"><div><strong>{tr('TDX market data is unavailable')}</strong><span>{tr(provider?.note ?? 'Install the backend dependencies to enable easy-tdx.')}</span></div><code>pip install -e backend</code></section>}
-    {!providerReady && providerId === 'alpaca' && <section className="paper-connection-callout"><div><strong>{tr('Connect Alpaca to continue')}</strong><span>{tr('Alpaca is optional and used only for US market data in this setup.')}</span></div><button type="button" onClick={onOpenProfile}>{tr('Open My settings')}</button></section>}
+    <header className="workspace-title paper-hero"><div><span className="eyebrow">{tr('REAL-MARKET PRACTICE')}</span><h1>{tr('Create a paper portfolio')}</h1><p>{tr('Use current market data while VQD keeps every cash balance, position, order, and fill virtual and local.')}</p></div><span className={`connection-pill ${providerReady ? 'connected' : 'disconnected'}`}><i />{clockMode === 'HISTORICAL' ? tr('Historical Dataset') : providerId.toUpperCase()} · {tr(providerReady ? 'Market data ready' : 'Market data unavailable')}</span></header>
+    {clockMode === 'LIVE' && !providerReady && providerId === 'tdx' && <section className="paper-connection-callout"><div><strong>{tr('TDX market data is unavailable')}</strong><span>{tr(provider?.note ?? 'Install the backend dependencies to enable easy-tdx.')}</span></div><code>pip install -e backend</code></section>}
+    {clockMode === 'LIVE' && !providerReady && providerId === 'alpaca' && <section className="paper-connection-callout"><div><strong>{tr('Connect Alpaca to continue')}</strong><span>{tr('Alpaca is optional and used only for US market data in this setup.')}</span></div><button type="button" onClick={onOpenProfile}>{tr('Open My settings')}</button></section>}
     <section className="workspace-panel paper-builder">
       <ol className="paper-progress" aria-label={tr('Setup progress')}><li className="complete"><span>1</span>{tr('Account & strategy')}</li><li className={hasRequiredSelection ? 'complete' : 'active'}><span>2</span>{tr('Choose stocks')}</li><li className={canCreate ? 'active' : ''}><span>3</span>{tr('Review & create')}</li></ol>
 
       <section className="paper-step"><div className="paper-step-heading"><span>1</span><div><h2>{tr('Market, account and strategy')}</h2><p>{tr('Choose one market. TDX is the default no-key data source; Alpaca remains optional for US data.')}</p></div></div>
-        <div className="paper-choice-grid"><label>{tr('Market')}<select aria-label={tr('Market')} value={marketRegion} onChange={(event) => switchMarket(event.target.value as MarketRegion)}><option value="CN">{tr('China A-shares')}</option><option value="HK">{tr('Hong Kong')}</option><option value="US">{tr('United States')}</option></select></label><label>{tr('Market data provider')}<select aria-label={tr('Market data provider')} value={providerId} onChange={(event) => { setProviderId(event.target.value as MarketProvider); setSecurities([]); setStockResults([]) }}><option value="tdx">TDX · {tr('No API key')}</option>{marketRegion === 'US' && <option value="alpaca">Alpaca</option>}</select></label>{providerId === 'alpaca' && <label>{tr('Market feed')}<select value={feed} onChange={(event) => setFeed(event.target.value as 'iex' | 'sip')}><option value="iex">IEX</option><option value="sip">SIP</option></select></label>}<label>{tr('Paper Account')}<select aria-label={tr('Paper Account')} value={selectedAccountId} onChange={(event) => setAccountId(event.target.value)}><option value="__new__">{tr('Create a new account')}</option>{eligibleAccounts.map((account) => <option key={account.account_id} value={account.account_id} disabled={Boolean(account.active_session_id)}>{account.name} · {account.currency} {account.equity.toFixed(2)}{account.active_session_id ? ` · ${tr('In use')}` : ''}</option>)}</select><small>{selectedAccount ? `${tr('Available equity')}: ${selectedAccount.currency} ${selectedAccount.equity.toFixed(2)}` : `${tr('A separate virtual balance keeps this test easy to review.')} · ${currency}`}</small></label><label>{tr('Strategy')}<select aria-label={tr('Strategy')} value={definition.strategy_id} onChange={(event) => onDefinitionChange?.(event.target.value)}>{definitions.filter((item) => !item.historical_research_only).map((item) => <option key={item.strategy_id} value={item.strategy_id}>{tr(item.name)}</option>)}</select><small>{tr(definition.description)}</small></label>
+        <div className="paper-choice-grid"><label>{tr('Clock mode')}<select aria-label={tr('Clock mode')} value={clockMode} onChange={(event) => setClockMode(event.target.value as PaperClockMode)}><option value="LIVE">{tr('Live Paper')}</option><option value="HISTORICAL">{tr('Historical Paper')}</option></select><small>{tr(clockMode === 'HISTORICAL' ? 'Replay historical data through the real paper runtime with a simulated clock.' : 'Use incoming market data in real time.')}</small></label><label>{tr('Market')}<select aria-label={tr('Market')} value={marketRegion} onChange={(event) => switchMarket(event.target.value as MarketRegion)}><option value="CN">{tr('China A-shares')}</option><option value="HK">{tr('Hong Kong')}</option><option value="US">{tr('United States')}</option></select></label>{clockMode === 'LIVE' && <label>{tr('Market data provider')}<select aria-label={tr('Market data provider')} value={providerId} onChange={(event) => { setProviderId(event.target.value as MarketProvider); setSecurities([]); setStockResults([]) }}><option value="tdx">TDX · {tr('No API key')}</option>{marketRegion === 'US' && <option value="alpaca">Alpaca</option>}</select></label>}{clockMode === 'LIVE' && providerId === 'alpaca' && <label>{tr('Market feed')}<select value={feed} onChange={(event) => setFeed(event.target.value as 'iex' | 'sip')}><option value="iex">IEX</option><option value="sip">SIP</option></select></label>}<label>{tr('Paper Account')}<select aria-label={tr('Paper Account')} value={selectedAccountId} onChange={(event) => setAccountId(event.target.value)}><option value="__new__">{tr('Create a new account')}</option>{eligibleAccounts.map((account) => <option key={account.account_id} value={account.account_id} disabled={Boolean(account.active_session_id)}>{account.name} · {account.currency} {account.equity.toFixed(2)}{account.active_session_id ? ` · ${tr('In use')}` : ''}</option>)}</select><small>{selectedAccount ? `${tr('Available equity')}: ${selectedAccount.currency} ${selectedAccount.equity.toFixed(2)}` : `${tr('A separate virtual balance keeps this test easy to review.')} · ${currency}`}</small></label><label>{tr('Strategy')}<select aria-label={tr('Strategy')} value={definition.strategy_id} onChange={(event) => onDefinitionChange?.(event.target.value)}>{definitions.filter((item) => !item.historical_research_only).map((item) => <option key={item.strategy_id} value={item.strategy_id}>{tr(item.name)}</option>)}</select><small>{tr(definition.description)}</small></label>
           {selectedAccountId === '__new__' && <><label>{tr('Account name')}<input value={accountName} onChange={(event) => setAccountName(event.target.value)} /></label><label>{tr('Starting virtual cash')}<input type="number" min="1" value={initialCash} onChange={(event) => setInitialCash(Number(event.target.value))} /><small>{currency}</small></label></>}
         </div>
       </section>
 
-      <section className="paper-step"><div className="paper-step-heading"><span>2</span><div><h2>{tr('Choose stocks')}</h2><p>{requiredCount === 1 ? tr('This strategy needs one stock.') : tr('This strategy needs {count} stocks. Selection order defines their strategy roles.').replace('{count}', String(requiredCount))}</p></div><strong className={hasRequiredSelection ? 'selection-count ready' : 'selection-count'}>{securities.length} / {requiredCount}</strong></div>
+      <section className="paper-step"><div className="paper-step-heading"><span>2</span><div><h2>{tr('Choose stocks')}</h2><p>{requiredCount === 1 ? tr('This strategy needs one stock.') : tr('This strategy needs {count} stocks. Selection order defines their strategy roles.').replace('{count}', String(requiredCount))}</p></div><strong className={hasRequiredSelection ? 'selection-count ready' : 'selection-count'}>{clockMode === 'HISTORICAL' ? historicalSymbols.length : securities.length} / {requiredCount}</strong></div>
+        {clockMode === 'HISTORICAL' ? <div className="paper-choice-grid historical-paper-setup">
+          <label>{tr('Historical Dataset')}<select aria-label={tr('Historical Dataset')} value={datasetId} onChange={(event) => { setDatasetId(event.target.value); setSimulationStart(''); setSimulationEnd('') }}><option value="">{tr('Choose a Dataset')}</option>{historicalDatasets.map((item) => <option key={item.dataset_id} value={item.dataset_id}>{item.name} · {item.frequency}</option>)}</select><small>{historicalDataset ? `${historicalDataset.symbols.join(', ')} · ${historicalDataset.start_time.slice(0, 10)} → ${historicalDataset.end_time.slice(0, 10)}` : tr('Historical Paper releases only data known at each simulated time.')}</small></label>
+          <label>{tr('Simulation start')}<input type="datetime-local" value={simulationStart} onChange={(event) => setSimulationStart(event.target.value)} /><small>{tr('Optional. Leave blank to start at the first available knowledge time.')}</small></label>
+          <label>{tr('Simulation end')}<input type="datetime-local" value={simulationEnd} onChange={(event) => setSimulationEnd(event.target.value)} /><small>{tr('Optional. Leave blank to use the Dataset knowledge-time end.')}</small></label>
+          <label>{tr('Simulation speed')}<select value={simulationSpeed} onChange={(event) => setSimulationSpeed(event.target.value as SimulationSpeed)}><option value="1X">1X</option><option value="10X">10X</option><option value="100X">100X</option><option value="MAX">MAX</option></select><small>{tr('Pause at any time and advance exactly one synchronized bar.')}</small></label>
+          {historicalDataset && <div className="paper-historical-summary"><strong>{tr('Strategy symbols')}</strong><code>{historicalSymbols.join(' + ') || '-'}</code>{historicalDataset.has_delayed_availability && <small>{tr('This Dataset contains delayed knowledge times; the causal data gate is active.')}</small>}</div>}
+        </div> : <>
         <div className="security-slots">{Array.from({ length: requiredCount }, (_, index) => { const security = securities[index]; const slotLabel = requiredCount === 1 ? 'Selected stock' : index === 0 ? 'First stock' : index === 1 ? 'Second stock' : 'Next stock'; return <div className={`security-slot ${security ? 'filled' : ''}`} key={index}><span className="slot-index">{index + 1}</span>{security ? <><div><strong>{security.symbol}</strong><span>{security.name}</span><small>{security.exchange} · {security.currency ?? currency} · {tr('Lot')} {security.lot_size ?? 1}</small></div><button type="button" aria-label={`${tr('Remove')} ${security.symbol}`} onClick={() => setSecurities((current) => current.filter((_, itemIndex) => itemIndex !== index))}>×</button></> : <div><strong>{tr(slotLabel)}</strong><span>{tr('Search by exchange symbol or code below.')}</span></div>}</div> })}</div>
         <form className="paper-stock-search" onSubmit={(event) => { event.preventDefault(); void findStocks() }}><label htmlFor="paper-stock-query">{tr('Find a stock')}</label><div className="input-action"><input id="paper-stock-query" value={stockQuery} onChange={(event) => setStockQuery(event.target.value)} placeholder={marketRegion === 'CN' ? '600519' : marketRegion === 'HK' ? '00700' : 'AAPL'} /><button type="submit" disabled={searching || !stockQuery.trim()}>{searching ? tr('Searching…') : tr('Search')}</button></div><small>{tr('TDX zero-key search currently uses exact security codes; company-name search remains available through Alpaca for US equities.')}</small></form>
         {stockResults.length > 0 && <div className="paper-stock-results" role="listbox" aria-label={tr('Stock search results')}>{stockResults.map((item) => { const added = securities.some((value) => value.symbol === item.symbol); const blocked = added || securities.length >= requiredCount; return <button type="button" key={item.symbol} disabled={blocked} onClick={() => chooseStock(item)}><span className="stock-mark">{item.symbol.slice(0, 1)}</span><span><strong>{item.symbol}</strong><small>{item.name}</small></span><code>{added ? tr('Added') : item.exchange}</code></button> })}</div>}
+        </>}
       </section>
 
       <section className="paper-step paper-options"><div className="paper-step-heading"><span>3</span><div><h2>{tr('Review and create')}</h2><p>{tr('No broker account is used. VQD owns the virtual cash ledger and simulated fills.')}</p></div></div>
         <div className="execution-mode-picker"><div className="selected"><span className="execution-mode-icon" aria-hidden="true">VQ</span><span><strong>{tr('VQD local paper execution')}</strong><small>{tr('Strategy decisions use received one-minute bars; fills remain inside VQD and never reach a broker.')}</small></span><em>{tr('Virtual money only')}</em></div></div>
-        <div className="paper-review"><div><span>{tr('Account')}</span><strong>{selectedAccount?.name ?? accountName}</strong></div><div><span>{tr('Market')}</span><strong>{marketRegion}</strong></div><div><span>{tr('Provider')}</span><strong>{providerId.toUpperCase()}</strong></div><div><span>{tr('Strategy')}</span><strong>{tr(definition.name)}</strong></div><div><span>{tr('Stocks')}</span><strong>{securities.length ? securities.map((item) => item.symbol).join(' + ') : tr('Not selected')}</strong></div><div><span>{tr('Execution')}</span><strong>{tr('VQD local paper execution')}</strong></div></div>
+        <div className="paper-review"><div><span>{tr('Account')}</span><strong>{selectedAccount?.name ?? accountName}</strong></div><div><span>{tr('Market')}</span><strong>{marketRegion}</strong></div><div><span>{tr('Provider')}</span><strong>{clockMode === 'HISTORICAL' ? tr('Historical Dataset') : providerId.toUpperCase()}</strong></div><div><span>{tr('Strategy')}</span><strong>{tr(definition.name)}</strong></div><div><span>{tr('Stocks')}</span><strong>{paperSecurities.length ? paperSecurities.map((item) => item.symbol).join(' + ') : tr('Not selected')}</strong></div><div><span>{tr('Execution')}</span><strong>{tr('VQD local paper execution')}</strong></div><div><span>{tr('Clock')}</span><strong>{tr(clockMode === 'HISTORICAL' ? 'Historical Paper' : 'Live Paper')}</strong></div></div>
         {strategyParameters.length > 0 && <details className="paper-disclosure"><summary><span><strong>{tr('Strategy settings')}</strong><small>{tr('Using recommended defaults')}</small></span><i /></summary><div className="paper-parameter-grid">{strategyParameters.map((parameter) => <label key={parameter.key}><span>{tr(parameter.label)} <small>{tr(parameter.unit)}</small></span><input type="number" value={parameters[parameter.key]} min={parameter.minimum} max={parameter.maximum ?? undefined} step={parameter.step} onChange={(event) => setParameters((current) => ({ ...current, [parameter.key]: Number(event.target.value) }))} /><small>{tr(parameter.description)}</small></label>)}</div></details>}
-        <details className="paper-disclosure"><summary><span><strong>{tr('Advanced execution settings')}</strong><small>{tr('Local next-bar model')}</small></span><i /></summary><div className="paper-choice-grid"><label>{tr('Reference fee / slippage (bps)')}<div className="paired-input"><input aria-label={tr('Fee bps')} type="number" min="0" value={feeBps} onChange={(event) => setFeeBps(Number(event.target.value))} /><input aria-label={tr('Slippage bps')} type="number" min="0" value={slippageBps} onChange={(event) => setSlippageBps(Number(event.target.value))} /></div></label></div><p>{tr('VQD records the market-data provider separately from the virtual account so another provider can be substituted without changing paper balances.')}</p></details>
+        <details className="paper-disclosure"><summary><span><strong>{tr('Advanced execution settings')}</strong><small>{tr('Local next-bar model')}</small></span><i /></summary><div className="paper-choice-grid"><label>{tr('Reference fee / slippage (bps)')}<div className="paired-input"><input aria-label={tr('Fee bps')} type="number" min="0" value={feeBps} onChange={(event) => setFeeBps(Number(event.target.value))} /><input aria-label={tr('Slippage bps')} type="number" min="0" value={slippageBps} onChange={(event) => setSlippageBps(Number(event.target.value))} /></div></label><label>{tr('Spread / market impact (bps)')}<div className="paired-input"><input aria-label={tr('Spread bps')} type="number" min="0" value={spreadBps} onChange={(event) => setSpreadBps(Number(event.target.value))} /><input aria-label={tr('Market impact bps')} type="number" min="0" value={marketImpactBps} onChange={(event) => setMarketImpactBps(Number(event.target.value))} /></div><small>{tr('Market impact scales with the square root of order participation in bar volume.')}</small></label></div><p>{tr('VQD records the market-data provider separately from the virtual account so another provider can be substituted without changing paper balances.')}</p></details>
       </section>
 
       {error && <div className="paper-error" role="alert"><strong>{error}</strong><span>{tr('Your selections have been kept.')}</span>{technicalError && <details><summary>{tr('Technical details')}</summary><code>{technicalError}</code></details>}</div>}
-      <footer className="paper-create-bar"><div><strong>{canCreate ? tr('Ready to create') : tr('Complete the steps above')}</strong><span>{!providerReady ? tr('Market data connection is required.') : !accountReady ? tr('Finish the account details.') : !hasRequiredSelection ? tr('Choose every required stock.') : tr('You can start the strategy after the portfolio is created.')}</span></div><button className="primary-button" disabled={!canCreate} onClick={() => void create()}>{creating ? tr('Creating…') : tr('Create paper portfolio')}</button></footer>
+      <footer className="paper-create-bar"><div><strong>{canCreate ? tr('Ready to create') : tr('Complete the steps above')}</strong><span>{!providerReady ? tr(clockMode === 'HISTORICAL' ? 'Choose a compatible historical Dataset.' : 'Market data connection is required.') : !accountReady ? tr('Finish the account details.') : !hasRequiredSelection ? tr('Choose every required stock.') : tr('You can start the strategy after the portfolio is created.')}</span></div><button className="primary-button" disabled={!canCreate} onClick={() => void create()}>{creating ? tr('Creating…') : tr('Create paper portfolio')}</button></footer>
     </section>
     <SessionHistory sessions={sessions} activeId={null} onOpen={onOpen} />
   </main>
@@ -458,6 +513,7 @@ function LiveWorkspace({ snapshot, trace, sessions, onSnapshot, onOpen, onNew }:
   const [recovery, setRecovery] = useState<PaperRecoveryReport | null>(null)
   const [recovering, setRecovering] = useState(false)
   const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null)
+  const [simulationControlBusy, setSimulationControlBusy] = useState(false)
   const [streamReconnecting, setStreamReconnecting] = useState(false)
   const refreshOperations = useCallback(async () => {
     try {
@@ -496,6 +552,18 @@ function LiveWorkspace({ snapshot, trace, sessions, onSnapshot, onOpen, onNew }:
     catch (reason) { setError(reason instanceof Error ? reason.message : tr('Order cancellation failed.')) }
     finally { setCancellingOrderId(null) }
   }
+  async function changeSimulationSpeed(speed: SimulationSpeed) {
+    setSimulationControlBusy(true)
+    try { onSnapshot(await setHistoricalPaperSpeed(snapshot.session_id, speed)); setError(null) }
+    catch (reason) { setError(reason instanceof Error ? reason.message : tr('Simulation speed change failed.')) }
+    finally { setSimulationControlBusy(false) }
+  }
+  async function stepSimulation() {
+    setSimulationControlBusy(true)
+    try { onSnapshot(await stepHistoricalPaperSession(snapshot.session_id)); setError(null) }
+    catch (reason) { setError(reason instanceof Error ? reason.message : tr('Simulation step failed.')) }
+    finally { setSimulationControlBusy(false) }
+  }
   const latestMarket = snapshot.recent_market_events.at(-1)
   const terminalStatuses = new Set(['FILLED', 'CANCELLED', 'REJECTED', 'EXPIRED', 'REPLACED'])
   const openOrders = snapshot.orders.filter((order) => !terminalStatuses.has(order.status))
@@ -503,9 +571,10 @@ function LiveWorkspace({ snapshot, trace, sessions, onSnapshot, onOpen, onNew }:
   const marketLabel = (snapshot.securities?.length ? snapshot.securities.map((item) => `${item.symbol} · ${item.name}`) : snapshot.symbols).join(' / ')
   return <main className="forward-shell live-paper-shell">
     <header className="workspace-title forward-title"><div><h1>{tr('Paper Trading')}</h1><span>{tr('Persistent paper account')}</span></div><div className="live-status-stack"><span className={`status-badge ${snapshot.status.toLowerCase()}`}>{tr(snapshot.status)}</span><span className={`status-badge ${snapshot.feed_status.toLowerCase()}`}>{tr(snapshot.feed_status)}</span></div></header>
-    <div className={`live-safety-strip sticky ${brokerMode ? 'broker' : ''}`}><strong>{tr('REAL MARKET DATA')}</strong><span>{tr(brokerMode ? 'ALPACA PAPER BROKER' : 'VQD SIMULATED EXECUTION')}</span><span>{tr(brokerMode ? 'NO REAL MONEY' : 'NO BROKER ORDER')}</span></div>
+    <div className={`live-safety-strip sticky ${brokerMode ? 'broker' : ''}`}><strong>{tr(snapshot.clock_mode === 'HISTORICAL' ? 'HISTORICAL MARKET DATA' : 'REAL MARKET DATA')}</strong><span>{tr(brokerMode ? 'ALPACA PAPER BROKER' : 'VQD SIMULATED EXECUTION')}</span><span>{tr(brokerMode ? 'NO REAL MONEY' : 'NO BROKER ORDER')}</span></div>
     <div className="live-context-strip"><strong>{tr('Account')} <code>{snapshot.account_id}</code></strong><span>{tr('Strategy')} · {tr(snapshot.strategy_name)}</span><span>{tr('Market')} · {marketLabel}</span><span>{tr('Feed')} · {snapshot.provider.toUpperCase()} {snapshot.feed.toUpperCase()}</span></div>
-    <div className="toolbar forward-controls">{snapshot.status === 'CREATED' && <button className="primary-button" onClick={() => void action('start')}>{tr(brokerMode ? 'Start and allow Paper orders' : 'Start')}</button>}{snapshot.status === 'RUNNING' && <button onClick={() => void action('pause')}>{tr('Pause strategy')}</button>}{snapshot.status === 'PAUSED' && <button className="primary-button" onClick={() => void action('resume')}>{tr('Resume strategy')}</button>}{['CREATED', 'RUNNING', 'PAUSED', 'ERROR'].includes(snapshot.status) && <button className="ghost-button" onClick={() => void action('stop')}>{tr('Stop')}</button>}<button className="ghost-button" onClick={onNew}>{tr('New session')}</button><span className="toolbar-spacer" /><code>{brokerMode ? `${tr('Broker')} · ${tr(snapshot.broker_status)}` : tr('market ingestion continues while PAUSED')}</code></div>
+    <div className="toolbar forward-controls">{snapshot.status === 'CREATED' && <button className="primary-button" onClick={() => void action('start')}>{tr(brokerMode ? 'Start and allow Paper orders' : 'Start')}</button>}{snapshot.status === 'RUNNING' && <button onClick={() => void action('pause')}>{tr('Pause strategy')}</button>}{snapshot.status === 'PAUSED' && <button className="primary-button" onClick={() => void action('resume')}>{tr('Resume strategy')}</button>}{['CREATED', 'RUNNING', 'PAUSED', 'ERROR'].includes(snapshot.status) && <button className="ghost-button" onClick={() => void action('stop')}>{tr('Stop')}</button>}<button className="ghost-button" onClick={onNew}>{tr('New session')}</button><span className="toolbar-spacer" /><code>{brokerMode ? `${tr('Broker')} · ${tr(snapshot.broker_status)}` : snapshot.clock_mode === 'HISTORICAL' ? tr('historical data is released only as simulated time advances') : tr('market ingestion continues while PAUSED')}</code></div>
+    {snapshot.clock_mode === 'HISTORICAL' && <section className="workspace-panel historical-simulation-panel"><div className="section-heading"><div><span className="section-kicker">{tr('SIMULATED CLOCK')}</span><h2>{tr('Historical Paper controls')}</h2></div><span className="status-badge ok">{snapshot.simulation_speed ?? 'MAX'}</span></div><div className="market-data-grid"><div><span>{tr('Simulation time')}</span><strong>{snapshot.simulation_time ? formatTimestamp(snapshot.simulation_time).date + ' ' + formatTimestamp(snapshot.simulation_time).time : '—'}</strong></div><div><span>{tr('Simulation start')}</span><code>{snapshot.simulation_start ? `${formatTimestamp(snapshot.simulation_start).date} ${formatTimestamp(snapshot.simulation_start).time}` : '—'}</code></div><div><span>{tr('Simulation end')}</span><code>{snapshot.simulation_end ? `${formatTimestamp(snapshot.simulation_end).date} ${formatTimestamp(snapshot.simulation_end).time}` : '—'}</code></div><div><span>{tr('Dataset')}</span><code>{snapshot.dataset_id ?? '—'}</code></div></div><div className="toolbar forward-controls"><label>{tr('Simulation speed')}<select aria-label={tr('Simulation speed')} disabled={simulationControlBusy || !['CREATED', 'RUNNING', 'PAUSED'].includes(snapshot.status)} value={snapshot.simulation_speed ?? 'MAX'} onChange={(event) => void changeSimulationSpeed(event.target.value as SimulationSpeed)}><option value="1X">1X</option><option value="10X">10X</option><option value="100X">100X</option><option value="MAX">MAX</option></select></label><button type="button" disabled={simulationControlBusy || snapshot.status !== 'PAUSED'} onClick={() => void stepSimulation()}>{tr('Next Bar')}</button><span className="toolbar-spacer" /><code>{tr('1X means one strategy bar per second; MAX advances without an intentional delay.')}</code></div></section>}
     {error && <p className="inline-warning">{error}</p>}{streamReconnecting && <p className="inline-warning">{tr('Live update channel is reconnecting; the backend session continues independently.')}</p>}{operationalError && <p className="inline-warning">{operationalError}</p>}{snapshot.error_message && <p className="inline-error"><strong>{snapshot.error_code}</strong> · {snapshot.error_message}</p>}
     {snapshot.research_run_id && <p className="inline-success"><strong>{tr('Research evidence saved')}</strong> · <a href={`/runs/${snapshot.research_run_id}`}>{snapshot.research_run_id}</a></p>}
     <section className="workspace-panel paper-overview-panel" id="paper-overview"><div className="section-heading"><h2>{tr('Overview')}</h2><span>{tr('Backend recorded')}</span></div>{brokerMode && snapshot.broker_account && <div className="broker-balance-strip"><div><span>{tr('Alpaca Paper status')}</span><strong>{snapshot.broker_account.status}</strong></div><div><span>{tr('Paper cash')}</span><strong>{formatCurrency(snapshot.broker_account.cash)}</strong></div><div><span>{tr('Paper equity')}</span><strong>{formatCurrency(snapshot.broker_account.equity)}</strong></div><div><span>{tr('Paper buying power')}</span><strong>{formatCurrency(snapshot.broker_account.buying_power)}</strong></div></div>}<div className="metric-strip"><div><span>{tr(brokerMode ? 'VQD Trace cash' : 'Cash')}</span><strong>{formatCurrency(snapshot.account.cash, currency)}</strong></div><div><span>{tr(brokerMode ? 'VQD Trace equity' : 'Equity')}</span><strong>{formatCurrency(snapshot.account.equity, currency)}</strong></div><div><span>{tr('Net P&L')}</span><strong>{formatCurrency(snapshot.account.net_pnl, currency)}</strong></div><div><span>{tr('Fees')}</span><strong>{formatCurrency(snapshot.account.cumulative_fees, currency)}</strong></div><div><span>{tr('Slippage')}</span><strong>{formatCurrency(snapshot.account.cumulative_slippage, currency)}</strong></div><div><span>{tr('Max drawdown')}</span><strong>{formatPercent(snapshot.account.max_drawdown)}</strong></div></div></section>

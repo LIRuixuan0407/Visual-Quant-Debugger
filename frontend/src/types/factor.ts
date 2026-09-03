@@ -55,6 +55,18 @@ export interface FactorTimelinePoint {
   long_short_spread: number | null
 }
 
+export interface StatisticalInference {
+  method: string
+  observations: number
+  standard_error: number | null
+  t_stat: number | null
+  p_value: number | null
+  q_value: number | null
+  ci_lower: number | null
+  ci_upper: number | null
+  statistically_significant: boolean
+}
+
 export interface HorizonEvaluation {
   horizon: 1 | 5 | 20
   observation_count: number
@@ -69,6 +81,9 @@ export interface HorizonEvaluation {
   coverage: number
   monotonic: boolean
   timeline: FactorTimelinePoint[]
+  ic_inference?: StatisticalInference | null
+  rank_ic_inference?: StatisticalInference | null
+  long_short_inference?: StatisticalInference | null
 }
 
 export interface PeriodEvaluation {

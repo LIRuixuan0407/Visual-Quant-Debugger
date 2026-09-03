@@ -50,6 +50,8 @@ class ForwardSession:
             initial_cash=self.parameters.initial_cash,
             fee_bps=self.parameters.fee_bps,
             slippage_bps=self.parameters.slippage_bps,
+            spread_bps=self.parameters.spread_bps,
+            market_impact_bps=self.parameters.market_impact_bps,
         )
         self.portfolio = self.runtime.portfolio
 
@@ -87,6 +89,8 @@ class ForwardSession:
                 "gross_target": p.gross_target,
                 "fee_bps": p.fee_bps,
                 "slippage_bps": p.slippage_bps,
+                "spread_bps": p.spread_bps,
+                "market_impact_bps": p.market_impact_bps,
             },
             lookback=p.strategy.lookback,
             initial_cash=p.initial_cash,

@@ -116,6 +116,8 @@ def execute_open_run(
         )
     fee_bps = float(parameters.get("fee_bps", 5.0))
     slippage_bps = float(parameters.get("slippage_bps", 5.0))
+    spread_bps = float(parameters.get("spread_bps", 0.0))
+    market_impact_bps = float(parameters.get("market_impact_bps", 0.0))
     initial_cash = float(parameters.get("initial_cash", 100_000.0))
     strategy_parameters = {
         item.name: parameters.get(item.name, item.default)
@@ -143,6 +145,8 @@ def execute_open_run(
             gross_target=float(parameters.get("gross_target", 20_000.0)),
             fee_bps=fee_bps,
             slippage_bps=slippage_bps,
+            spread_bps=spread_bps,
+            market_impact_bps=market_impact_bps,
             additional_execution_delay_bars=additional_execution_delay_bars,
         )
         result = run_backtest(_pair_bars(frames), backtest_parameters)
@@ -175,6 +179,8 @@ def execute_open_run(
         initial_cash=initial_cash,
         fee_bps=fee_bps,
         slippage_bps=slippage_bps,
+        spread_bps=spread_bps,
+        market_impact_bps=market_impact_bps,
         additional_execution_delay_bars=additional_execution_delay_bars,
         fundamental_repository=FundamentalRepository(dataset_registry.workspace_root),
         corporate_actions=corporate_actions,
@@ -187,6 +193,8 @@ def execute_open_run(
         "initial_cash": initial_cash,
         "fee_bps": fee_bps,
         "slippage_bps": slippage_bps,
+        "spread_bps": spread_bps,
+        "market_impact_bps": market_impact_bps,
     }
     runtime_trace = (
         build_runtime_trace(
@@ -198,6 +206,7 @@ def execute_open_run(
                 strategy_name=strategy.metadata.name,
                 parameters=trace_parameters,
                 initial_cash=initial_cash,
+                dataset_frequency=definition.frequency,
                 execution_model=(
                     "signal at close(t); execute at close(t+1)"
                     if additional_execution_delay_bars == 0
@@ -211,7 +220,9 @@ def execute_open_run(
         else None
     )
     metrics = (
-        calculate_runtime_metrics(runtime_result.rows, initial_cash)
+        calculate_runtime_metrics(
+            runtime_result.rows, initial_cash, dataset_frequency=definition.frequency
+        )
         if runtime_result.rows
         else None
     )

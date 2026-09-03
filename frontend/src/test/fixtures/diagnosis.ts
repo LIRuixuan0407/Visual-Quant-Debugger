@@ -11,7 +11,8 @@ const whatIfBaseline = {
 }
 
 const baselineInputs = {
-  fee_bps: 5, slippage_bps: 5, additional_execution_delay_bars: 0 as const,
+  fee_bps: 5, slippage_bps: 5, spread_bps: 0, market_impact_bps: 0,
+  additional_execution_delay_bars: 0 as const,
   strategy_parameters: { lookback: 5 },
 }
 

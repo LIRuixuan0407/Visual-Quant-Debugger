@@ -130,6 +130,18 @@ class FactorTimelinePoint(FactorModel):
     _aware_timestamp = field_validator("timestamp")(_aware)
 
 
+class StatisticalInference(FactorModel):
+    method: str
+    observations: int = Field(ge=0)
+    standard_error: float | None = None
+    t_stat: float | None = None
+    p_value: float | None = Field(default=None, ge=0, le=1)
+    q_value: float | None = Field(default=None, ge=0, le=1)
+    ci_lower: float | None = None
+    ci_upper: float | None = None
+    statistically_significant: bool = False
+
+
 class HorizonEvaluation(FactorModel):
     horizon: Literal[1, 5, 20]
     observation_count: int
@@ -144,6 +156,9 @@ class HorizonEvaluation(FactorModel):
     coverage: float
     monotonic: bool
     timeline: tuple[FactorTimelinePoint, ...]
+    ic_inference: StatisticalInference | None = None
+    rank_ic_inference: StatisticalInference | None = None
+    long_short_inference: StatisticalInference | None = None
 
 
 class PeriodEvaluation(FactorModel):

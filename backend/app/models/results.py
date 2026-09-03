@@ -66,6 +66,8 @@ class Execution:
     fee: float
     slippage: float
     executed_at: datetime
+    spread_cost: float = 0.0
+    market_impact: float = 0.0
 
 
 @dataclass(frozen=True, slots=True)

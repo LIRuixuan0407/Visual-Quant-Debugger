@@ -211,3 +211,21 @@ def test_factor_research_keeps_exact_dataset_revision_after_family_refresh(tmp_p
     assert record.dataset_revision == r1.content_fingerprint
     assert record.dataset_family_id == r1.dataset_family_id
     assert record.dataset_revision_number == 1
+
+
+def test_factor_research_reports_hac_bootstrap_and_fdr_inference(tmp_path: Path) -> None:
+    registry = DatasetRegistry(tmp_path)
+    dataset_id = _real_provider_dataset(registry)
+    record = FactorResearchEngine(registry).create(_request(dataset_id))
+
+    horizons = record.evaluations[0].horizons
+    assert any(item.ic_inference is not None for item in horizons)
+    for horizon in horizons:
+        if horizon.ic_inference is not None and horizon.ic_inference.p_value is not None:
+            assert horizon.ic_inference.method.startswith("Newey-West HAC")
+            assert horizon.ic_inference.q_value is not None
+            assert 0.0 <= horizon.ic_inference.q_value <= 1.0
+        if horizon.long_short_inference is not None:
+            assert horizon.long_short_inference.method.startswith("Moving-block bootstrap")
+            assert horizon.long_short_inference.ci_lower is not None
+            assert horizon.long_short_inference.ci_upper is not None

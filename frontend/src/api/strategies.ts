@@ -45,6 +45,17 @@ export async function importStrategy(input: { path: string; class_name?: string 
   return body
 }
 
+export async function uploadStrategy(file: File, className?: string | null): Promise<StrategyDefinition> {
+  const form = new FormData()
+  form.append('file', file)
+  if (className?.trim()) form.append('class_name', className.trim())
+  const response = await fetch('/api/strategies/upload', { method: 'POST', body: form })
+  const body = await readJson(response, 'POST /api/strategies/upload')
+  if (!isStrategyDefinition(body)) throw new Error('Uploaded strategy definition is malformed.')
+  await addCreatedObjectToCurrentWorkspace('STRATEGY', body.strategy_id)
+  return body
+}
+
 export async function getStrategyDefinition(strategyId = 'pairs-trading'): Promise<StrategyDefinition> {
   const endpoint = `/api/strategies/${encodeURIComponent(strategyId)}`
   const response = await fetch(endpoint)

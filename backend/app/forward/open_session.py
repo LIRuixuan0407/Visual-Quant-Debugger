@@ -38,6 +38,9 @@ class OpenForwardSession:
     initial_cash: float = 100_000.0
     fee_bps: float = 5.0
     slippage_bps: float = 5.0
+    spread_bps: float = 0.0
+    market_impact_bps: float = 0.0
+    dataset_frequency: str | None = None
     status: Literal["CREATED", "RUNNING", "PAUSED", "COMPLETED", "STOPPED", "FAILED"] = "CREATED"
     processed: int = 0
     events: list[TimelineEvent] = field(default_factory=list)
@@ -61,6 +64,8 @@ class OpenForwardSession:
             initial_cash=self.initial_cash,
             fee_bps=self.fee_bps,
             slippage_bps=self.slippage_bps,
+            spread_bps=self.spread_bps,
+            market_impact_bps=self.market_impact_bps,
         )
 
     def _trace_parameters(self) -> dict[str, TraceScalar]:
@@ -69,6 +74,8 @@ class OpenForwardSession:
             "initial_cash": self.initial_cash,
             "fee_bps": self.fee_bps,
             "slippage_bps": self.slippage_bps,
+            "spread_bps": self.spread_bps,
+            "market_impact_bps": self.market_impact_bps,
         }
 
     def _trace_configuration(self) -> RuntimeTraceConfiguration:
@@ -79,6 +86,7 @@ class OpenForwardSession:
             strategy_name=self.strategy_name,
             parameters=self._trace_parameters(),
             initial_cash=self.initial_cash,
+            dataset_frequency=self.dataset_frequency,
         )
 
     def start(self) -> None:
@@ -193,7 +201,9 @@ class OpenForwardSession:
                 expired_order_count=self.expired_order_count,
             )
         rows = tuple(self.runtime.rows)
-        metrics = calculate_runtime_metrics(rows, self.initial_cash)
+        metrics = calculate_runtime_metrics(
+            rows, self.initial_cash, dataset_frequency=self.dataset_frequency
+        )
         trace = build_runtime_trace(rows, self._trace_configuration())
         return ForwardSessionSummary(
             initial_equity=self.initial_cash,

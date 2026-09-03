@@ -4,11 +4,12 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     environment:
       PORT: "8000"
       VQD_WORKSPACE: /data
       VQD_FRONTEND_DIST: /app/frontend/dist
+      VQD_TRUST_PYTHON_UPLOADS: "true"
     volumes:
       - vqd-data:/data
     restart: unless-stopped

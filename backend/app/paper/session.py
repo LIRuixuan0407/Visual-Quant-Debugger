@@ -62,6 +62,8 @@ class LivePaperSession:
             initial_cash=manifest.initial_cash,
             fee_bps=manifest.fee_bps,
             slippage_bps=manifest.slippage_bps,
+            spread_bps=manifest.spread_bps,
+            market_impact_bps=manifest.market_impact_bps,
             execution_mode=(
                 "external" if manifest.execution_mode == "ALPACA_PAPER" else "simulated"
             ),
@@ -73,11 +75,23 @@ class LivePaperSession:
         self.broker_events: list[PaperBrokerEvent] = []
 
     def _trace_configuration(self) -> RuntimeTraceConfiguration:
+        historical = self.manifest.clock_mode == "HISTORICAL"
+        dataset_id = (
+            self.manifest.dataset_id
+            if historical and self.manifest.dataset_id is not None
+            else f"live:{self.manifest.provider}:{self.manifest.feed}"
+        )
+        dataset_name = (
+            f"Historical Paper · {self.manifest.dataset_id}"
+            if historical
+            else (
+                f"{self.manifest.provider.upper()} · {self.manifest.feed.upper()} "
+                f"· {self.manifest.timeframe}"
+            )
+        )
         return RuntimeTraceConfiguration(
-            dataset_id=f"live:{self.manifest.provider}:{self.manifest.feed}",
-            dataset_name=(
-                f"{self.manifest.provider.upper()} · {self.manifest.feed.upper()} · 1 MINUTE"
-            ),
+            dataset_id=dataset_id,
+            dataset_name=dataset_name,
             strategy_id=self.manifest.strategy_id,
             strategy_name=self.manifest.strategy_name,
             parameters={
@@ -85,12 +99,19 @@ class LivePaperSession:
                 "initial_cash": self.manifest.initial_cash,
                 "fee_bps": self.manifest.fee_bps,
                 "slippage_bps": self.manifest.slippage_bps,
+                "spread_bps": self.manifest.spread_bps,
+                "market_impact_bps": self.manifest.market_impact_bps,
             },
             initial_cash=self.manifest.initial_cash,
+            dataset_frequency=self.manifest.timeframe,
         )
 
     def classify(
-        self, bar: MarketBar, *, historical_warmup: bool = False
+        self,
+        bar: MarketBar,
+        *,
+        historical_warmup: bool = False,
+        force_evaluate: bool = False,
     ) -> tuple[MarketApplyKind, JournalDisposition]:
         kind = self.market_store.classify(bar)
         if kind == MarketApplyKind.FRAME_READY:
@@ -99,7 +120,9 @@ class LivePaperSession:
                 disposition = "HISTORICAL_WARMUP"
             else:
                 disposition = (
-                    "EVALUATION_SKIPPED_PAUSED" if self.manifest.status == "PAUSED" else "EVALUATED"
+                    "EVALUATED"
+                    if force_evaluate or self.manifest.status != "PAUSED"
+                    else "EVALUATION_SKIPPED_PAUSED"
                 )
             return kind, disposition
         mapping: dict[MarketApplyKind, JournalDisposition] = {
@@ -250,7 +273,9 @@ class LivePaperSession:
         portfolio = self.runtime.portfolio
         if self.runtime.rows:
             metrics = calculate_runtime_metrics(
-                tuple(self.runtime.rows), self.manifest.initial_cash
+                tuple(self.runtime.rows),
+                self.manifest.initial_cash,
+                dataset_frequency=self.manifest.timeframe,
             )
             max_drawdown = metrics.max_drawdown
         else:
@@ -273,6 +298,8 @@ class LivePaperSession:
                 fee=item.fee,
                 slippage=item.slippage,
                 executed_at=item.executed_at,
+                spread_cost=item.spread_cost,
+                market_impact=item.market_impact,
             )
             for row in self.runtime.rows
             for item in row.executions
@@ -286,6 +313,8 @@ class LivePaperSession:
                 fee=item.fee,
                 slippage=item.slippage,
                 executed_at=item.executed_at,
+                spread_cost=item.spread_cost,
+                market_impact=item.market_impact,
             )
             for item in self.runtime.external_executions
         )
@@ -373,6 +402,12 @@ class LivePaperSession:
             research_run_id=self.manifest.research_run_id,
             reference_run_id=self.manifest.reference_run_id,
             execution_mode=self.manifest.execution_mode,
+            clock_mode=self.manifest.clock_mode,
+            dataset_id=self.manifest.dataset_id,
+            simulation_start=self.manifest.simulation_start,
+            simulation_end=self.manifest.simulation_end,
+            simulation_time=self.manifest.simulation_time,
+            simulation_speed=self.manifest.simulation_speed,
             broker_status=self.manifest.broker_status,
             broker_account=self.broker_account,
             recent_broker_events=tuple(self.broker_events[-100:]),

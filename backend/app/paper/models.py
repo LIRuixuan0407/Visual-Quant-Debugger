@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.broker import BrokerAccountSnapshot, BrokerOrderStatus
 from app.market_data.models import MarketBar, MarketClockSnapshot, MarketDataConnectionState
@@ -11,6 +11,8 @@ from app.trace.models import Diagnostic, TimelineEvent, TraceScalar
 
 PaperSessionStatus = Literal["CREATED", "RUNNING", "PAUSED", "STOPPED", "ERROR"]
 PaperExecutionMode = Literal["VQD_SIMULATED", "ALPACA_PAPER"]
+PaperClockMode = Literal["LIVE", "HISTORICAL"]
+SimulationSpeed = Literal["1X", "10X", "100X", "MAX"]
 PaperMarketSession = Literal["CN_REGULAR", "HK_REGULAR", "US_REGULAR"]
 BrokerConnectionStatus = Literal["NOT_USED", "DISCONNECTED", "CONNECTED", "RECONNECTING", "ERROR"]
 RecoveryStatus = Literal["READY", "RECOVERING", "RECOVERY_DIVERGENCE"]
@@ -29,6 +31,9 @@ PaperOperationType = Literal[
     "BACKFILL_COMPLETED",
     "HISTORICAL_WARMUP_STARTED",
     "HISTORICAL_WARMUP_COMPLETED",
+    "SIMULATION_STEP",
+    "SIMULATION_SPEED_CHANGED",
+    "SIMULATION_COMPLETED",
     "BROKER_RECONCILIATION",
     "RECOVERY_STARTED",
     "RECOVERY_COMPLETED",
@@ -63,14 +68,21 @@ class CreatePaperSession(PaperModel):
     symbols: tuple[str, ...]
     securities: tuple[PaperSecurity, ...] = ()
     parameters: dict[str, int | float] = Field(default_factory=dict)
-    provider: Literal["tdx", "alpaca", "fake"] = "alpaca"
-    feed: Literal["tdx", "iex", "sip"] = "iex"
-    timeframe: Literal["1Min"] = "1Min"
+    provider: Literal["tdx", "alpaca", "fake", "historical"] = "alpaca"
+    feed: str = "iex"
+    timeframe: Literal["1Min", "5Min", "15Min", "1Hour", "1Day"] = "1Min"
     market_session: PaperMarketSession = "US_REGULAR"
     initial_cash: float = Field(default=100_000.0, gt=0)
     fee_bps: float = Field(default=5.0, ge=0)
     slippage_bps: float = Field(default=5.0, ge=0)
+    spread_bps: float = Field(default=0.0, ge=0)
+    market_impact_bps: float = Field(default=0.0, ge=0)
     execution_mode: PaperExecutionMode = "VQD_SIMULATED"
+    clock_mode: PaperClockMode = "LIVE"
+    dataset_id: str | None = None
+    simulation_start: datetime | None = None
+    simulation_end: datetime | None = None
+    simulation_speed: SimulationSpeed = "MAX"
 
     @field_validator("symbols")
     @classmethod
@@ -79,6 +91,34 @@ class CreatePaperSession(PaperModel):
         if not symbols:
             raise ValueError("At least one symbol is required")
         return symbols
+
+    @field_validator("simulation_start", "simulation_end")
+    @classmethod
+    def aware_simulation_time(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
+            raise ValueError("Historical simulation times must be timezone-aware")
+        return value
+
+    @model_validator(mode="after")
+    def validate_clock_contract(self) -> CreatePaperSession:
+        if self.clock_mode == "HISTORICAL":
+            if not self.dataset_id:
+                raise ValueError("Historical Paper requires dataset_id")
+            if self.execution_mode != "VQD_SIMULATED":
+                raise ValueError("Historical Paper supports VQD simulated execution only")
+            if (
+                self.simulation_start is not None
+                and self.simulation_end is not None
+                and self.simulation_end < self.simulation_start
+            ):
+                raise ValueError("simulation_end must not precede simulation_start")
+        elif (
+            self.dataset_id is not None
+            or self.simulation_start is not None
+            or self.simulation_end is not None
+        ):
+            raise ValueError("Historical Dataset/time controls require clock_mode=HISTORICAL")
+        return self
 
 
 class RecoveryCheckpoint(PaperModel):
@@ -157,12 +197,20 @@ class PaperSessionManifest(PaperModel):
     parameters: dict[str, int | float]
     provider: str
     feed: str
-    timeframe: Literal["1Min"] = "1Min"
+    timeframe: Literal["1Min", "5Min", "15Min", "1Hour", "1Day"] = "1Min"
     market_session: PaperMarketSession = "US_REGULAR"
     initial_cash: float
     fee_bps: float
     slippage_bps: float
+    spread_bps: float = 0.0
+    market_impact_bps: float = 0.0
     execution_mode: PaperExecutionMode = "VQD_SIMULATED"
+    clock_mode: PaperClockMode = "LIVE"
+    dataset_id: str | None = None
+    simulation_start: datetime | None = None
+    simulation_end: datetime | None = None
+    simulation_time: datetime | None = None
+    simulation_speed: SimulationSpeed = "MAX"
     broker_status: BrokerConnectionStatus = "NOT_USED"
     created_at: datetime
     started_at: datetime | None = None
@@ -222,6 +270,8 @@ class PaperExecution(PaperModel):
     fee: float
     slippage: float
     executed_at: datetime
+    spread_cost: float = 0.0
+    market_impact: float = 0.0
 
 
 class CreatePaperAccount(PaperModel):
@@ -359,7 +409,7 @@ class PaperSessionSnapshot(PaperModel):
     parameters: dict[str, int | float]
     provider: str
     feed: str
-    timeframe: Literal["1Min"]
+    timeframe: Literal["1Min", "5Min", "15Min", "1Hour", "1Day"]
     market_session: PaperMarketSession
     initial_cash: float
     created_at: datetime
@@ -387,6 +437,12 @@ class PaperSessionSnapshot(PaperModel):
     orders: tuple[PaperOrder, ...] = ()
     fills: tuple[PaperFill, ...] = ()
     execution_mode: PaperExecutionMode = "VQD_SIMULATED"
+    clock_mode: PaperClockMode = "LIVE"
+    dataset_id: str | None = None
+    simulation_start: datetime | None = None
+    simulation_end: datetime | None = None
+    simulation_time: datetime | None = None
+    simulation_speed: SimulationSpeed = "MAX"
     broker_status: BrokerConnectionStatus = "NOT_USED"
     broker_account: BrokerAccountSnapshot | None = None
     recent_broker_events: tuple[PaperBrokerEvent, ...] = ()

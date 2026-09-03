@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 import numpy as np
 
 from app.datasets import DatasetRegistry
-from app.diagnostics.volatility import annualization_factor_for_frequency
+from app.diagnostics.annualization import annualization_factor_for_frequency
 from app.execution import ExecutionEngine
 from app.factors import FactorResearchEngine
 from app.factors.models import (
@@ -391,18 +391,35 @@ class PortfolioResearchEngine:
                 if ranked
                 else 0
             )
-        selected = ranked[:count]
-        if request.construction.weighting == "SCORE_WEIGHTED":
-            if selected:
-                floor = min(composite[symbol] for symbol in selected)
-                raw_weights = {
-                    symbol: max(composite[symbol] - floor, 0.0) + 1e-9 for symbol in selected
+        long_selected = ranked[:count]
+        short_selected: list[str] = []
+        if request.construction.mode == "LONG_SHORT" and count:
+            long_set = set(long_selected)
+            short_selected = [symbol for symbol in reversed(ranked) if symbol not in long_set][
+                :count
+            ]
+
+        def leg_weights(selected: list[str], *, reverse_score: bool = False) -> dict[str, float]:
+            if request.construction.weighting == "SCORE_WEIGHTED" and selected:
+                scores = {
+                    symbol: (-composite[symbol] if reverse_score else composite[symbol])
+                    for symbol in selected
                 }
+                floor = min(scores.values())
+                raw = {symbol: max(scores[symbol] - floor, 0.0) + 1e-9 for symbol in selected}
             else:
-                raw_weights = {}
+                raw = {symbol: 1.0 for symbol in selected}
+            return _cap_weights(raw, request.construction.max_single_position_weight)
+
+        if request.construction.mode == "LONG_SHORT":
+            long_weights = leg_weights(long_selected)
+            short_weights = leg_weights(short_selected, reverse_score=True)
+            weights = {symbol: 0.5 * weight for symbol, weight in long_weights.items()}
+            weights.update({symbol: -0.5 * weight for symbol, weight in short_weights.items()})
+            selected = [*long_selected, *short_selected]
         else:
-            raw_weights = {symbol: 1.0 for symbol in selected}
-        weights = _cap_weights(raw_weights, request.construction.max_single_position_weight)
+            weights = leg_weights(long_selected)
+            selected = long_selected
         rank_map = {symbol: rank for rank, symbol in enumerate(ranked, start=1)}
         rows: list[PortfolioPositionLineage] = []
         for symbol in ranked:
@@ -446,6 +463,8 @@ class PortfolioResearchEngine:
                 gross_return=0.0,
                 fees=0.0,
                 slippage=0.0,
+                spread_cost=0.0,
+                market_impact=0.0,
                 net_return=0.0,
                 turnover=0.0,
                 max_drawdown=0.0,
@@ -454,10 +473,17 @@ class PortfolioResearchEngine:
             )
         by_signal = {snapshot.timestamp: snapshot for snapshot in snapshots}
         portfolio = Portfolio(cash=request.initial_cash)
-        execution = ExecutionEngine(fee_bps=request.fee_bps, slippage_bps=request.slippage_bps)
+        execution = ExecutionEngine(
+            fee_bps=request.fee_bps,
+            slippage_bps=request.slippage_bps,
+            spread_bps=request.spread_bps,
+            market_impact_bps=request.market_impact_bps,
+        )
         pending: PortfolioRebalanceSnapshot | None = None
         equity_curve: list[float] = []
         traded_notional = 0.0
+        spread_cost_total = 0.0
+        market_impact_total = 0.0
         for frame in frames:
             prices = {
                 symbol: frame.value(symbol, "close")
@@ -484,10 +510,17 @@ class PortfolioResearchEngine:
                     source_signal_id=f"portfolio-preview-{pending.timestamp.isoformat()}",
                     target_state=1 if target_positions else 0,
                 )
+                volumes = {
+                    symbol: frame.values[symbol].get("volume", 0.0)
+                    for symbol in prices
+                    if symbol in frame.values
+                }
                 fills = execution.execute_at_prices(
-                    orders, prices=prices, executed_at=frame.timestamp
+                    orders, prices=prices, volumes=volumes, executed_at=frame.timestamp
                 )
                 traded_notional += sum(item.traded_notional for item in fills)
+                spread_cost_total += sum(item.spread_cost for item in fills)
+                market_impact_total += sum(item.market_impact for item in fills)
                 portfolio.apply(fills)
                 pending = None
             if frame.timestamp in by_signal:
@@ -508,6 +541,8 @@ class PortfolioResearchEngine:
             gross_return=gross_pnl / request.initial_cash,
             fees=final.cumulative_fees,
             slippage=final.cumulative_slippage,
+            spread_cost=spread_cost_total,
+            market_impact=market_impact_total,
             net_return=net_pnl / request.initial_cash,
             turnover=traded_notional / average_equity if average_equity > 0 else 0.0,
             max_drawdown=drawdown,
@@ -526,7 +561,9 @@ class PortfolioResearchEngine:
     ) -> PortfolioRiskDecomposition:
         latest = snapshots[-1] if snapshots else None
         positions = (
-            tuple(item for item in latest.positions if item.selected and item.target_weight > 0.0)
+            tuple(
+                item for item in latest.positions if item.selected and abs(item.target_weight) > 0.0
+            )
             if latest is not None
             else ()
         )
@@ -634,8 +671,8 @@ class PortfolioResearchEngine:
         period_volatility = math.sqrt(period_variance)
         scale = math.sqrt(annualization_factor) if annualization_factor is not None else 1.0
         portfolio_volatility = period_volatility * scale
-        invested_total = float(np.sum(weights))
-        invested_weights = weights / invested_total if invested_total > 0.0 else weights
+        gross_weight = float(np.sum(np.abs(weights)))
+        invested_weights = np.abs(weights) / gross_weight if gross_weight > 0.0 else np.abs(weights)
         median_weight = float(np.median(invested_weights))
         covariance_times_weight = covariance @ weights
         contributions: list[AssetRiskContribution] = []
@@ -647,7 +684,7 @@ class PortfolioResearchEngine:
             )
             component = float(weights[index] * marginal)
             risk_share = component / portfolio_volatility if portfolio_volatility > 1e-15 else 0.0
-            gap = risk_share - float(invested_weights[index])
+            gap = abs(risk_share) - float(invested_weights[index])
             contributions.append(
                 AssetRiskContribution(
                     symbol=symbol,
@@ -800,6 +837,8 @@ class PortfolioResearchEngine:
             initial_cash=request.initial_cash,
             fee_bps=request.fee_bps,
             slippage_bps=request.slippage_bps,
+            spread_bps=request.spread_bps,
+            market_impact_bps=request.market_impact_bps,
             stages=(stage,),
         )
         self.ledger.save(
@@ -837,6 +876,8 @@ class PortfolioResearchEngine:
             initial_cash=record.initial_cash,
             fee_bps=record.fee_bps,
             slippage_bps=record.slippage_bps,
+            spread_bps=record.spread_bps,
+            market_impact_bps=record.market_impact_bps,
         )
         records = self._records(request)
         result = self._stage(request, records, stage)

@@ -26,6 +26,14 @@ export async function importFactor(input: { path: string; class_name?: string | 
   return readJson(response, 'POST /api/factors/import') as Promise<FactorImportResult>
 }
 
+export async function uploadFactor(file: File, className?: string | null): Promise<FactorImportResult> {
+  const form = new FormData()
+  form.append('file', file)
+  if (className?.trim()) form.append('class_name', className.trim())
+  const response = await fetch('/api/factors/upload', { method: 'POST', body: form })
+  return readJson(response, 'POST /api/factors/upload') as Promise<FactorImportResult>
+}
+
 export async function getFactorResearchList(): Promise<FactorResearchSummary[]> {
   const response = await fetch('/api/factor-research')
   return readJson(response, 'GET /api/factor-research') as Promise<FactorResearchSummary[]>

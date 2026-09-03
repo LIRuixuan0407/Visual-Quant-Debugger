@@ -14,13 +14,15 @@ class BacktestParameters:
     gross_target: float = 20_000.0
     fee_bps: float = 5.0
     slippage_bps: float = 5.0
+    spread_bps: float = 0.0
+    market_impact_bps: float = 0.0
     additional_execution_delay_bars: int = 0
 
     def __post_init__(self) -> None:
         if self.initial_cash <= 0 or self.gross_target <= 0:
             raise ValueError("initial_cash and gross_target must be positive")
-        if self.fee_bps < 0 or self.slippage_bps < 0:
-            raise ValueError("fee_bps and slippage_bps must be non-negative")
+        if min(self.fee_bps, self.slippage_bps, self.spread_bps, self.market_impact_bps) < 0:
+            raise ValueError("execution cost assumptions must be non-negative")
         if self.additional_execution_delay_bars < 0:
             raise ValueError("additional_execution_delay_bars must be non-negative")
 
@@ -43,13 +45,15 @@ def run_backtest(
         initial_cash=config.initial_cash,
         fee_bps=config.fee_bps,
         slippage_bps=config.slippage_bps,
+        spread_bps=config.spread_bps,
+        market_impact_bps=config.market_impact_bps,
         additional_execution_delay_bars=config.additional_execution_delay_bars,
     )
     runtime_result = runtime.run(tuple(bar.as_frame() for bar in bars))
     if runtime_result.failure is not None:
         raise StrategyRuntimeError(runtime_result.failure)
     rows = legacy_timeline(runtime_result.rows)
-    metrics = calculate_metrics(rows, config.initial_cash)
+    metrics = calculate_metrics(rows, config.initial_cash, dataset_frequency="1Day")
     trace = build_trace(
         bars,
         rows,
@@ -66,6 +70,8 @@ def run_backtest(
                 "gross_target": config.gross_target,
                 "fee_bps": config.fee_bps,
                 "slippage_bps": config.slippage_bps,
+                "spread_bps": config.spread_bps,
+                "market_impact_bps": config.market_impact_bps,
             },
             lookback=config.strategy.lookback,
             initial_cash=config.initial_cash,

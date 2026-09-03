@@ -63,6 +63,9 @@ class DatasetDefinition(DatasetModel):
     synchronized_bar_count: int
     start_time: datetime
     end_time: datetime
+    available_start_time: datetime | None = None
+    available_end_time: datetime | None = None
+    has_delayed_availability: bool = False
     created_at: datetime
     content_fingerprint: str
     dataset_family_id: str | None = None
@@ -78,6 +81,11 @@ class DatasetDefinition(DatasetModel):
     _aware_times = field_validator("start_time", "end_time", "created_at")(
         lambda value: require_aware(value)
     )
+
+    @field_validator("available_start_time", "available_end_time")
+    @classmethod
+    def aware_availability(cls, value: datetime | None) -> datetime | None:
+        return None if value is None else require_aware(value)
 
 
 class DatasetFamily(DatasetModel):

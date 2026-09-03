@@ -295,7 +295,7 @@ function ParameterSensitivitySection({ report }: { report: DiagnosisReport }) {
 function BatchStressEvidence({ report }: { report: DiagnosisReport }) {
   const { tr } = useI18n()
   const supported = report.support ?? { train_test: 'AVAILABLE', parameter_sensitivity: 'AVAILABLE', cost_stress: 'AVAILABLE', execution_delay: 'AVAILABLE' }
-  const baselineFriction = report.source_run.fee_bps + report.source_run.slippage_bps
+  const baselineFriction = report.source_run.fee_bps + report.source_run.slippage_bps + (report.source_run.spread_bps ?? 0) / 2 + (report.source_run.market_impact_bps ?? 0)
   const costPoints = [...report.cost_stress].sort((left, right) => left.total_friction_bps - right.total_friction_bps)
   const baselineCost = costPoints.find((point) => point.total_friction_bps === baselineFriction) ?? costPoints[0]
   const highestCost = costPoints.at(-1)
@@ -311,7 +311,7 @@ function BatchStressEvidence({ report }: { report: DiagnosisReport }) {
           <div><span>{tr('Highest friction')}</span><strong>{highestCost.total_friction_bps} bps</strong><small>{tr('Sharpe')} {sharpeDisplay(highestCost.metrics)}</small></div>
           <div><span>{tr('Sharpe change')}</span><strong>{baselineCost.metrics.status === 'OK' && highestCost.metrics.status === 'OK' ? (highestCost.metrics.sharpe - baselineCost.metrics.sharpe).toFixed(2) : 'N/A'}</strong><small>{tr('Baseline')} → {tr('Stress')}</small></div>
         </div>}
-        <details className="advanced-disclosure evidence-table-disclosure"><summary>{tr('View stress table')}<span>{costPoints.length} {tr('scenarios')}</span></summary><div className="dense-table cost-stress-table"><div className="dense-row header"><span>{tr('Total friction')}</span><span>{tr('Fee / Slippage')}</span><span>{tr('Return')}</span><span>{tr('Sharpe')}</span></div>{costPoints.map((point) => <div className="dense-row" key={point.total_friction_bps}><code>{point.total_friction_bps} bps</code><code>{point.fee_bps} / {point.slippage_bps}</code><code>{percent(point.metrics.return)}</code><code>{sharpeDisplay(point.metrics)}</code></div>)}</div></details>
+        <details className="advanced-disclosure evidence-table-disclosure"><summary>{tr('View stress table')}<span>{costPoints.length} {tr('scenarios')}</span></summary><div className="dense-table cost-stress-table"><div className="dense-row header"><span>{tr('Total friction')}</span><span>{tr('Fee / Slip / Spread / Impact')}</span><span>{tr('Return')}</span><span>{tr('Sharpe')}</span></div>{costPoints.map((point) => <div className="dense-row" key={point.total_friction_bps}><code>{point.total_friction_bps} bps</code><code>{point.fee_bps} / {point.slippage_bps} / {point.spread_bps ?? 0} / {point.market_impact_bps ?? 0}</code><code>{percent(point.metrics.return)}</code><code>{sharpeDisplay(point.metrics)}</code></div>)}</div></details>
       </>}
     </section>
     <section id="diagnose-execution-delay" className="diagnose-section">
@@ -336,6 +336,8 @@ function WhatIfLab({ report }: { report: DiagnosisReport }) {
   const parameter = support?.parameter
   const [feeBps, setFeeBps] = useState(baselineInputs?.fee_bps ?? 0)
   const [slippageBps, setSlippageBps] = useState(baselineInputs?.slippage_bps ?? 0)
+  const [spreadBps, setSpreadBps] = useState(baselineInputs?.spread_bps ?? 0)
+  const [marketImpactBps, setMarketImpactBps] = useState(baselineInputs?.market_impact_bps ?? 0)
   const [delay, setDelay] = useState<0 | 1 | 2>(baselineInputs?.additional_execution_delay_bars ?? 0)
   const [parameterValue, setParameterValue] = useState(parameter?.current_value ?? 0)
   const [scenario, setScenario] = useState<WhatIfScenario | null>(null)
@@ -350,6 +352,8 @@ function WhatIfLab({ report }: { report: DiagnosisReport }) {
       setScenario(await createWhatIfScenario(report.source_run.trace_id, {
         fee_bps: feeBps,
         slippage_bps: slippageBps,
+        spread_bps: spreadBps,
+        market_impact_bps: marketImpactBps,
         additional_execution_delay_bars: delay,
         strategy_parameters: parameter ? { [parameter.key]: parameterValue } : {},
       }))
@@ -370,6 +374,8 @@ function WhatIfLab({ report }: { report: DiagnosisReport }) {
     <form className="what-if-controls" onSubmit={(event) => void runScenario(event)}>
       <label><span>{tr('Transaction cost')}</span><input aria-label={tr('Transaction cost')} type="number" min="0" max="10000" step="1" value={feeBps} onChange={(event) => { setFeeBps(Number(event.target.value)); setScenario(null) }} /><small>{tr('Baseline')}: {baselineInputs.fee_bps} bps</small></label>
       <label><span>{tr('Slippage')}</span><input aria-label={tr('Slippage')} type="number" min="0" max="10000" step="1" value={slippageBps} onChange={(event) => { setSlippageBps(Number(event.target.value)); setScenario(null) }} /><small>{tr('Baseline')}: {baselineInputs.slippage_bps} bps</small></label>
+      <label><span>{tr('Quoted spread (bps)')}</span><input aria-label={tr('Quoted spread (bps)')} type="number" min="0" max="10000" step="1" value={spreadBps} onChange={(event) => { setSpreadBps(Number(event.target.value)); setScenario(null) }} /><small>{tr('Baseline')}: {baselineInputs.spread_bps} bps</small></label>
+      <label><span>{tr('Market impact (bps)')}</span><input aria-label={tr('Market impact (bps)')} type="number" min="0" max="10000" step="1" value={marketImpactBps} onChange={(event) => { setMarketImpactBps(Number(event.target.value)); setScenario(null) }} /><small>{tr('Baseline')}: {baselineInputs.market_impact_bps} bps</small></label>
       <label><span>{tr('Execution delay')}</span><select aria-label={tr('Execution delay')} value={delay} onChange={(event) => { setDelay(Number(event.target.value) as 0 | 1 | 2); setScenario(null) }}><option value={0}>+0 {tr('bars')}</option><option value={1}>+1 {tr('bars')}</option><option value={2}>+2 {tr('bars')}</option></select><small>{tr('Baseline')}: +{baselineInputs.additional_execution_delay_bars}</small></label>
       {parameter && <label><span>{tr(parameter.label)}</span><input aria-label={tr(parameter.label)} type="number" min={parameter.minimum} max={parameter.maximum ?? undefined} step={parameter.step} value={parameterValue} onChange={(event) => { setParameterValue(Number(event.target.value)); setScenario(null) }} /><small>{tr('Baseline')}: {parameter.current_value} {tr(parameter.unit)}</small></label>}
       <button className="primary-button" type="submit" disabled={busy}>{busy ? tr('Running scenario…') : tr('Run scenario')}</button>

@@ -104,6 +104,8 @@ class RunLedger:
         values.setdefault("initial_cash", 100_000.0)
         values.setdefault("fee_bps", 5.0)
         values.setdefault("slippage_bps", 5.0)
+        values.setdefault("spread_bps", 0.0)
+        values.setdefault("market_impact_bps", 0.0)
         if strategy.metadata.strategy_id == "pairs-trading":
             values.setdefault("gross_target", 20_000.0)
         return values

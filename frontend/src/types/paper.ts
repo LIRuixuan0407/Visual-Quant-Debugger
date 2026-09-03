@@ -4,12 +4,14 @@ export type PaperSessionStatus = 'CREATED' | 'RUNNING' | 'PAUSED' | 'STOPPED' | 
 export type FeedStatus = 'CONNECTED' | 'RECONNECTING' | 'STALE' | 'DISCONNECTED'
 export type RecoveryStatus = 'READY' | 'RECOVERING' | 'RECOVERY_DIVERGENCE'
 export type PaperExecutionMode = 'VQD_SIMULATED' | 'ALPACA_PAPER'
+export type PaperClockMode = 'LIVE' | 'HISTORICAL'
+export type SimulationSpeed = '1X' | '10X' | '100X' | 'MAX'
 export type PaperMarketRegion = 'CN' | 'HK' | 'US'
 export type PaperMarketSession = 'CN_REGULAR' | 'HK_REGULAR' | 'US_REGULAR'
 export type BrokerConnectionStatus = 'NOT_USED' | 'CONNECTED' | 'RECONNECTING' | 'DISCONNECTED' | 'ERROR'
 export type BrokerOrderStatus = 'CREATED' | 'SUBMITTED' | 'PARTIALLY_FILLED' | 'PENDING_CANCEL' | 'FILLED' | 'CANCELLED' | 'EXPIRED' | 'REJECTED' | 'REPLACED' | 'DONE_FOR_DAY' | 'HELD' | 'SUSPENDED' | 'UNKNOWN'
 export type JournalDisposition = 'BUFFERED' | 'HISTORICAL_WARMUP' | 'EVALUATED' | 'EVALUATION_SKIPPED_PAUSED' | 'CORRECTION_APPLIED' | 'DUPLICATE_IGNORED' | 'OUT_OF_ORDER_REJECTED'
-export type PaperOperationType = 'CREATED' | 'STARTED' | 'PAUSED' | 'RESUMED' | 'STOP_REQUESTED' | 'STOPPED' | 'FEED_DISCONNECTED' | 'FEED_RECONNECTING' | 'FEED_RECONNECTED' | 'BACKFILL_STARTED' | 'BACKFILL_COMPLETED' | 'HISTORICAL_WARMUP_STARTED' | 'HISTORICAL_WARMUP_COMPLETED' | 'BROKER_RECONCILIATION' | 'RECOVERY_STARTED' | 'RECOVERY_COMPLETED' | 'RECOVERY_DIVERGENCE' | 'ERROR'
+export type PaperOperationType = 'CREATED' | 'STARTED' | 'PAUSED' | 'RESUMED' | 'STOP_REQUESTED' | 'STOPPED' | 'FEED_DISCONNECTED' | 'FEED_RECONNECTING' | 'FEED_RECONNECTED' | 'BACKFILL_STARTED' | 'BACKFILL_COMPLETED' | 'HISTORICAL_WARMUP_STARTED' | 'HISTORICAL_WARMUP_COMPLETED' | 'SIMULATION_STEP' | 'SIMULATION_SPEED_CHANGED' | 'SIMULATION_COMPLETED' | 'BROKER_RECONCILIATION' | 'RECOVERY_STARTED' | 'RECOVERY_COMPLETED' | 'RECOVERY_DIVERGENCE' | 'ERROR'
 
 export interface PaperOperationEvent {
   operation_id: string
@@ -216,6 +218,8 @@ export interface PaperExecution {
   fill_price: number
   fee: number
   slippage: number
+  spread_cost?: number
+  market_impact?: number
   executed_at: string
 }
 
@@ -238,6 +242,12 @@ export interface PaperSessionSnapshot {
   feed_status: FeedStatus
   recovery_status: RecoveryStatus
   execution_mode: PaperExecutionMode
+  clock_mode?: PaperClockMode
+  dataset_id?: string | null
+  simulation_start?: string | null
+  simulation_end?: string | null
+  simulation_time?: string | null
+  simulation_speed?: SimulationSpeed
   broker_status: BrokerConnectionStatus
   strategy_id: string
   strategy_name: string
@@ -247,7 +257,7 @@ export interface PaperSessionSnapshot {
   parameters: Record<string, number>
   provider: string
   feed: string
-  timeframe: '1Min'
+  timeframe: '1Min' | '5Min' | '15Min' | '1Hour' | '1Day'
   market_session: PaperMarketSession
   initial_cash: number
   created_at: string
@@ -296,11 +306,18 @@ export interface CreatePaperSessionInput {
   symbols: string[]
   securities?: Array<{ symbol: string; name: string; exchange: string; status: 'active' | 'inactive' }>
   parameters: Record<string, number>
-  provider: 'tdx' | 'alpaca'
-  feed: 'tdx' | 'iex' | 'sip'
-  timeframe: '1Min'
+  provider: 'tdx' | 'alpaca' | 'historical'
+  feed: string
+  timeframe: '1Min' | '5Min' | '15Min' | '1Hour' | '1Day'
   market_session: PaperMarketSession
   fee_bps: number
   slippage_bps: number
+  spread_bps?: number
+  market_impact_bps?: number
   execution_mode: PaperExecutionMode
+  clock_mode?: PaperClockMode
+  dataset_id?: string | null
+  simulation_start?: string | null
+  simulation_end?: string | null
+  simulation_speed?: SimulationSpeed
 }

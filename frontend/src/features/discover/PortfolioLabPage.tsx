@@ -29,6 +29,7 @@ const splitSymbols = (value: string) => [...new Set(value.split(/[\s,]+/).map((i
 
 type SelectionMethod = 'TOP_N' | 'TOP_PERCENT'
 type PositionWeighting = 'EQUAL_WEIGHT' | 'SCORE_WEIGHTED'
+type PortfolioMode = 'LONG_ONLY' | 'LONG_SHORT'
 type DirectionChoice = 'DEFAULT' | 'HIGH' | 'LOW'
 
 function RiskMatrixTable({ matrix, kind }: { matrix: RiskMatrix; kind: 'covariance' | 'correlation' }) {
@@ -64,11 +65,14 @@ export default function PortfolioLabPage({
   const [directions, setDirections] = useState<Record<string, DirectionChoice>>({})
   const [combination, setCombination] = useState<CombinationMethod>('RANK_AVERAGE')
   const [rebalance, setRebalance] = useState<RebalanceRule>('MONTHLY')
+  const [portfolioMode, setPortfolioMode] = useState<PortfolioMode>('LONG_ONLY')
   const [selection, setSelection] = useState<SelectionMethod>('TOP_N')
   const [topN, setTopN] = useState(5)
   const [topPercent, setTopPercent] = useState(20)
   const [weighting, setWeighting] = useState<PositionWeighting>('EQUAL_WEIGHT')
   const [maxWeight, setMaxWeight] = useState(.2)
+  const [spreadBps, setSpreadBps] = useState(0)
+  const [marketImpactBps, setMarketImpactBps] = useState(0)
   const [minLiquidity, setMinLiquidity] = useState('')
   const [maxVolatility, setMaxVolatility] = useState('')
   const [requireAvailability, setRequireAvailability] = useState(true)
@@ -184,6 +188,7 @@ export default function PortfolioLabPage({
           exclude_symbols: splitSymbols(excludeSymbols),
         },
         construction: {
+          mode: portfolioMode,
           selection,
           top_n: topN,
           top_percent: topPercent,
@@ -195,6 +200,8 @@ export default function PortfolioLabPage({
         initial_cash: 100_000,
         fee_bps: 5,
         slippage_bps: 5,
+        spread_bps: spreadBps,
+        market_impact_bps: marketImpactBps,
       })
       setRecord(next)
       await refresh()
@@ -245,6 +252,8 @@ export default function PortfolioLabPage({
         parameters: {
           fee_bps: record.fee_bps,
           slippage_bps: record.slippage_bps,
+          spread_bps: record.spread_bps ?? 0,
+          market_impact_bps: record.market_impact_bps ?? 0,
           initial_cash: record.initial_cash,
         },
       })
@@ -344,6 +353,7 @@ export default function PortfolioLabPage({
             <div className="config-section-title"><strong>{tr('Combination & ranking')}</strong><small>{tr('All composite scores are calculated by the backend.')}</small></div>
             <div className="research-form-grid">
               <label><span>{tr('Factor combination')}</span><select value={combination} onChange={(event) => setCombination(event.target.value as CombinationMethod)}><option>EQUAL_WEIGHT</option><option>USER_DEFINED_WEIGHT</option><option>RANK_AVERAGE</option><option>Z_SCORE_COMPOSITE</option></select></label>
+              <label><span>{tr('Portfolio mode')}</span><select value={portfolioMode} onChange={(event) => setPortfolioMode(event.target.value as PortfolioMode)}><option value="LONG_ONLY">LONG_ONLY</option><option value="LONG_SHORT">LONG_SHORT</option></select><small>{tr(portfolioMode === 'LONG_SHORT' ? 'Long the strongest group and short the weakest group with approximately zero net exposure.' : 'Long only the strongest ranked securities.')}</small></label>
               <label><span>{tr('Selection')}</span><select value={selection} onChange={(event) => setSelection(event.target.value as SelectionMethod)}><option value="TOP_N">TOP_N</option><option value="TOP_PERCENT">TOP_PERCENT</option></select></label>
               {selection === 'TOP_N'
                 ? <label><span>{tr('Top N')}</span><input type="number" min="1" value={topN} onChange={(event) => setTopN(Number(event.target.value))} /></label>
@@ -351,6 +361,8 @@ export default function PortfolioLabPage({
               <label><span>{tr('Position weighting')}</span><select value={weighting} onChange={(event) => setWeighting(event.target.value as PositionWeighting)}><option>EQUAL_WEIGHT</option><option>SCORE_WEIGHTED</option></select></label>
               <label><span>{tr('Maximum single-position weight')}</span><input type="number" min="0.01" max="1" step="0.01" value={maxWeight} onChange={(event) => setMaxWeight(Number(event.target.value))} /></label>
               <label><span>{tr('Rebalance')}</span><select value={rebalance} onChange={(event) => setRebalance(event.target.value as RebalanceRule)}><option>DAILY</option><option>WEEKLY</option><option>MONTHLY</option></select></label>
+              <label><span>{tr('Quoted spread (bps)')}</span><input type="number" min="0" step="0.1" value={spreadBps} onChange={(event) => setSpreadBps(Number(event.target.value))} /></label>
+              <label><span>{tr('Market impact (bps)')}</span><input type="number" min="0" step="0.1" value={marketImpactBps} onChange={(event) => setMarketImpactBps(Number(event.target.value))} /><small>{tr('Scaled by the square root of order participation in bar volume.')}</small></label>
             </div>
             {combination === 'USER_DEFINED_WEIGHT' && <div className={`weight-check ${userWeightsValid ? 'valid' : 'invalid'}`}><span>{tr('User-defined weight total')}</span><strong>{userWeightTotal.toFixed(4)}</strong><small>{userWeightsValid ? tr('VALID') : tr('Must equal 1.0')}</small></div>}
           </div>
@@ -385,7 +397,7 @@ export default function PortfolioLabPage({
               <code>{record.portfolio_research_id}</code>
             </div>
             <div className="portfolio-definition-strip">
-              <span>{record.combination}</span><span>{record.construction.selection === 'TOP_N' ? `Top ${record.construction.top_n}` : `Top ${record.construction.top_percent}%`}</span><span>{record.construction.weighting}</span><span>{record.rebalance}</span><span>Max {pct(record.construction.max_single_position_weight)}</span>
+              <span>{record.combination}</span><span>{record.construction.mode ?? 'LONG_ONLY'}</span><span>{record.construction.selection === 'TOP_N' ? `Top ${record.construction.top_n}` : `Top ${record.construction.top_percent}%`}</span><span>{record.construction.weighting}</span><span>{record.rebalance}</span><span>Max {pct(record.construction.max_single_position_weight)}</span>
             </div>
             <div className="metric-strip portfolio-metrics">
               <div><span>{tr('Gross return')}</span><strong>{pct(latest.cost_preview.gross_return)}</strong></div>
@@ -393,6 +405,8 @@ export default function PortfolioLabPage({
               <div><span>{tr('Turnover')}</span><strong>{latest.cost_preview.turnover.toFixed(2)}×</strong></div>
               <div><span>{tr('Fees')}</span><strong>${latest.cost_preview.fees.toFixed(2)}</strong></div>
               <div><span>{tr('Slippage')}</span><strong>${latest.cost_preview.slippage.toFixed(2)}</strong></div>
+              <div><span>{tr('Spread')}</span><strong>${(latest.cost_preview.spread_cost ?? 0).toFixed(2)}</strong></div>
+              <div><span>{tr('Market impact')}</span><strong>${(latest.cost_preview.market_impact ?? 0).toFixed(2)}</strong></div>
               <div><span>{tr('Max drawdown')}</span><strong>{pct(latest.cost_preview.max_drawdown)}</strong></div>
               <div><span>{tr('Position count')}</span><strong>{latest.cost_preview.positions}</strong></div>
               <div><span>{tr('Rebalances')}</span><strong>{latest.cost_preview.rebalance_count}</strong></div>

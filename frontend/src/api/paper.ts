@@ -1,5 +1,5 @@
 import { readJson } from './client'
-import type { CreatePaperSessionInput, MarketDataProviderStatus, PaperAccount, PaperOperationalHealth, PaperOperationEvent, PaperRecoveryReport, PaperSessionSnapshot, PaperTrace } from '../types/paper'
+import type { CreatePaperSessionInput, MarketDataProviderStatus, PaperAccount, PaperOperationalHealth, PaperOperationEvent, PaperRecoveryReport, PaperSessionSnapshot, PaperTrace, SimulationSpeed } from '../types/paper'
 import { addCreatedObjectToCurrentWorkspace } from './workspaces'
 
 async function requestJson(endpoint: string, init?: RequestInit): Promise<unknown> {
@@ -63,6 +63,20 @@ export async function transitionPaperSession(sessionId: string, action: 'start' 
   const updated = requireSession(await requestJson(endpoint, { method: 'POST' }), endpoint)
   if (updated.research_run_id) await addCreatedObjectToCurrentWorkspace('RUN', updated.research_run_id)
   return updated
+}
+
+export async function stepHistoricalPaperSession(sessionId: string): Promise<PaperSessionSnapshot> {
+  const endpoint = `/api/paper-sessions/${encodeURIComponent(sessionId)}/step`
+  return requireSession(await requestJson(endpoint, { method: 'POST' }), endpoint)
+}
+
+export async function setHistoricalPaperSpeed(sessionId: string, speed: SimulationSpeed): Promise<PaperSessionSnapshot> {
+  const endpoint = `/api/paper-sessions/${encodeURIComponent(sessionId)}/simulation-speed`
+  return requireSession(await requestJson(endpoint, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ speed }),
+  }), endpoint)
 }
 
 export async function cancelPaperOrder(sessionId: string, orderId: string): Promise<PaperSessionSnapshot> {

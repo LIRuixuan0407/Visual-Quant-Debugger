@@ -18,6 +18,7 @@ from .models import (
     PaperTrace,
     RecoveryCheckpoint,
     RuntimeConsistencyReport,
+    SimulationSpeed,
 )
 from .repository import PaperSessionNotFoundError, PaperSessionRepository
 from .service import PaperSessionService, PaperSessionSupervisor, paper_store
@@ -48,5 +49,6 @@ __all__ = [
     "PaperTrace",
     "RecoveryCheckpoint",
     "RuntimeConsistencyReport",
+    "SimulationSpeed",
     "paper_store",
 ]

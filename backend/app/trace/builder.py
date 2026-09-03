@@ -303,6 +303,8 @@ def build_trace(
                 traded_notional=execution.traded_notional,
                 fee=execution.fee,
                 slippage=execution.slippage,
+                spread_cost=execution.spread_cost,
+                market_impact=execution.market_impact,
                 executed_at=execution.executed_at,
                 source_order_id=execution.source_order_id,
             )

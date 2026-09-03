@@ -3,10 +3,12 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import RequestResponseEndpoint
+from starlette.responses import Response
 
 from app.api import router as replay_router
 from app.api.workspaces import workspace_service
@@ -52,6 +54,31 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PATCH", "DELETE"],
     allow_headers=["Content-Type"],
 )
+
+
+def _demo_mode_enabled() -> bool:
+    return os.environ.get("VQD_DEMO_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+@app.middleware("http")
+async def protect_public_demo(request: Request, call_next: RequestResponseEndpoint) -> Response:
+    if (
+        _demo_mode_enabled()
+        and request.url.path.startswith("/api/")
+        and request.method.upper() not in {"GET", "HEAD", "OPTIONS"}
+    ):
+        return JSONResponse(
+            status_code=403,
+            content={
+                "detail": (
+                    "This VQD instance is running in read-only demo mode. "
+                    "Run VQD locally for research mutations and credential-backed integrations."
+                )
+            },
+        )
+    return await call_next(request)
+
+
 app.include_router(replay_router)
 
 

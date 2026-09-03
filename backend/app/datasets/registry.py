@@ -12,7 +12,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from app.data import load_pair_csv
-from app.market_data.models import MarketBar
+from app.market_data.models import MarketBar, MarketDataTimeframe
 from app.models import MarketFrame
 from app.workspace import default_workspace_root
 
@@ -29,10 +29,26 @@ from .models import (
     DatasetRevisionDiff,
 )
 
-CANONICAL_FIELDS = ("timestamp", "symbol", "open", "high", "low", "close", "volume")
+CANONICAL_FIELDS = (
+    "timestamp",
+    "available_at",
+    "symbol",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+)
 REQUIRED_FIELDS = ("timestamp", "symbol", "close")
 ALIASES = {
     "timestamp": ("timestamp", "datetime", "date", "time"),
+    "available_at": (
+        "available_at",
+        "knowledge_time",
+        "known_at",
+        "release_time",
+        "published_at",
+    ),
     "symbol": ("symbol", "ticker", "asset", "instrument"),
     "close": ("close", "adj_close", "adjusted_close", "price", "last"),
     "open": ("open",),
@@ -52,6 +68,7 @@ class _PreviewContent:
 class _NormalizedRow:
     original_index: int
     timestamp: datetime
+    available_at: datetime
     symbol: str
     fields: dict[str, float]
 
@@ -305,6 +322,24 @@ class DatasetRegistry:
                         "Naive timestamps require an explicit IANA timezone before import"
                     )
                 timestamp = timestamp.replace(tzinfo=source_timezone)
+            timestamp = timestamp.astimezone(UTC)
+            availability_source = request.mapping.get("available_at")
+            if availability_source is None or not row[availability_source].strip():
+                available_at = timestamp
+            else:
+                available_at = _parse_datetime(row[availability_source].strip(), line)
+                if available_at.tzinfo is None or available_at.utcoffset() is None:
+                    if source_timezone is None:
+                        raise DatasetValidationError(
+                            "Naive available_at values require an explicit IANA timezone "
+                            "before import"
+                        )
+                    available_at = available_at.replace(tzinfo=source_timezone)
+                available_at = available_at.astimezone(UTC)
+                if available_at < timestamp:
+                    raise DatasetValidationError(
+                        f"available_at cannot precede timestamp at CSV line {line}"
+                    )
             fields: dict[str, float] = {}
             for canonical in ("open", "high", "low", "close", "volume"):
                 source = request.mapping.get(canonical)
@@ -318,7 +353,7 @@ class DatasetRegistry:
                     ) from exc
             if fields["close"] <= 0:
                 raise DatasetValidationError(f"close must be positive at CSV line {line}")
-            normalized.append(_NormalizedRow(index, timestamp.astimezone(UTC), raw_symbol, fields))
+            normalized.append(_NormalizedRow(index, timestamp, available_at, raw_symbol, fields))
         if missing_close:
             raise DatasetValidationError(
                 f"close is missing in {missing_close} row(s); imports never forward-fill prices"
@@ -376,6 +411,7 @@ class DatasetRegistry:
         semantic = [
             {
                 "timestamp": row.timestamp.isoformat(),
+                "available_at": row.available_at.isoformat(),
                 "symbol": row.symbol,
                 **{key: repr(value) for key, value in sorted(row.fields.items())},
             }
@@ -435,6 +471,9 @@ class DatasetRegistry:
             synchronized_bar_count=int(synchronized_count),
             start_time=rows[0].timestamp,
             end_time=rows[-1].timestamp,
+            available_start_time=min(row.available_at for row in rows),
+            available_end_time=max(row.available_at for row in rows),
+            has_delayed_availability=any(row.available_at > row.timestamp for row in rows),
             created_at=datetime.now(UTC),
             content_fingerprint=fingerprint,
             dataset_family_id=family_id,
@@ -454,17 +493,24 @@ class DatasetRegistry:
         target.mkdir(parents=True, exist_ok=False)
         data_path = target / "data.csv"
         fields = definition.fields
+        include_availability = definition.has_delayed_availability
+        fieldnames = (
+            ("timestamp", "available_at", "symbol", *fields)
+            if include_availability
+            else ("timestamp", "symbol", *fields)
+        )
         with data_path.open("w", encoding="utf-8", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=("timestamp", "symbol", *fields))
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
             writer.writeheader()
             for row in rows:
-                writer.writerow(
-                    {
-                        "timestamp": row.timestamp.isoformat().replace("+00:00", "Z"),
-                        "symbol": row.symbol,
-                        **{field: row.fields.get(field, "") for field in fields},
-                    }
-                )
+                values = {
+                    "timestamp": row.timestamp.isoformat().replace("+00:00", "Z"),
+                    "symbol": row.symbol,
+                    **{field: row.fields.get(field, "") for field in fields},
+                }
+                if include_availability:
+                    values["available_at"] = row.available_at.isoformat().replace("+00:00", "Z")
+                writer.writerow(values)
         self._write_metadata(target / "metadata.json", definition)
 
     def import_exact(
@@ -493,7 +539,13 @@ class DatasetRegistry:
 
         columns, raw_rows = self._read_csv(data_csv)
         expected_columns = ("timestamp", "symbol", *definition.fields)
-        if columns != expected_columns:
+        expected_columns_with_availability = (
+            "timestamp",
+            "available_at",
+            "symbol",
+            *definition.fields,
+        )
+        if columns not in {expected_columns, expected_columns_with_availability}:
             raise DatasetValidationError(
                 f"Dataset '{definition.dataset_id}' canonical CSV columns do not match metadata"
             )
@@ -507,10 +559,26 @@ class DatasetRegistry:
                 for field in definition.fields
                 if raw.get(field, "").strip()
             }
+            normalized_timestamp = timestamp.astimezone(UTC)
+            raw_available_at = raw.get("available_at", "").strip()
+            if not raw_available_at:
+                available_at = normalized_timestamp
+            else:
+                parsed_available_at = _parse_datetime(raw_available_at, index + 2)
+                if parsed_available_at.tzinfo is None or parsed_available_at.utcoffset() is None:
+                    raise DatasetValidationError(
+                        "Portable Dataset available_at values must include a timezone"
+                    )
+                available_at = parsed_available_at.astimezone(UTC)
+            if available_at < normalized_timestamp:
+                raise DatasetValidationError(
+                    "Portable Dataset available_at cannot precede timestamp"
+                )
             rows.append(
                 _NormalizedRow(
                     original_index=index,
-                    timestamp=timestamp.astimezone(UTC),
+                    timestamp=normalized_timestamp,
+                    available_at=available_at,
                     symbol=raw["symbol"].strip(),
                     fields=fields,
                 )
@@ -612,6 +680,7 @@ class DatasetRegistry:
             _NormalizedRow(
                 original_index=index,
                 timestamp=bar.event_time.astimezone(UTC),
+                available_at=bar.available_at.astimezone(UTC),
                 symbol=bar.symbol,
                 fields={
                     "open": bar.open,
@@ -687,6 +756,9 @@ class DatasetRegistry:
             synchronized_bar_count=len(intersection),
             start_time=rows[0].timestamp,
             end_time=rows[-1].timestamp,
+            available_start_time=min(row.available_at for row in rows),
+            available_end_time=max(row.available_at for row in rows),
+            has_delayed_availability=any(row.available_at > row.timestamp for row in rows),
             created_at=datetime.now(UTC),
             content_fingerprint=fingerprint,
             dataset_family_id=family_id,
@@ -764,6 +836,9 @@ class DatasetRegistry:
             synchronized_bar_count=len(frames),
             start_time=frames[0].timestamp,
             end_time=frames[-1].timestamp,
+            available_start_time=frames[0].knowledge_time,
+            available_end_time=frames[-1].knowledge_time,
+            has_delayed_availability=False,
             created_at=datetime(2024, 1, 1, tzinfo=UTC),
             content_fingerprint=fingerprint,
             dataset_family_id="dataset-family-pairs-sample",
@@ -845,18 +920,30 @@ class DatasetRegistry:
             if definition is None:
                 raise KeyError(f"Dataset '{dataset_id}' was not found")
             grouped: dict[datetime, dict[str, dict[str, float]]] = defaultdict(dict)
+            availability: dict[datetime, dict[str, datetime]] = defaultdict(dict)
             path = self.datasets_root / dataset_id / "data.csv"
             with path.open(encoding="utf-8", newline="") as handle:
                 for row in csv.DictReader(handle):
                     timestamp = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00"))
+                    raw_available_at = row.get("available_at", "")
+                    available_at = (
+                        timestamp
+                        if not raw_available_at
+                        else datetime.fromisoformat(raw_available_at.replace("Z", "+00:00"))
+                    )
                     fields = {
                         field: float(row[field])
                         for field in definition.fields
                         if row.get(field, "") != ""
                     }
                     grouped[timestamp][row["symbol"]] = fields
+                    availability[timestamp][row["symbol"]] = available_at
             frames = tuple(
-                MarketFrame(timestamp=timestamp, values=values)
+                MarketFrame(
+                    timestamp=timestamp,
+                    values=values,
+                    available_at=max(availability[timestamp].values()),
+                )
                 for timestamp, values in sorted(grouped.items())
             )
         symbols = required_symbols or tuple(
@@ -883,6 +970,109 @@ class DatasetRegistry:
             for frame in frames
             if all(symbol in frame.values for symbol in symbols)
         )
+
+    def load_market_bars(
+        self,
+        dataset_id: str,
+        required_symbols: tuple[str, ...] = (),
+    ) -> tuple[MarketBar, ...]:
+        """Load canonical Dataset rows as causal market events for Historical Paper."""
+
+        definition = self.get(dataset_id)
+        if definition is None:
+            raise KeyError(f"Dataset '{dataset_id}' was not found")
+        symbols = tuple(symbol.upper() for symbol in required_symbols) or definition.symbols
+        selected = set(symbols)
+        if dataset_id == "pairs-sample-v1":
+            bars: list[MarketBar] = []
+            for frame in self._built_in_frames():
+                for symbol in symbols:
+                    if symbol not in frame.values:
+                        continue
+                    close = frame.value(symbol, "close")
+                    bars.append(
+                        MarketBar(
+                            symbol=symbol,
+                            timeframe="1Day",
+                            event_time=frame.timestamp,
+                            available_at=frame.knowledge_time,
+                            received_at=frame.knowledge_time,
+                            open=close,
+                            high=close,
+                            low=close,
+                            close=close,
+                            volume=0.0,
+                            provider="historical",
+                            feed=dataset_id,
+                            provider_event_id=(
+                                f"{dataset_id}:{symbol}:{frame.timestamp.isoformat()}"
+                            ),
+                        )
+                    )
+            return tuple(bars)
+        timeframe = _market_timeframe(definition.frequency)
+        path = self.datasets_root / dataset_id / "data.csv"
+        bars = []
+        with path.open(encoding="utf-8", newline="") as handle:
+            for row in csv.DictReader(handle):
+                symbol = row["symbol"].strip().upper()
+                if symbol not in selected:
+                    continue
+                event_time = datetime.fromisoformat(row["timestamp"].replace("Z", "+00:00"))
+                raw_available_at = row.get("available_at", "")
+                available_at = (
+                    event_time
+                    if not raw_available_at
+                    else datetime.fromisoformat(raw_available_at.replace("Z", "+00:00"))
+                )
+                close = float(row["close"])
+                open_value = float(row.get("open") or close)
+                high = float(row.get("high") or max(open_value, close))
+                low = float(row.get("low") or min(open_value, close))
+                volume = float(row.get("volume") or 0.0)
+                bars.append(
+                    MarketBar(
+                        symbol=symbol,
+                        timeframe=timeframe,
+                        event_time=event_time,
+                        available_at=available_at,
+                        received_at=available_at,
+                        open=open_value,
+                        high=high,
+                        low=low,
+                        close=close,
+                        volume=volume,
+                        provider="historical",
+                        feed=dataset_id,
+                        provider_event_id=f"{dataset_id}:{symbol}:{event_time.isoformat()}",
+                    )
+                )
+        return tuple(sorted(bars, key=lambda bar: (bar.available_at, bar.event_time, bar.symbol)))
+
+
+def _market_timeframe(frequency: str) -> MarketDataTimeframe:
+    normalized = frequency.strip().lower().replace(" ", "")
+    mapping: dict[str, MarketDataTimeframe] = {
+        "60s": "1Min",
+        "1min": "1Min",
+        "300s": "5Min",
+        "5min": "5Min",
+        "900s": "15Min",
+        "15min": "15Min",
+        "3600s": "1Hour",
+        "1hour": "1Hour",
+        "1h": "1Hour",
+        "1d": "1Day",
+        "1day": "1Day",
+        "86400s": "1Day",
+        "daily": "1Day",
+    }
+    try:
+        return mapping[normalized]
+    except KeyError as exc:
+        raise DatasetValidationError(
+            f"Dataset frequency '{frequency}' is not supported by Historical Paper"
+        ) from exc
 
 
 def _is_float(value: str) -> bool:

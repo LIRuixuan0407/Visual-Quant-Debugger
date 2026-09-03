@@ -154,6 +154,8 @@ class ExecutionEvent(TraceModel):
     slippage: float
     executed_at: datetime
     source_order_id: str
+    spread_cost: float = 0.0
+    market_impact: float = 0.0
 
     _aware_executed = field_validator("executed_at")(_require_aware)
 

@@ -63,6 +63,8 @@ class CostStressPoint(DiagnosisModel):
     total_friction_bps: float
     fee_bps: float
     slippage_bps: float
+    spread_bps: float = 0.0
+    market_impact_bps: float = 0.0
     metrics: DiagnosticMetrics
 
 
@@ -90,6 +92,8 @@ class DiagnosisSourceRun(DiagnosisModel):
     current_lookback: int
     fee_bps: float
     slippage_bps: float
+    spread_bps: float = 0.0
+    market_impact_bps: float = 0.0
     sensitivity_parameter: str | None = "lookback"
 
 
@@ -214,10 +218,14 @@ class VolatilityDiagnostics(DiagnosisModel):
 class WhatIfInputs(DiagnosisModel):
     fee_bps: float = Field(ge=0, le=10_000)
     slippage_bps: float = Field(ge=0, le=10_000)
+    spread_bps: float = Field(default=0.0, ge=0, le=10_000)
+    market_impact_bps: float = Field(default=0.0, ge=0, le=10_000)
     additional_execution_delay_bars: Literal[0, 1, 2] = 0
     strategy_parameters: dict[str, int | float] = Field(default_factory=dict)
 
-    _finite_values = field_validator("fee_bps", "slippage_bps")(_finite)
+    _finite_values = field_validator("fee_bps", "slippage_bps", "spread_bps", "market_impact_bps")(
+        _finite
+    )
 
     @field_validator("strategy_parameters")
     @classmethod

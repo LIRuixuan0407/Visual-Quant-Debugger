@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import hashlib
+import os
+from contextlib import suppress
 from datetime import datetime
+from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.datasets import dataset_registry
@@ -64,6 +68,46 @@ def _require_local(request: Request) -> None:
         )
 
 
+def _require_python_upload(request: Request) -> None:
+    host = request.client.host if request.client is not None else ""
+    trusted_container = os.environ.get("VQD_TRUST_PYTHON_UPLOADS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if host not in {"127.0.0.1", "::1", "localhost", "testclient"} and not trusted_container:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Python uploads are disabled for non-local clients. "
+                "Set VQD_TRUST_PYTHON_UPLOADS=true only when the VQD server "
+                "is bound to a trusted local interface."
+            ),
+        )
+
+
+def _store_uploaded_factor(content: bytes, filename: str | None) -> Path:
+    if len(content) > 2 * 1024 * 1024:
+        raise ValueError("Python source uploads are limited to 2 MiB")
+    original = Path(filename or "factor.py")
+    if original.suffix.lower() != ".py":
+        raise ValueError("Only .py source files can be uploaded")
+    try:
+        content.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        raise ValueError("Python source must be UTF-8 encoded") from exc
+    digest = hashlib.sha256(content).hexdigest()[:12]
+    safe_stem = "".join(
+        char if char.isalnum() or char in {"-", "_"} else "-" for char in original.stem
+    )
+    root = factor_registry.workspace_root / ".vqd" / "user-code" / "factors"
+    root.mkdir(parents=True, exist_ok=True)
+    target = root / f"{safe_stem or 'factor'}-{digest}.py"
+    target.write_bytes(content)
+    return target
+
+
 @router.get("/factors", response_model=tuple[FactorDefinition, ...])
 def list_factors(
     category: str | None = None,
@@ -101,6 +145,40 @@ def import_factor(payload: ImportFactorRequest, request: Request) -> ImportFacto
             ),
         )
     except (KeyError, TypeError, ValueError) as exc:
+        raise _unprocessable(exc) from exc
+
+
+@router.post("/factors/upload", response_model=ImportFactorResponse, status_code=201)
+async def upload_factor(
+    request: Request,
+    file: Annotated[UploadFile, File()],
+    class_name: Annotated[str | None, Form()] = None,
+) -> ImportFactorResponse:
+    _require_python_upload(request)
+    target = _store_uploaded_factor(await file.read(), file.filename)
+    try:
+        registration = factor_registry.add(target, class_name)
+        definition = factor_registry.definition(registration.factor_id)
+        return ImportFactorResponse(
+            factor=definition,
+            checks=(
+                "SYNTAX",
+                "VQD_FACTOR_SDK",
+                "FACTOR_ID",
+                "PARAMETERS",
+                "REQUIRED_FIELDS",
+                "LOOKBACK",
+                "POINT_IN_TIME_CONTEXT",
+                "SOURCE_FINGERPRINT",
+            ),
+            security_model=(
+                "Trusted local Python: uploaded source is persisted in the VQD workspace and "
+                "executes with backend process permissions; VQD does not provide a sandbox."
+            ),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        with suppress(OSError):
+            target.unlink()
         raise _unprocessable(exc) from exc
 
 

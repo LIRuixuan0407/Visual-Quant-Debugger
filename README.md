@@ -93,7 +93,7 @@ VQD keeps the dataset revision, timestamps, universe information, and available 
 
 Test price/volume, fundamental, mixed, or custom factors with explicit point-in-time boundaries.
 
-Research includes IC, Rank IC, quantile returns, spread, coverage, turnover, and staged Research / Validation / Holdout evidence.
+Research includes IC, Rank IC, quantile returns, spread, coverage, turnover, and staged Research / Validation / Holdout evidence. IC and Rank IC include Newey-West HAC inference with confidence intervals and FDR-adjusted q-values; long-short spread includes a moving-block bootstrap interval.
 
 Holdout data is not silently used to improve the idea.
 
@@ -101,7 +101,7 @@ Holdout data is not silently used to improve the idea.
 
 Combine existing factor studies into a transparent multi-factor portfolio.
 
-Choose the factors, directions, weights, ranking method, filters, selection rule, position weighting, rebalance schedule, and position cap. The backend records how every portfolio position was produced from factor evidence.
+Choose the factors, directions, weights, ranking method, filters, selection rule, position weighting, rebalance schedule, and position cap. Portfolios can be long-only or approximately dollar-neutral long/short. The backend records how every portfolio position was produced from factor evidence.
 
 No hidden optimizer is required. Portfolio Risk Decomposition keeps portfolio volatility, covariance/correlation, historical VaR / Expected Shortfall, and component risk contribution visible alongside the chosen weights.
 
@@ -175,6 +175,10 @@ VQD supports incremental forward validation and persistent local paper portfolio
 
 Paper cash, positions, orders, fills, fees, and P&L are owned by VQD. No broker account is required and real-money trading is intentionally outside the product scope.
 
+Historical Paper adds a simulated clock over a saved Dataset: start from an arbitrary historical knowledge-time, pause, advance one synchronized bar, or run at 1× / 10× / 100× / MAX speed. Bars are released by `available_at` (or `knowledge_time`) rather than merely by event timestamp, so delayed information is not exposed before it was knowable.
+
+Execution can include fixed fees/slippage, quoted spread, and a volume-participation market-impact model. The same assumptions flow through runs, paper execution, and Diagnose cost stress.
+
 ## What makes VQD different
 
 ### Evidence before conclusions
@@ -238,7 +242,7 @@ The hosted application is available here:
 
 **https://visual-quant-debugger-production.up.railway.app**
 
-The public deployment is intended for product exploration. External market-data features may require your own provider credentials.
+The public deployment is intended for product exploration. External market-data features may require your own provider credentials. Public showcases should run with `VQD_DEMO_MODE=true`, which blocks mutating `/api/*` requests.
 
 ## Run locally
 
@@ -256,13 +260,13 @@ Then open:
 http://localhost:8000
 ```
 
-VQD stores persistent workspace data under `.vqd` locally. In the provided container setup, the persistent workspace is mounted at `/data`.
+VQD stores persistent workspace data under `.vqd` locally. In the provided container setup, the persistent workspace is mounted at `/data`. The default Compose port is bound to `127.0.0.1` because trusted Python uploads execute with backend permissions.
 
 TDX market data requires no API key. Alpaca remains optional for US market data, and SEC filing downloads can use the provider settings in `.env.example`.
 
 ## Strategy and Factor extensibility
 
-VQD includes native strategy and factor SDKs for trusted local Python research.
+VQD includes native strategy and factor SDKs for trusted local Python research. Strategy and Factor pages accept either a backend-visible local path or a `.py` upload; uploads are especially useful when VQD runs in Docker.
 
 Custom factors can participate in the same Factor Research, Validation, Portfolio, Walk-Forward, Relationship, Discovery, and Research Snapshot workflow as built-in factors.
 

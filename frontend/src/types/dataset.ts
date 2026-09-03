@@ -24,6 +24,9 @@ export interface DatasetDefinition {
   synchronized_bar_count: number
   start_time: string
   end_time: string
+  available_start_time?: string | null
+  available_end_time?: string | null
+  has_delayed_availability?: boolean
   created_at: string
   content_fingerprint: string
   dataset_family_id?: string | null

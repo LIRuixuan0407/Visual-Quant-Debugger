@@ -50,12 +50,21 @@ def _lookback_candidates(train_bar_count: int, current: int) -> tuple[int, ...]:
 
 
 def _cost_split(
-    total_bps: float, original_fee: float, original_slippage: float
-) -> tuple[float, float]:
-    original_total = original_fee + original_slippage
-    fee_ratio = original_fee / original_total if original_total > 0 else 0.5
-    fee = total_bps * fee_ratio
-    return fee, total_bps - fee
+    total_bps: float,
+    original_fee: float,
+    original_slippage: float,
+    original_spread: float = 0.0,
+    original_impact: float = 0.0,
+) -> tuple[float, float, float, float]:
+    # A quoted spread contributes half its width to a one-way fill. Market impact is a
+    # coefficient whose realized cost still depends on order participation. The stress budget
+    # therefore scales these effective one-way assumptions while preserving their mix.
+    effective = (original_fee, original_slippage, original_spread / 2.0, original_impact)
+    original_total = sum(effective)
+    if original_total <= 0:
+        return total_bps / 2.0, total_bps / 2.0, 0.0, 0.0
+    scaled = tuple(total_bps * value / original_total for value in effective)
+    return scaled[0], scaled[1], scaled[2] * 2.0, scaled[3]
 
 
 def _observations(
@@ -237,6 +246,8 @@ def _what_if_support(record: BacktestRunRecord) -> WhatIfSupport:
     baseline_inputs = WhatIfInputs(
         fee_bps=float((record.parameter_values or {}).get("fee_bps", 5.0)),
         slippage_bps=float((record.parameter_values or {}).get("slippage_bps", 5.0)),
+        spread_bps=float((record.parameter_values or {}).get("spread_bps", 0.0)),
+        market_impact_bps=float((record.parameter_values or {}).get("market_impact_bps", 0.0)),
         additional_execution_delay_bars=0,
         strategy_parameters=({} if parameter is None else {parameter.key: parameter.current_value}),
     )
@@ -248,8 +259,8 @@ def _what_if_support(record: BacktestRunRecord) -> WhatIfSupport:
         calculation_details=(
             "Each scenario is a full deterministic rerun on the source run's recorded "
             "dataset and strategy revision.",
-            "Fees and slippage are applied to each executed side; execution delay never "
-            "forces an end-of-data fill.",
+            "Fees, fixed slippage, half quoted spread, and participation-based market impact "
+            "are applied to each executed side; execution delay never forces an end-of-data fill.",
             "Baseline inputs remain the immutable assumptions recorded on the source run.",
         ),
     )
@@ -283,6 +294,8 @@ def run_what_if_scenario(record: BacktestRunRecord, inputs: WhatIfInputs) -> Wha
     effective_inputs = WhatIfInputs(
         fee_bps=inputs.fee_bps,
         slippage_bps=inputs.slippage_bps,
+        spread_bps=inputs.spread_bps,
+        market_impact_bps=inputs.market_impact_bps,
         additional_execution_delay_bars=inputs.additional_execution_delay_bars,
         strategy_parameters=strategy_parameters,
     )
@@ -291,6 +304,8 @@ def run_what_if_scenario(record: BacktestRunRecord, inputs: WhatIfInputs) -> Wha
         parameter_updates={
             "fee_bps": effective_inputs.fee_bps,
             "slippage_bps": effective_inputs.slippage_bps,
+            "spread_bps": effective_inputs.spread_bps,
+            "market_impact_bps": effective_inputs.market_impact_bps,
             **effective_inputs.strategy_parameters,
         },
         additional_delay=effective_inputs.additional_execution_delay_bars,
@@ -362,13 +377,24 @@ def _diagnose_native_run(trace_id: str, record: BacktestRunRecord) -> DiagnosisR
             )
     original_fee = float((record.parameter_values or {}).get("fee_bps", 5.0))
     original_slippage = float((record.parameter_values or {}).get("slippage_bps", 5.0))
+    original_spread = float((record.parameter_values or {}).get("spread_bps", 0.0))
+    original_impact = float((record.parameter_values or {}).get("market_impact_bps", 0.0))
+    current_friction = original_fee + original_slippage + original_spread / 2.0 + original_impact
     cost_points: list[CostStressPoint] = []
-    for total_bps in (0.0, 5.0, 10.0, 15.0, 20.0):
-        fee_bps, slippage_bps = _cost_split(total_bps, original_fee, original_slippage)
+    stress_grid = sorted({0.0, 5.0, 10.0, 15.0, 20.0, current_friction})
+    for total_bps in stress_grid:
+        fee_bps, slippage_bps, spread_bps, market_impact_bps = _cost_split(
+            total_bps, original_fee, original_slippage, original_spread, original_impact
+        )
         rerun = _native_trace(
             _native_rerun(
                 record,
-                parameter_updates={"fee_bps": fee_bps, "slippage_bps": slippage_bps},
+                parameter_updates={
+                    "fee_bps": fee_bps,
+                    "slippage_bps": slippage_bps,
+                    "spread_bps": spread_bps,
+                    "market_impact_bps": market_impact_bps,
+                },
             )
         )
         cost_points.append(
@@ -376,6 +402,8 @@ def _diagnose_native_run(trace_id: str, record: BacktestRunRecord) -> DiagnosisR
                 total_friction_bps=total_bps,
                 fee_bps=fee_bps,
                 slippage_bps=slippage_bps,
+                spread_bps=spread_bps,
+                market_impact_bps=market_impact_bps,
                 metrics=_trace_window_metrics(rerun, initial_cash, 0, bar_count),
             )
         )
@@ -401,6 +429,8 @@ def _diagnose_native_run(trace_id: str, record: BacktestRunRecord) -> DiagnosisR
         current_lookback=current_value,
         fee_bps=original_fee,
         slippage_bps=original_slippage,
+        spread_bps=original_spread,
+        market_impact_bps=original_impact,
         sensitivity_parameter=sensitivity_parameter,
     )
     split = TrainTestSplit(

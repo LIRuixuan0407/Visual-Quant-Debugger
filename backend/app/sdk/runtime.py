@@ -60,6 +60,8 @@ class StrategyRuntime:
         initial_cash: float = 100_000.0,
         fee_bps: float = 5.0,
         slippage_bps: float = 5.0,
+        spread_bps: float = 0.0,
+        market_impact_bps: float = 0.0,
         additional_execution_delay_bars: int = 0,
         execution_mode: Literal["simulated", "external"] = "simulated",
         fundamental_repository: FundamentalRepository | None = None,
@@ -76,7 +78,12 @@ class StrategyRuntime:
         self.strategy.configure(self.parameters)
         self.portfolio = Portfolio(initial_cash)
         self.initial_cash = initial_cash
-        self.execution_engine = ExecutionEngine(fee_bps, slippage_bps)
+        self.execution_engine = ExecutionEngine(
+            fee_bps=fee_bps,
+            slippage_bps=slippage_bps,
+            spread_bps=spread_bps,
+            market_impact_bps=market_impact_bps,
+        )
         self.additional_execution_delay_bars = additional_execution_delay_bars
         self.execution_mode = execution_mode
         self.fundamental_repository = fundamental_repository or FundamentalRepository()
@@ -178,9 +185,17 @@ class StrategyRuntime:
                 source_signal_id=pending.signal_id,
                 target_state=intent.target_state,
             )
+            volumes = {
+                symbol: fields["volume"]
+                for symbol, fields in frame.values.items()
+                if "volume" in fields
+            }
             created_executions = (
                 self.execution_engine.execute_at_prices(
-                    created_orders, prices=prices, executed_at=frame.knowledge_time
+                    created_orders,
+                    prices=prices,
+                    volumes=volumes,
+                    executed_at=frame.knowledge_time,
                 )
                 if self.execution_mode == "simulated"
                 else ()
@@ -283,8 +298,8 @@ class StrategyRuntime:
                     previous_state="CURRENT",
                     next_state="CURRENT",
                 )
-            if intent.transition:
-                raise RuntimeError("Historical warm-up reached an actionable strategy transition")
+            # Historical Paper may begin in the middle of a regime. Warm-up deliberately
+            # observes strategy state without creating pre-session orders or fills.
             self._previous_target_signature = self._signature(intent)
             snapshot = self.portfolio.mark_prices(self._close_prices(frame))
             row = RuntimeRow(

@@ -41,6 +41,7 @@ from app.paper import (
     PaperSessionSnapshot,
     PaperTrace,
     RuntimeConsistencyReport,
+    SimulationSpeed,
     paper_store,
 )
 from app.sdk.registry import strategy_registry
@@ -51,6 +52,12 @@ router = APIRouter(prefix="/api/paper-sessions", tags=["paper-sessions"])
 operations_router = APIRouter(prefix="/api/paper/sessions", tags=["paper-operations"])
 account_router = APIRouter(prefix="/api/paper-accounts", tags=["paper-accounts"])
 dataset_refresh_router = APIRouter(prefix="/api/datasets", tags=["datasets"])
+
+
+class SimulationSpeedRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    speed: SimulationSpeed
 
 
 class HistoricalDatasetRequest(HistoricalBarsRequest):
@@ -339,7 +346,14 @@ def create_paper_session(request: CreatePaperSession) -> PaperSessionSnapshot:
             )
         if request.provider == "fake":
             raise ValueError("The fake market provider is available to backend tests only")
-        if request.provider == "tdx":
+        if request.clock_mode == "LIVE" and request.provider == "historical":
+            raise ValueError("The historical provider requires clock_mode=HISTORICAL")
+        if request.clock_mode == "LIVE" and request.timeframe != "1Min":
+            raise ValueError("Live Paper currently consumes 1Min streaming bars only")
+        if request.clock_mode == "HISTORICAL" and request.provider not in {"historical", "alpaca"}:
+            # provider is ignored for Historical Paper, but reject conflicting explicit values.
+            raise ValueError("Historical Paper reads market data from dataset_id")
+        if request.provider == "tdx" and request.clock_mode == "LIVE":
             if request.feed != "tdx":
                 raise ValueError("TDX paper sessions must use the 'tdx' feed")
             region = cast(
@@ -352,7 +366,7 @@ def create_paper_session(request: CreatePaperSession) -> PaperSessionSnapshot:
             )
             for symbol in request.symbols:
                 parse_tdx_symbol(symbol, region=region)
-        if request.provider == "alpaca":
+        if request.provider == "alpaca" and request.clock_mode == "LIVE":
             if request.market_session != "US_REGULAR":
                 raise ValueError("Alpaca market data supports US paper sessions only")
             if request.feed not in {"iex", "sip"}:
@@ -402,6 +416,21 @@ async def resume_paper_session(session_id: str) -> PaperSessionSnapshot:
 @router.post("/{session_id}/stop", response_model=PaperSessionSnapshot)
 async def stop_paper_session(session_id: str) -> PaperSessionSnapshot:
     return await _transition(session_id, paper_store.service.stop)
+
+
+@router.post("/{session_id}/step", response_model=PaperSessionSnapshot)
+async def step_historical_paper_session(session_id: str) -> PaperSessionSnapshot:
+    return await _transition(session_id, paper_store.service.step_historical)
+
+
+@router.patch("/{session_id}/simulation-speed", response_model=PaperSessionSnapshot)
+async def set_historical_paper_speed(
+    session_id: str, request: SimulationSpeedRequest
+) -> PaperSessionSnapshot:
+    async def update_speed(value: str) -> PaperSessionSnapshot:
+        return await paper_store.service.set_simulation_speed(value, request.speed)
+
+    return await _transition(session_id, update_speed)
 
 
 @operations_router.get("/{session_id}/health", response_model=PaperOperationalHealth)

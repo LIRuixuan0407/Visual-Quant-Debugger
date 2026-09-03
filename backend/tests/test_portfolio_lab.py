@@ -389,3 +389,52 @@ def test_portfolio_lab_creates_native_strategy_and_uses_existing_execution_runti
     ]
     assert factor_dependencies
     assert all(item.available_at <= item.used_at for item in factor_dependencies)
+
+
+def test_portfolio_lab_long_short_targets_are_dollar_neutral_and_runtime_executable(
+    tmp_path: Path,
+) -> None:
+    engine, datasets, factor_repository, ids = _portfolio_engine(tmp_path)
+    record = engine.create(
+        CreatePortfolioResearch(
+            name="Long short portfolio",
+            factors=tuple(
+                PortfolioFactorRef(research_id=research_id, weight=1 / 3) for research_id in ids
+            ),
+            combination="RANK_AVERAGE",
+            construction={
+                "mode": "LONG_SHORT",
+                "selection": "TOP_N",
+                "top_n": 2,
+                "top_percent": 20,
+                "weighting": "EQUAL_WEIGHT",
+                "max_single_position_weight": 1.0,
+            },
+            rebalance="MONTHLY",
+            gross_notional=20_000,
+        )
+    )
+    snapshot = record.stages[0].snapshots[-1]
+    weights = [item.target_weight for item in snapshot.positions if item.selected]
+    assert any(value > 0 for value in weights)
+    assert any(value < 0 for value in weights)
+    assert sum(weights) == pytest.approx(0.0, abs=1e-12)
+    assert sum(abs(value) for value in weights) == pytest.approx(1.0, abs=1e-12)
+
+    strategies = StrategyRegistry(tmp_path)
+    artifact = PortfolioStrategyFactory(strategies, factor_repository, tmp_path).create(record)
+    result = execute_open_run(
+        strategy_id=artifact.strategy_id,
+        dataset_id=record.dataset_id,
+        parameters={},
+        strategy_registry=strategies,
+        dataset_registry=datasets,
+    )
+    assert result.status == "COMPLETED"
+    assert result.trace is not None
+    execution_sides = [
+        execution.side for event in result.trace.timeline for execution in event.execution_events
+    ]
+    assert execution_sides
+    assert "BUY" in execution_sides
+    assert "SELL" in execution_sides

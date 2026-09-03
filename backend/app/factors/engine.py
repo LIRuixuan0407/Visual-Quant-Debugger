@@ -39,6 +39,7 @@ from .models import (
     PeriodEvaluation,
     ResearchPeriod,
     ResearchStage,
+    StatisticalInference,
 )
 from .registry import FactorRegistry, factor_registry
 
@@ -96,6 +97,105 @@ def _is_monotonic(values: tuple[float | None, ...]) -> bool:
     if len(populated) < 3:
         return False
     return all(left <= right for left, right in zip(populated, populated[1:], strict=False))
+
+
+def _hac_mean_inference(values: list[float]) -> StatisticalInference | None:
+    """Newey-West inference for the mean of a serially correlated factor series."""
+    n = len(values)
+    if n < 3:
+        return None
+    array = np.asarray(values, dtype=float)
+    mean = float(array.mean())
+    centered = array - mean
+    lag = min(n - 1, max(1, int(math.floor(4 * (n / 100) ** (2 / 9)))))
+    long_run_variance = float(np.dot(centered, centered) / n)
+    for offset in range(1, lag + 1):
+        gamma = float(np.dot(centered[offset:], centered[:-offset]) / n)
+        weight = 1.0 - offset / (lag + 1)
+        long_run_variance += 2.0 * weight * gamma
+    variance_of_mean = max(long_run_variance, 0.0) / n
+    standard_error = math.sqrt(variance_of_mean)
+    if standard_error <= 1e-15:
+        return StatisticalInference(
+            method=f"Newey-West HAC (lag={lag})", observations=n, standard_error=0.0
+        )
+    t_stat = mean / standard_error
+    p_value = math.erfc(abs(t_stat) / math.sqrt(2.0))
+    return StatisticalInference(
+        method=f"Newey-West HAC (lag={lag})",
+        observations=n,
+        standard_error=standard_error,
+        t_stat=t_stat,
+        p_value=p_value,
+        ci_lower=mean - 1.96 * standard_error,
+        ci_upper=mean + 1.96 * standard_error,
+    )
+
+
+def _block_bootstrap_inference(values: list[float]) -> StatisticalInference | None:
+    """Deterministic moving-block bootstrap for long-short spread uncertainty."""
+    n = len(values)
+    if n < 5:
+        return None
+    array = np.asarray(values, dtype=float)
+    block = min(n, max(2, int(round(math.sqrt(n)))))
+    rng = np.random.default_rng(0)
+    means = np.empty(1000, dtype=float)
+    starts = np.arange(max(1, n - block + 1))
+    for sample_index in range(len(means)):
+        sample: list[float] = []
+        while len(sample) < n:
+            start = int(rng.choice(starts))
+            sample.extend(array[start : start + block].tolist())
+        means[sample_index] = float(np.mean(sample[:n]))
+    estimate = float(array.mean())
+    standard_error = float(np.std(means, ddof=1))
+    lower, upper = np.percentile(means, [2.5, 97.5])
+    below = float(np.mean(means <= 0.0))
+    above = float(np.mean(means >= 0.0))
+    p_value = min(1.0, 2.0 * min(below, above))
+    t_stat = None if standard_error <= 1e-15 else estimate / standard_error
+    return StatisticalInference(
+        method=f"Moving-block bootstrap (block={block}, samples=1000)",
+        observations=n,
+        standard_error=standard_error,
+        t_stat=t_stat,
+        p_value=p_value,
+        ci_lower=float(lower),
+        ci_upper=float(upper),
+    )
+
+
+def _apply_bh_fdr(horizons: list[HorizonEvaluation]) -> list[HorizonEvaluation]:
+    entries: list[tuple[int, str, float]] = []
+    fields = ("ic_inference", "rank_ic_inference", "long_short_inference")
+    for horizon_index, horizon in enumerate(horizons):
+        for field in fields:
+            inference = getattr(horizon, field)
+            if inference is not None and inference.p_value is not None:
+                entries.append((horizon_index, field, inference.p_value))
+    if not entries:
+        return horizons
+    ordered = sorted(enumerate(entries), key=lambda item: item[1][2])
+    adjusted = [1.0] * len(entries)
+    running = 1.0
+    m = len(entries)
+    for rank_index in range(m - 1, -1, -1):
+        original_index, (_, _, p_value) = ordered[rank_index]
+        rank = rank_index + 1
+        running = min(running, p_value * m / rank)
+        adjusted[original_index] = min(1.0, running)
+    result = list(horizons)
+    for entry_index, (horizon_index, field, _) in enumerate(entries):
+        horizon = result[horizon_index]
+        inference = getattr(horizon, field)
+        assert inference is not None
+        q_value = adjusted[entry_index]
+        updated_inference = inference.model_copy(
+            update={"q_value": q_value, "statistically_significant": q_value < 0.05}
+        )
+        result[horizon_index] = horizon.model_copy(update={field: updated_inference})
+    return result
 
 
 def _required_future(item: _ComputedObservation, horizon: int) -> float:
@@ -924,8 +1024,12 @@ class FactorResearchEngine:
                     coverage=observation_count / potential if potential else 0.0,
                     monotonic=_is_monotonic(quantiles),
                     timeline=tuple(timeline),
+                    ic_inference=_hac_mean_inference(daily_ic),
+                    rank_ic_inference=_hac_mean_inference(daily_rank_ic),
+                    long_short_inference=_block_bootstrap_inference(spreads),
                 )
             )
+        horizons = _apply_bh_fdr(horizons)
         return PeriodEvaluation(stage=stage, period=period, horizons=tuple(horizons))
 
     @staticmethod

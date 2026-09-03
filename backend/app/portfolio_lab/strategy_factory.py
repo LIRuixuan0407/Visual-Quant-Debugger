@@ -101,7 +101,7 @@ class {class_name}(VQDStrategy):
             (
                 "Generated from "
                 + record.portfolio_research_id
-                + "; long-only, point-in-time multi-factor portfolio."
+                + "; point-in-time multi-factor portfolio with explicit construction mode."
             )!r
         },
         data_requirements=DataRequirements(
@@ -188,15 +188,14 @@ class {class_name}(VQDStrategy):
                 if ranked
                 else 0
             )
-        selected = ranked[:count]
-        if {construction["weighting"]!r} == "SCORE_WEIGHTED" and selected:
-            floor = min(float(score.value) for _, score in selected)
-            raw = {{
-                symbol: max(float(score.value) - floor, 0.0) + 1e-9
-                for symbol, score in selected
-            }}
-        else:
-            raw = {{symbol: 1.0 for symbol, _ in selected}}
+        long_selected = ranked[:count]
+        short_selected = []
+        if {construction.get("mode", "LONG_ONLY")!r} == "LONG_SHORT" and count:
+            long_symbols = {{symbol for symbol, _ in long_selected}}
+            short_selected = [
+                item for item in reversed(ranked) if item[0] not in long_symbols
+            ][:count]
+        selected = [*long_selected, *short_selected]
         if not selected:
             self._last_rebalance_key = key
             return context.target_positions(
@@ -208,10 +207,30 @@ class {class_name}(VQDStrategy):
                 next_state="CASH",
                 target_state=0,
             )
-        capital_weights = self._cap(
-            raw, {construction["max_single_position_weight"]!r}
-        )
-        deployed_fraction = sum(capital_weights.values())
+
+        def leg_weights(items, reverse=False):
+            if {construction["weighting"]!r} == "SCORE_WEIGHTED" and items:
+                scores = {{
+                    symbol: (-float(score.value) if reverse else float(score.value))
+                    for symbol, score in items
+                }}
+                floor = min(scores.values())
+                raw = {{symbol: max(value - floor, 0.0) + 1e-9 for symbol, value in scores.items()}}
+            else:
+                raw = {{symbol: 1.0 for symbol, _ in items}}
+            return self._cap(raw, {construction["max_single_position_weight"]!r})
+
+        if {construction.get("mode", "LONG_ONLY")!r} == "LONG_SHORT":
+            capital_weights = {{
+                symbol: 0.5 * weight for symbol, weight in leg_weights(long_selected).items()
+            }}
+            capital_weights.update({{
+                symbol: -0.5 * weight
+                for symbol, weight in leg_weights(short_selected, reverse=True).items()
+            }})
+        else:
+            capital_weights = leg_weights(long_selected)
+        deployed_fraction = sum(abs(value) for value in capital_weights.values())
         quantity_weights = {{
             symbol: capital_weights.get(symbol, 0.0) / float(context.current(symbol, "close"))
             for symbol in context.symbols
@@ -225,7 +244,7 @@ class {class_name}(VQDStrategy):
             signal="PORTFOLIO_REBALANCE",
             previous_state="CURRENT_PORTFOLIO",
             next_state="MULTI_FACTOR_PORTFOLIO",
-            target_state=1 if selected else 0,
+            target_state=(0 if {construction.get("mode", "LONG_ONLY")!r} == "LONG_SHORT" else 1),
         )
 """
 

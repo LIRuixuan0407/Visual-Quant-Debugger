@@ -128,6 +128,8 @@ export interface FailureFingerprint {
 export interface WhatIfInputs {
   fee_bps: number
   slippage_bps: number
+  spread_bps: number
+  market_impact_bps: number
   additional_execution_delay_bars: 0 | 1 | 2
   strategy_parameters: Record<string, number>
 }
@@ -191,6 +193,8 @@ export interface DiagnosisReport {
     current_lookback: number
     fee_bps: number
     slippage_bps: number
+    spread_bps?: number
+    market_impact_bps?: number
     sensitivity_parameter?: string | null
   }
   train_test: {
@@ -216,6 +220,8 @@ export interface DiagnosisReport {
     total_friction_bps: number
     fee_bps: number
     slippage_bps: number
+    spread_bps?: number
+    market_impact_bps?: number
     metrics: DiagnosticMetrics
   }>
   execution_delay: Array<{

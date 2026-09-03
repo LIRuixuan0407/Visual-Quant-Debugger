@@ -5,6 +5,7 @@ import numpy as np
 
 from app.autopsy.engine import detect_drawdown_episodes
 from app.autopsy.models import EquityPoint
+from app.diagnostics.annualization import annualization_factor_for_frequency
 from app.diagnostics.models import (
     VolatilityDiagnostics,
     VolatilityDrawdownOverlap,
@@ -18,15 +19,6 @@ FIXED_EWMA_DECAY = 0.94
 DEFAULT_ANNUALIZATION_FACTOR = 252
 DEFAULT_LOW_VOL_THRESHOLD = 0.15
 DEFAULT_HIGH_VOL_THRESHOLD = 0.30
-
-
-def annualization_factor_for_frequency(dataset_frequency: str | None) -> int | None:
-    if dataset_frequency is None:
-        return None
-    normalized = dataset_frequency.strip().lower().replace(" ", "")
-    if normalized in {"1d", "1day", "daily", "86400s"}:
-        return 252
-    return None
 
 
 def classify_volatility_regime(

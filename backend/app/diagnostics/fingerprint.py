@@ -116,7 +116,14 @@ def _cost_dimension(
             ("Fewer than two cost-stress reruns are available.",),
             ("Cost sensitivity is not inferred without rerun evidence.",),
         )
-    current = source.fee_bps + source.slippage_bps
+    current = sum(
+        (
+            source.fee_bps,
+            source.slippage_bps,
+            source.spread_bps / 2.0,
+            source.market_impact_bps,
+        )
+    )
     baseline = min(points, key=lambda point: abs(point.total_friction_bps - current))
     stressed = max(points, key=lambda point: point.total_friction_bps)
     if (

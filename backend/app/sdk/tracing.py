@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass
 from datetime import datetime
 
 import numpy as np
 
 from app.corporate_actions.models import CorporateActionEvent
+from app.diagnostics.annualization import sharpe_ratio
 from app.models import BacktestMetrics
 from app.sdk.models import RuntimeRow
 from app.trace.models import (
@@ -41,15 +41,20 @@ class RuntimeTraceConfiguration:
     initial_cash: float
     execution_model: str = "signal at close(t); execute at close(t+1)"
     corporate_action_events: tuple[CorporateActionEvent, ...] = ()
+    dataset_frequency: str | None = None
 
 
-def calculate_runtime_metrics(rows: tuple[RuntimeRow, ...], initial_cash: float) -> BacktestMetrics:
+def calculate_runtime_metrics(
+    rows: tuple[RuntimeRow, ...],
+    initial_cash: float,
+    *,
+    dataset_frequency: str | None = None,
+) -> BacktestMetrics:
     if not rows:
         raise ValueError("Runtime metrics require at least one row")
     equity = np.asarray((initial_cash, *(row.portfolio.equity for row in rows)), dtype=np.float64)
     returns = equity[1:] / equity[:-1] - 1.0
-    return_std = float(np.std(returns, ddof=1)) if returns.size >= 2 else 0.0
-    sharpe = 0.0 if return_std == 0 else float(np.mean(returns) / return_std * math.sqrt(252))
+    sharpe = sharpe_ratio(returns, dataset_frequency=dataset_frequency)
     drawdown = equity / np.maximum.accumulate(equity) - 1.0
     final = rows[-1].portfolio
     net_pnl = final.equity - initial_cash
@@ -141,7 +146,9 @@ def build_runtime_trace(
 ) -> BacktestTrace:
     if not rows:
         raise ValueError("A trace requires at least one runtime row")
-    metrics = calculate_runtime_metrics(rows, configuration.initial_cash)
+    metrics = calculate_runtime_metrics(
+        rows, configuration.initial_cash, dataset_frequency=configuration.dataset_frequency
+    )
     previous_equity = configuration.initial_cash
     events: list[TimelineEvent] = []
     for row in rows:
@@ -225,6 +232,8 @@ def build_runtime_trace(
                 traded_notional=item.traded_notional,
                 fee=item.fee,
                 slippage=item.slippage,
+                spread_cost=item.spread_cost,
+                market_impact=item.market_impact,
                 executed_at=item.executed_at,
                 source_order_id=item.source_order_id,
             )

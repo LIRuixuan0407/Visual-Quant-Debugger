@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 
 import { checkCompatibility } from '../../api/datasets'
 import { createBacktest } from '../../api/replay'
-import { importStrategy } from '../../api/strategies'
+import { importStrategy, uploadStrategy } from '../../api/strategies'
 import { useI18n } from '../../i18n/I18nProvider'
 import type { BacktestCreated } from '../../types/trace'
 import type { CompatibilityCheck, DatasetDefinition } from '../../types/dataset'
@@ -87,6 +87,7 @@ function StrategyPage({
   const [compatibilityError, setCompatibilityError] = useState<string | null>(null)
   const [importOpen, setImportOpen] = useState(false)
   const [strategyPath, setStrategyPath] = useState('')
+  const [strategyFile, setStrategyFile] = useState<File | null>(null)
   const [strategyClass, setStrategyClass] = useState('')
   const [importState, setImportState] = useState<'idle' | 'checking'>('idle')
   const selectedNode = definition.pipeline.find((node) => node.node_id === selectedNodeId) ?? definition.pipeline[0]
@@ -177,11 +178,13 @@ function StrategyPage({
   }
 
   async function submitStrategyImport() {
-    if (!strategyPath.trim() || importState === 'checking') return
+    if ((!strategyFile && !strategyPath.trim()) || importState === 'checking') return
     setImportState('checking'); setRunError(null)
     try {
-      const imported = await importStrategy({ path: strategyPath.trim(), class_name: strategyClass.trim() || null })
-      onStrategyImported?.(imported); setImportOpen(false)
+      const imported = strategyFile
+        ? await uploadStrategy(strategyFile, strategyClass.trim() || null)
+        : await importStrategy({ path: strategyPath.trim(), class_name: strategyClass.trim() || null })
+      onStrategyImported?.(imported); setImportOpen(false); setStrategyFile(null); setStrategyPath('')
     } catch (reason) {
       setRunError(reason instanceof Error ? reason.message : 'Strategy import failed.')
     } finally { setImportState('idle') }
@@ -192,7 +195,7 @@ function StrategyPage({
       <header className="strategy-header">
         <div><h1>{tr(definition.name)}</h1><p>{tr(definition.description)}</p></div><button className="secondary-button" onClick={() => setImportOpen((value) => !value)}>＋ {tr('Import Strategy')}</button>
       </header>
-      {importOpen && <section className="local-import-panel strategy-import-panel" aria-label={tr('Import Strategy')}><div className="import-copy"><span className="section-kicker">{tr('NATIVE STRATEGY REGISTRY')}</span><h2>{tr('Register an existing VQDStrategy')}</h2><p>{tr('This adds a local Python source to the existing Native Strategy Registry; it does not create another runtime.')}</p></div><div className="import-fields"><label><span>{tr('Strategy source path')}</span><input autoFocus value={strategyPath} onChange={(event) => setStrategyPath(event.target.value)} placeholder="/home/me/strategies/my_strategy.py" /></label><label><span>{tr('Class name (optional)')}</span><input value={strategyClass} onChange={(event) => setStrategyClass(event.target.value)} placeholder="MyStrategy" /></label><button className="primary-button" disabled={!strategyPath.trim() || importState === 'checking'} onClick={() => void submitStrategyImport()}>{tr(importState === 'checking' ? 'Checking…' : 'Validate and import')}</button></div></section>}
+      {importOpen && <section className="local-import-panel strategy-import-panel" aria-label={tr('Import Strategy')}><div className="import-copy"><span className="section-kicker">{tr('NATIVE STRATEGY REGISTRY')}</span><h2>{tr('Register an existing VQDStrategy')}</h2><p>{tr('Upload a Python file for Docker-friendly import, or use a local path when the backend can see the same filesystem.')}</p></div><div className="import-fields"><label><span>{tr('Upload Python strategy')}</span><input type="file" accept=".py,text/x-python" onChange={(event) => setStrategyFile(event.target.files?.[0] ?? null)} /><small>{strategyFile?.name ?? tr('Recommended for Docker and remote containers.')}</small></label><label><span>{tr('Strategy source path')}</span><input aria-label={tr('Strategy source path')} value={strategyPath} disabled={Boolean(strategyFile)} onChange={(event) => setStrategyPath(event.target.value)} placeholder="/home/me/strategies/my_strategy.py" /><small>{tr('Optional fallback for a path visible to the backend process.')}</small></label><label><span>{tr('Class name (optional)')}</span><input value={strategyClass} onChange={(event) => setStrategyClass(event.target.value)} placeholder="MyStrategy" /></label><button className="primary-button" disabled={(!strategyFile && !strategyPath.trim()) || importState === 'checking'} onClick={() => void submitStrategyImport()}>{tr(importState === 'checking' ? 'Checking…' : 'Validate and import')}</button></div></section>}
 
       <section className="research-configuration" aria-label={tr('Current research configuration')}>
         <label>{tr('Strategy')}<select aria-label={tr('Strategy selector')} value={definition.strategy_id} onChange={(event) => onStrategyChange?.(event.target.value)}>{strategies.map((item) => <option key={item.strategy_id} value={item.strategy_id}>{tr(item.name)} · {runtimeLabel(item.runtime)} · {tr(item.trace_fidelity ?? 'FULL')}</option>)}</select></label>

@@ -39,6 +39,8 @@ class ForwardParameters(BaseModel):
     exit_z: float = Field(default=0.8, ge=0)
     fee_bps: float = Field(default=5.0, ge=0)
     slippage_bps: float = Field(default=5.0, ge=0)
+    spread_bps: float = Field(default=0.0, ge=0)
+    market_impact_bps: float = Field(default=0.0, ge=0)
 
 
 class CreateForwardSession(BaseModel):
@@ -82,6 +84,8 @@ class ForwardSessionStore:
                 ),
                 fee_bps=float(values["fee_bps"]),
                 slippage_bps=float(values["slippage_bps"]),
+                spread_bps=float(values["spread_bps"]),
+                market_impact_bps=float(values["market_impact_bps"]),
             )
             session: ForwardSessionLike = ForwardSession(
                 session_id=session_id,
@@ -147,6 +151,9 @@ class ForwardSessionStore:
                 dataset_revision=definition.content_fingerprint,
                 fee_bps=float(request.parameters.get("fee_bps", 5.0)),
                 slippage_bps=float(request.parameters.get("slippage_bps", 5.0)),
+                spread_bps=float(request.parameters.get("spread_bps", 0.0)),
+                market_impact_bps=float(request.parameters.get("market_impact_bps", 0.0)),
+                dataset_frequency=definition.frequency,
             )
         self._sessions[session_id] = session
         return session
